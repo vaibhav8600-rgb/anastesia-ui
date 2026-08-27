@@ -1,0 +1,17 @@
+{
+  "name": "anastesia-ui",
+  "private": true,
+  "version": "1.0.0",
+  "author": "Vaibhav Rajput",
+  "description": "Anastesia-UI - web-based ZMK mouse/trackball configuration interface",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^7.1.3",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
