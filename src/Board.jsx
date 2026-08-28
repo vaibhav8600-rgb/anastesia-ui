@@ -1,0 +1,429 @@
+import { useCallback, useEffect, useState } from "react";
+import { device } from "./device.js";
+import {
+  unsupported, parseRtcfg, parseKeymap, parseAssignments, parseSurface,
+  studioLocked as locked,
+} from "./protocol.js";
+
+export const OUTPUTS = [
+  { id: "usb", label: "USB" },
+  { id: "wireless-1", label: "Bluetooth 1" },
+  { id: "wireless-2", label: "Bluetooth 2" },
+  { id: "wireless-3", label: "Bluetooth 3" },
+  { id: "wireless-4", label: "Bluetooth 4" },
+  { id: "wireless-5", label: "Bluetooth 5" },
+  { id: "wireless-6", label: "Dongle" },
+];
+
+/**
+ * Surface quality is out of whatever the sensor reports — 361 on one part,
+ * 1000 on another — so the good/warn/bad bands differ per scale.
+ */
+export function qualityBand(quality, max) {
+  const ratio = quality / max;
+  const [warn, good] = max === 1000 ? [0.25, 0.5] : max === 361 ? [0.3, 0.6] : [0.34, 0.67];
+  return ratio < warn ? "low" : ratio < good ? "mid" : "high";
+}
+
+export function Surface({ live, onNote, active = true }) {
+  const [sensors, setSensors] = useState([]);
+  const [error, setError] = useState(null);
+  const [raw, setRaw] = useState(null);
+
+  // Reads continuously while the tab is open so you can watch the numbers move
+  // as you roll the ball. Between reads the last value simply stays on screen.
+  useEffect(() => {
+    if (!active) return;
+    if (!live) {
+      let t;
+      const wobble = () => {
+        setSensors([
+          { sensor: 0, quality: 690 + Math.round(Math.random() * 90), max: 1000 },
+          { sensor: 1, quality: 180 + Math.round(Math.random() * 70), max: 1000 },
+        ]);
+        t = setTimeout(wobble, 700);
+      };
+      wobble();
+      return () => clearTimeout(t);
+    }
+
+    let stop = false;
+    let timer;
+    const tick = async () => {
+      if (stop) return;
+      if (device.pending) { timer = setTimeout(tick, 200); return; }
+      try {
+        const out = await device.send("sensor surface");
+        if (stop) return;
+        if (unsupported(out)) { setError("This board does not report surface quality."); return; }
+        const parsed = parseSurface(out);
+        // Show what the board actually said rather than an empty card when the
+        // wording is not one we recognise.
+        setRaw(parsed.length ? null : out.trim());
+        setSensors(parsed);
+        setError(null);
+      } catch { /* a missed sample just leaves the last one showing */ }
+      if (!stop) timer = setTimeout(tick, 1000);
+    };
+    tick();
+    return () => { stop = true; clearTimeout(timer); };
+  }, [live, active]);
+
+  if (error) return <p className="empty">{error}</p>;
+
+  return (
+    <div className="surface">
+      <h3 className="surface__title">Surface quality</h3>
+      <p className="surface__sub">Live sensor surface tracking quality</p>
+      {sensors.length > 0 ? (
+        <ul className="gauges">
+          {sensors.map((s) => (
+            <li
+              key={s.sensor}
+              title={
+                s.reportedMax && s.reportedMax !== s.max
+                  ? `Board reports ${s.quality}/${s.reportedMax}; its true scale is ${s.max}.`
+                  : `Reported by the board as ${s.quality}${s.max ? "/" + s.max : ""}`
+              }
+            >
+              <div className="gauges__head">
+                <span className="gauges__name">Sensor #{s.sensor}</span>
+                <span className="gauges__val">{s.max ? `${s.quality}/${s.max}` : s.quality}</span>
+              </div>
+              {s.max != null && (
+                <div className="gauges__track">
+                  <div
+                    className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
+                    style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                  />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : raw ? (
+        <pre className="surface__raw">{raw}</pre>
+      ) : (
+        <p className="empty">Reading…</p>
+      )}
+    </div>
+  );
+}
+
+export function Keymap({ live, onNote }) {
+  const [slots, setSlots] = useState([]);
+  const [assign, setAssign] = useState({});
+  const [changed, setChanged] = useState(false);
+  const [autoswitch, setAutoswitch] = useState(null);
+  const [bistable, setBistable] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState("");
+
+  const load = useCallback(async () => {
+    if (!live) {
+      setSlots([
+        { id: 0, occupied: true, active: true, name: "default", bytes: 812 },
+        { id: 1, occupied: true, active: false, name: "mac", bytes: 804 },
+        { id: 2, occupied: false, active: false },
+      ]);
+      setAssign({ usb: "default", "wireless-1": "mac", "wireless-2": null });
+      setAutoswitch(1);
+      setBistable(0);
+      return;
+    }
+    setBusy(true);
+    try {
+      const status = await device.send("keymap status");
+      if (unsupported(status)) { onNote("Profiles are not available on this firmware."); setSlots([]); return; }
+      const k = parseKeymap(status);
+      setSlots(k.slots);
+      setChanged(k.changed);
+      setAssign(parseAssignments(await device.send("keymap assign")));
+      const cfg = parseRtcfg(await device.send("rtcfg list"));
+      setAutoswitch(cfg["keymap/autoswitch"] ?? null);
+      setBistable("bst/default" in cfg ? cfg["bst/default"] : null);
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [live, onNote]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const run = async (cmd, okMsg, reload = true) => {
+    if (!live) { onNote(`Demo mode — would send: ${cmd}`); return; }
+    setBusy(true);
+    try {
+      const res = await device.send(cmd);
+      if (locked(res)) { onNote("ZMK Studio is locked. Unlock it first."); return; }
+      onNote(okMsg);
+      if (reload) await load();
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!slots.length && !busy) {
+    return (
+      <>
+        <p className="panel__blurb">Keymap profiles stored on the device.</p>
+        <p className="empty">No profile support reported.</p>
+        <button className="btn" onClick={load}>Refresh</button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <p className="panel__blurb">
+        Save the live keymap into a slot, then point each connection at the slot it should use.
+      </p>
+
+      {changed && <p className="notice">The live keymap has unsaved changes.</p>}
+
+      <h3 className="sec">Profiles</h3>
+      <ul className="slots">
+        {slots.map((s) => (
+          <li key={s.id} className={s.active ? "is-active" : ""}>
+            <span className="slots__id">Slot {s.id}</span>
+            <span className="slots__name">
+              {s.occupied ? (s.name ?? "unnamed") : "empty"}
+              {s.bytes ? <em> · {s.bytes} B</em> : null}
+            </span>
+            <span className="row">
+              {!s.active && s.occupied && (
+                <button className="pill" disabled={busy} onClick={() => run(`keymap activate ${s.id}`, `Activated slot ${s.id}.`)}>
+                  Activate
+                </button>
+              )}
+              {s.occupied && (
+                <button className="pill pill--danger" disabled={busy} onClick={() => run(`keymap destroy ${s.id}`, `Deleted slot ${s.id}.`)}>
+                  Delete
+                </button>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="ctl">
+        <label className="ctl__label" htmlFor="pname">Save current keymap as</label>
+        <div className="row row--wrap">
+          <input
+            id="pname"
+            className="search"
+            value={name}
+            placeholder="profile name"
+            onChange={(e) => setName(e.target.value)}
+          />
+          {slots.map((s) => (
+            <button
+              key={s.id}
+              className="pill"
+              disabled={busy || !name.trim()}
+              onClick={() => run(
+                `keymap ${s.occupied ? "overwrite" : "save"} ${s.id} ${name.trim().toLowerCase()}`,
+                `Wrote “${name.trim()}” to slot ${s.id}.`,
+              )}
+            >
+              Slot {s.id}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <h3 className="sec">Which profile each connection uses</h3>
+      <ul className="assigns">
+        {OUTPUTS.map((o) => (
+          <li key={o.id}>
+            <span>{o.label}</span>
+            <select
+              className="search search--slim"
+              aria-label={`Profile for ${o.label}`}
+              value={assign[o.id] ?? ""}
+              onChange={(e) => run(
+                e.target.value ? `keymap assign ${o.id} ${e.target.value}` : `keymap assign ${o.id}`,
+                `${o.label} → ${e.target.value || "not assigned"}.`,
+              )}
+            >
+              <option value="">Not assigned</option>
+              {slots.filter((s) => s.occupied && s.name).map((s) => (
+                <option key={s.id} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+          </li>
+        ))}
+      </ul>
+
+      {autoswitch !== null && (
+        <div className="ctl ctl--inline">
+          <label className="ctl__label" htmlFor="autosw">Switch profile automatically</label>
+          <button
+            id="autosw"
+            role="switch"
+            aria-checked={autoswitch === 1}
+            className="switch"
+            disabled={busy}
+            onClick={() => {
+              const next = autoswitch === 1 ? 0 : 1;
+              setAutoswitch(next);
+              run(`rtcfg set keymap/autoswitch ${next}`, next ? "Autoswitch on." : "Autoswitch off.", false);
+            }}
+          >
+            <span className="switch__dot" />
+          </button>
+        </div>
+      )}
+
+      {bistable !== null && (
+        <>
+          <h3 className="sec">Keyboard mode</h3>
+          <div className="row row--wrap">
+            {["Windows / Linux", "macOS"].map((label, i) => (
+              <button
+                key={label}
+                className={"pill" + (bistable === i ? " is-active" : "")}
+                disabled={busy}
+                onClick={() => { setBistable(i); run(`bistable set ${i}`, `Switched to ${label}.`, false); }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="actions">
+        <button className="btn" onClick={load} disabled={busy}>Refresh</button>
+        <span className="actions__gap" />
+        <button className="btn btn--danger" disabled={busy} onClick={() => run("keymap restore", "Restored the default keymap.")}>
+          Reset to default keymap
+        </button>
+      </div>
+    </>
+  );
+}
+
+export function ImportExport({ live, onNote, rtcfg, firmware }) {
+  const [json, setJson] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  /** Read the device fresh; the prop is a snapshot from connection time. */
+  const settingsBlob = async () => {
+    let current = rtcfg;
+    if (live) {
+      try { current = parseRtcfg(await device.send("rtcfg list")); }
+      catch { /* fall back to the snapshot rather than exporting nothing */ }
+    }
+    return JSON.stringify({
+      app: "anastesia-ui",
+      exported: new Date().toISOString(),
+      firmware: firmware ?? null,
+      rtcfg: current,
+    }, null, 2);
+  };
+
+  const read = async () => {
+    setBusy(true);
+    try { setJson(await settingsBlob()); onNote("Settings read into the box below."); }
+    finally { setBusy(false); }
+  };
+
+  const download = async () => {
+    const blob = new Blob([await settingsBlob()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `anastesia-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onNote("Settings file downloaded.");
+  };
+
+  const openFile = async (file) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      JSON.parse(text);            // fail here rather than halfway through applying
+      setJson(text);
+      onNote(`Loaded ${file.name}. Review it, then Apply.`);
+    } catch {
+      onNote(`${file.name} is not valid JSON.`);
+    }
+  };
+
+  const entriesOf = (text) => {
+    const parsed = JSON.parse(text);
+    return Object.entries(parsed.rtcfg ?? parsed)
+      .filter(([k, v]) => typeof v === "number" && /^[a-z0-9_]+(\/[a-z0-9_]+)+$/i.test(k));
+  };
+
+  const apply = async () => {
+    let entries;
+    try { entries = entriesOf(json); } catch { onNote("That is not valid JSON."); return; }
+    if (!entries.length) { onNote("No settings found in that JSON."); return; }
+    if (!live) { onNote(`Demo mode — would write ${entries.length} settings.`); return; }
+    setBusy(true);
+    let done = 0;
+    try {
+      for (const [k, v] of entries) {
+        await device.send(`rtcfg set ${k} ${Math.round(v)}`);
+        done++;
+      }
+      onNote(`Applied ${done} settings. Reconnect to see them in the panels.`);
+    } catch (err) {
+      onNote(`Stopped after ${done} of ${entries.length}: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  let count = null;
+  try { count = json.trim() ? entriesOf(json).length : null; } catch { count = null; }
+
+  return (
+    <>
+      <p className="panel__blurb">
+        Take a copy of every runtime parameter, or push a saved copy back onto the device.
+      </p>
+
+      <h3 className="sec">Export</h3>
+      <div className="row row--wrap">
+        <button className="btn" onClick={read} disabled={busy}>Read current</button>
+        <button className="btn btn--primary" onClick={download} disabled={busy}>Download .json</button>
+      </div>
+
+      <h3 className="sec">Import</h3>
+      <div className="row row--wrap">
+        <label className="btn btn--file">
+          Choose .json file
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => { openFile(e.target.files?.[0]); e.target.value = ""; }}
+          />
+        </label>
+        <button className="btn btn--primary" onClick={apply} disabled={!json.trim() || busy}>
+          {count === null ? "Apply to device" : `Apply ${count} settings`}
+        </button>
+      </div>
+
+      <textarea
+        className="search"
+        rows={10}
+        value={json}
+        onChange={(e) => setJson(e.target.value)}
+        placeholder="Read current, or choose a file, to see settings here. You can also paste them."
+        aria-label="Settings JSON"
+      />
+
+      <p className="ctl__hint">
+        This covers the runtime parameters. Keymap profiles and full
+        storage-partition backup over USB are not included.
+      </p>
+    </>
+  );
+}
