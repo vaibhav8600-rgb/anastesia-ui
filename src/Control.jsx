@@ -107,7 +107,9 @@ function NumberField({ id, spec, value, onChange, disabled }) {
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && commit()}
       />
-      {spec.unit && <span className="unit">{spec.unit.trim()}</span>}
+      {/* Always rendered, so a field with a unit and one without still share
+          a right edge rather than sitting 31px apart. */}
+      <span className="unit" aria-hidden={!spec.unit}>{spec.unit?.trim() ?? ""}</span>
     </span>
   );
 }

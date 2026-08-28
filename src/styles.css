@@ -204,6 +204,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .tab.is-active { background: var(--accent); color: var(--accent-ink); }
 
 .panel {
+  container: panel / inline-size;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -933,7 +934,11 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 /* ---------- compact rows for the long tail ---------- */
 
 .grid2 { display: grid; gap: 0.1rem 1.6rem; }
-@media (min-width: 560px) {
+
+/* Two columns only when the panel itself is wide enough for a label and a
+   field side by side. Keyed off the viewport, this went two-up in a 375px
+   panel and broke words like "Debounce" across lines. */
+@container panel (min-width: 400px) {
   .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -1223,3 +1228,61 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 /* Disclosure summaries are navigation, not titles. */
 .sub > summary { font-size: 0.88rem; font-weight: 550; }
+
+/* ---------- form control alignment ----------
+   Measured before this: toggles rendered 37-52px wide because flex squeezed
+   them, number fields were 44px tall against 30px selects and 25px value
+   chips, and a field with a unit sat 22px left of one without, so no column
+   shared a right edge. One field height and a reserved unit slot fix all of
+   it, while rows centre their contents so differing control heights still
+   read as a single baseline. */
+
+:root { --field-h: 34px; }
+@media (pointer: coarse) { :root { --field-h: 44px; } }
+
+/* Every row that pairs a label with a control keeps a common rhythm. */
+.ctl__head,
+.ctl--compact,
+.ctl--inline,
+.assigns li,
+.palette__row {
+  min-height: var(--field-h);
+  align-items: center;
+}
+
+/* One height for anything you type into or pick from. */
+.numwrap input,
+.raw input[type="number"],
+select.search,
+input.search,
+.search--slim {
+  height: var(--field-h);
+  min-height: var(--field-h);
+  padding-block: 0;
+}
+textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
+
+/* The unit gets a reserved slot, so fields with and without one line up. */
+.numwrap { justify-content: flex-end; }
+.numwrap .unit {
+  display: inline-block;
+  min-width: 1.6rem;
+  text-align: left;
+}
+.ctl--compact .numwrap input,
+.ctl--inline .numwrap input { width: 4.2rem; flex: none; }
+
+/* Toggles are a fixed size; flex must not shrink them. */
+.switch {
+  flex: none;
+  width: 52px;
+  height: 30px;
+  min-height: 30px;
+}
+
+/* Selects in a row share a width so their edges line up. */
+.assigns li select,
+.ctl--inline select.search { width: 9.5rem; min-width: 0; flex: none; }
+
+.assigns li { gap: 1rem; }
+.assigns li > span:first-child { min-width: 0; }
