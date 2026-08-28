@@ -33,7 +33,7 @@ attached.
 | Curves | Acceleration curve editor — a draggable Bezier graph per device, log scales, import/export |
 | Effects | Per-event RGB and vibration, including a colour for each Bluetooth profile |
 | Keymap | Profile slots, per-connection assignments, autoswitch, restore defaults |
-| Board | Firmware info, sensor surface quality meters, Windows/macOS mode, settings backup |
+| Board | Firmware info, sensor surface quality meters, Windows/macOS mode, settings import/export |
 | Expert | Every runtime parameter the device reports, each with its firmware description |
 
 ## Layout
@@ -50,12 +50,35 @@ attached.
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles and board panel |
+| `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview |
 | `src/styles.css` | all of the styling |
 
 Adding a setting is one line in `src/settings.js`; there is no per-setting
 component to write. Anything with an `advanced: true` flag folds into a
 collapsed section rather than crowding the panel.
+
+## Header status
+
+The bar shows which endpoint is carrying the pointer (USB / Bluetooth /
+dongle), the firmware version and the battery, read from `board output` and
+`board status`. Output is polled every 5 s and status every 5 min, and both
+skip a turn whenever one of your own commands is queued, so a poll never makes
+you wait.
+
+## Keeping it quick
+
+Two things dominated first-paint, and both are fixed:
+
+- Effects used to read every event up front — around twenty round trips behind
+  a 200 ms inter-command floor before the tab drew anything. It now reads only
+  the event list and fetches details on selection, caching as it goes.
+- Panels talk to the device when they mount, so a visited tab now stays mounted
+  and is hidden rather than torn down. Returning to a tab is instant instead of
+  repeating its round trips.
+
+The event picker is grouped (Bluetooth / Layers / Battery / System) so no list
+is more than a handful of entries.
 
 ## Talking to the device
 

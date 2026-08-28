@@ -56,6 +56,8 @@ export default function Curves({ live, onNote }) {
   useEffect(() => { load(); }, [load]);
 
   const segs = name ? curves[name] : null;
+  // Each segment adds one point on top of the first; the device caps the total.
+  const maxPoints = devices.find((d) => d.name === name)?.maxPoints ?? 8;
 
   const update = (next) => {
     setCurves((c) => ({ ...c, [name]: next }));
@@ -140,9 +142,7 @@ export default function Curves({ live, onNote }) {
         ))}
       </div>
 
-      {segs && (
-        <CurveChart segs={segs} logX={logX} logY={logY} onChange={update} maxPoints={devices.find((d) => d.name === name)?.maxPoints ?? 8} />
-      )}
+      {segs && <CurveChart segs={segs} logX={logX} logY={logY} onChange={update} />}
 
       <div className="row row--wrap">
         <button className="pill" aria-pressed={logX} onClick={() => setLogX((v) => !v)}>X log scale</button>
@@ -153,7 +153,7 @@ export default function Curves({ live, onNote }) {
         <button
           className="btn"
           onClick={() => update([...segs, extend(segs)])}
-          disabled={segs.length >= 7}
+          disabled={segs.length + 1 >= maxPoints}
         >
           Add point
         </button>

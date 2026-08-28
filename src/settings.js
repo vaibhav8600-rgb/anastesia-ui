@@ -214,7 +214,9 @@ export async function readAll() {
   state.status = status;
   state.twist = /Twist scroll:\s*enabled/i.test(status) ? 1 : 0;
   state.twistReverse = /Twist reversed:\s*yes/i.test(status) ? 1 : 0;
-  state.argb = (state.rtcfg["argb/brt"] ?? 0) > 0 ? 1 : 0;
+  // Brightness above zero does not mean the lighting is switched on.
+  const argbState = await device.send("argb state");
+  state.argb = /state:\s*on/i.test(argbState) ? 1 : 0;
 
   const twistPct = status.match(/Twist scroll:[^\n]*?~?(\d+\.?\d*)\s*%/i);
   state.twistSens = twistPct

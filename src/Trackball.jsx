@@ -4,6 +4,20 @@ import * as THREE from "three";
 // The ball is the preview: every knob you turn changes how it behaves under
 // your finger, so "sensitivity 4x" is something you feel before you save it.
 
+/** Cached WebGL probe, so callers can word their copy honestly. */
+let webglOk = null;
+export function hasWebGL() {
+  if (webglOk === null) {
+    try {
+      const c = document.createElement("canvas");
+      webglOk = !!(c.getContext("webgl2") || c.getContext("webgl"));
+    } catch {
+      webglOk = false;
+    }
+  }
+  return webglOk;
+}
+
 const reducedMotion = () =>
   typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -176,33 +190,41 @@ export default function Trackball({ values, onScrollTick }) {
     const clock = new THREE.Clock();
     let raf;
     let visible = true;
+    let acc = 0;
+    // A trackball does not need 60fps, and on software renderers each frame
+    // costs enough to stall the rest of the UI. 30 is plenty and halves it.
+    const FRAME = 1 / 30;
     const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     io.observe(el);
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const dt = Math.min(clock.getDelta(), 0.05);
-      if (!visible) return;
+      if (!visible || document.hidden) return;
+      acc += dt;
+      if (acc < FRAME) return;
+      const step = acc;
+      acc = 0;
       const v = live.current;
 
       // Smoothing window: how sluggishly the ball chases your hand.
-      const chase = 1 - Math.pow(0.001, (dt * 12) / Math.max(1, v.sma ?? 1));
+      const chase = 1 - Math.pow(0.001, (step * 12) / Math.max(1, v.sma ?? 1));
       smoothed.lerp(vel, chase);
-      vel.multiplyScalar(Math.pow(0.12, dt));
+      vel.multiplyScalar(Math.pow(0.12, step));
 
       ball.rotation.x += smoothed.x;
       ball.rotation.y += smoothed.y;
-      if (!reduced && !dragging) ball.rotation.y += dt * 0.06;
+      if (!reduced && !dragging) ball.rotation.y += step * 0.06;
 
       rig.rotation.y = THREE.MathUtils.lerp(rig.rotation.y, ((v.plane ?? 0) * Math.PI) / 180 * 0.35, 0.1);
 
-      deadFlash = Math.max(0, deadFlash - dt * 2.4);
+      deadFlash = Math.max(0, deadFlash - step * 2.4);
       deadRing.material.opacity = deadFlash * 0.85;
       deadRing.scale.setScalar(1 + (1 - deadFlash) * 0.05);
 
-      twistFlash = Math.max(0, twistFlash - dt * 1.8);
+      twistFlash = Math.max(0, twistFlash - step * 1.8);
       twistRing.material.opacity = twistFlash * 0.9;
-      twistRing.rotation.z += dt * 2.6;
+      twistRing.rotation.z += step * 2.6;
 
       const bright = v.glow ? (v.brightness ?? 60) / 100 : 0;
       glow.intensity = THREE.MathUtils.lerp(glow.intensity, bright * 5, 0.08);

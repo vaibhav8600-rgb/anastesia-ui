@@ -616,3 +616,135 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .raw__key { display: grid; gap: 0.15rem; min-width: 0; }
 .raw__hint { font-size: 0.72rem; color: var(--muted); line-height: 1.35; }
+
+/* ---------- brand + header status ---------- */
+
+.brand { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.brand strong { font-size: 1.05rem; font-weight: 650; letter-spacing: 0.01em; }
+.brand em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+.status__ep { display: inline-flex; color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.status__ep.is-on { color: var(--ok); }
+
+.status__ver, .status__link {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.status__link { text-transform: uppercase; letter-spacing: 0.05em; }
+
+.batt { display: inline-flex; align-items: center; gap: 0.3rem; }
+.batt__shell {
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  border: 1.5px solid var(--muted);
+  border-radius: 3px;
+}
+.batt__cell {
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  background: transparent;
+}
+.batt__cell.is-on { background: var(--ok); }
+.batt--mid .batt__cell.is-on { background: var(--warn); }
+.batt--low .batt__cell.is-on { background: var(--danger); }
+.batt__cap {
+  width: 2px;
+  height: 6px;
+  border-radius: 0 2px 2px 0;
+  background: var(--muted);
+}
+.batt__pct { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- device log ---------- */
+
+.console__count {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.console__body {
+  max-height: 30dvh;
+  overflow: auto;
+  padding: 0 var(--pad);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.logline {
+  display: grid;
+  grid-template-columns: auto 1ch 1fr;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+.logline time { color: color-mix(in srgb, var(--muted) 70%, transparent); font-variant-numeric: tabular-nums; }
+.logline__arrow { font-weight: 700; }
+.logline__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Commands you sent read green; the device's replies stay quiet. */
+.logline--send .logline__arrow, .logline--send .logline__text { color: var(--ok); }
+.logline--recv .logline__text { color: var(--muted); }
+
+.console__foot { padding: 0.4rem var(--pad) 0.6rem; }
+
+/* ---------- misc additions ---------- */
+
+.pill em {
+  font-style: normal;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.15rem;
+}
+
+.btn--file { position: relative; overflow: hidden; display: inline-flex; align-items: center; }
+.btn--file input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  min-height: 0;
+}
+
+@media (max-width: 620px) {
+  /* The header cannot fit on one line here, so make the break deliberate:
+     identity and device state on top, actions right-aligned underneath. */
+  .bar { padding: 0.4rem 0.9rem; gap: 0.35rem 0.4rem; }
+  .brand em { display: none; }
+  .status { gap: 0.4rem; padding: 0.15rem 0.45rem; }
+  .status__ver { display: none; }
+  .bar__spacer { flex-basis: 100%; height: 0; }
+  .bar > .btn:not(:last-child) { margin-left: auto; }
+  .bar > .btn { min-height: 40px; padding: 0.35rem 0.8rem; }
+  .bar > .btn ~ .btn { margin-left: 0; }
+}

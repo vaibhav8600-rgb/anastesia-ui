@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device, supported } from "./device.js";
 import { groups, allControls, readAll, RTCFG_HELP } from "./settings.js";
-import Trackball from "./Trackball.jsx";
+import Trackball, { hasWebGL } from "./Trackball.jsx";
 import Control from "./Control.jsx";
 import Curves from "./Curves.jsx";
 import Effects from "./Effects.jsx";
 import { Keymap, Board } from "./Board.jsx";
+import Status from "./Status.jsx";
 
 const DEMO_RTCFG = {
   "accel/dz_enable": 1, "accel/dz_thres": 6, "accel/dz_cooldown": 120, "accel/dz_before": 0,
@@ -51,6 +52,10 @@ export default function App() {
   const [values, setValues] = useState({});
   const [dirty, setDirty] = useState(() => new Set());
   const [tab, setTab] = useState("feel");
+  // Panels talk to the device when they mount. Remounting on every tab switch
+  // meant paying for those round trips again, so a visited tab stays mounted
+  // and is only hidden.
+  const [visited, setVisited] = useState(() => new Set(["feel"]));
   const [log, setLog] = useState([]);
   const scrollHint = useRef(null);
 
@@ -104,10 +109,16 @@ export default function App() {
     setStatus("busy");
     setNote("Saving…");
     try {
+      const written = {};
       for (const id of dirty) {
         const spec = allControls.find((c) => c.id === id);
-        if (spec) await spec.write(values[id]);
+        if (!spec) continue;
+        await spec.write(values[id]);
+        if (spec.key) written[spec.key] = Math.round(values[id]);
       }
+      // Expert and the settings export both read state.rtcfg, so it has to
+      // follow what we just wrote or they show stale numbers.
+      setState((s) => ({ ...s, rtcfg: { ...s.rtcfg, ...written } }));
       setDirty(new Set());
       setNote("Saved.");
       setTimeout(() => setNote(null), 2000);
@@ -154,16 +165,16 @@ export default function App() {
   const visibleGroups = groups.filter(
     (g) => !g.optional || g.controls.some((c) => !state.missing.has(c.id)),
   );
-  const group = visibleGroups.find((g) => g.id === tab);
-
   return (
     <div className="app">
       <header className="bar">
-        <h1 className="bar__title">Anastesia</h1>
-        <span className={"chip chip--" + (live ? "live" : "demo")}>
-          {live ? (device.kind === "ble" ? "Bluetooth" : "USB") : "Demo"}
+        <span className="brand">
+          <strong>Anastesia</strong>
+          <em>by Vaibhav Rajput</em>
         </span>
+        {!live && <span className="chip">Demo</span>}
         <div className="bar__spacer" />
+        <Status live={live} />
         {dirty.size > 0 && <button className="btn btn--ghost" onClick={revert}>Revert</button>}
         <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || status === "busy"}>
           {dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
@@ -177,7 +188,9 @@ export default function App() {
         <section className="stage__view">
           <Trackball values={scene} onScrollTick={onScrollTick} />
           <p className="stage__caption">
-            Drag the ball to feel your settings.
+            {hasWebGL()
+              ? "Drag the ball to feel your settings."
+              : "This device has no 3D preview, but every setting below still works."}
             <span className="ticker" ref={scrollHint} data-live="0" />
           </p>
         </section>
@@ -190,7 +203,7 @@ export default function App() {
                 role="tab"
                 aria-selected={tab === g.id}
                 className={"tab" + (tab === g.id ? " is-active" : "")}
-                onClick={() => setTab(g.id)}
+                onClick={() => { setTab(g.id); setVisited((v) => new Set(v).add(g.id)); }}
               >
                 {g.label}
               </button>
@@ -198,31 +211,76 @@ export default function App() {
           </nav>
 
           <div className="panel" role="tabpanel">
-            {group && (
-              <KnobGroup
-                group={group}
-                state={state}
-                values={values}
-                busy={status === "busy"}
-                onChange={change}
-              />
-            )}
-            {tab === "curves" && <Curves live={live} onNote={setNote} />}
-            {tab === "effects" && <Effects live={live} onNote={setNote} />}
-            {tab === "keymap" && <Keymap live={live} onNote={setNote} />}
-            {tab === "board" && <Board live={live} onNote={setNote} rtcfg={state.rtcfg} />}
-            {tab === "expert" && <Expert rtcfg={state.rtcfg} live={live} onNote={setNote} />}
+            {visibleGroups.map((g) => (
+              <Pane key={g.id} active={tab === g.id} visited={visited.has(g.id)}>
+                <KnobGroup
+                  group={g}
+                  state={state}
+                  values={values}
+                  busy={status === "busy"}
+                  onChange={change}
+                />
+              </Pane>
+            ))}
+            <Pane active={tab === "curves"} visited={visited.has("curves")}>
+              <Curves live={live} onNote={setNote} />
+            </Pane>
+            <Pane active={tab === "effects"} visited={visited.has("effects")}>
+              <Effects live={live} onNote={setNote} />
+            </Pane>
+            <Pane active={tab === "keymap"} visited={visited.has("keymap")}>
+              <Keymap live={live} onNote={setNote} />
+            </Pane>
+            <Pane active={tab === "board"} visited={visited.has("board")}>
+              <Board live={live} onNote={setNote} rtcfg={state.rtcfg} />
+            </Pane>
+            <Pane active={tab === "expert"} visited={visited.has("expert")}>
+              <Expert rtcfg={state.rtcfg} live={live} onNote={setNote} />
+            </Pane>
           </div>
         </section>
       </main>
 
       {note && <p className="toast" role="status">{note}</p>}
 
-      <details className="console">
-        <summary>Device log ({log.length})</summary>
-        <pre>{log.map((l) => `${l.dir === "send" ? "›" : "‹"} ${l.text}`).join("\n")}</pre>
-      </details>
+      <DeviceLog log={log} onClear={() => setLog([])} />
     </div>
+  );
+}
+
+/** Mounted once visited, hidden rather than torn down when you switch away. */
+function Pane({ active, visited, children }) {
+  if (!visited) return null;
+  return <div hidden={!active}>{children}</div>;
+}
+
+/** One line per exchange: time, direction, text — sent in green, replies dim. */
+function DeviceLog({ log, onClear }) {
+  const body = useRef(null);
+  useEffect(() => {
+    const el = body.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [log.length]);
+
+  return (
+    <details className="console">
+      <summary>
+        Device log <span className="console__count">{log.length}</span>
+      </summary>
+      <div className="console__body" ref={body}>
+        {log.length === 0 && <p className="empty">Nothing sent yet.</p>}
+        {log.map((l, i) => (
+          <div key={i} className={"logline logline--" + l.dir}>
+            <time>{new Date(l.at).toLocaleTimeString()}</time>
+            <span className="logline__arrow">{l.dir === "send" ? "›" : "‹"}</span>
+            <span className="logline__text">{l.text || "(no output)"}</span>
+          </div>
+        ))}
+      </div>
+      <div className="console__foot">
+        <button className="pill" onClick={onClear}>Clear</button>
+      </div>
+    </details>
   );
 }
 

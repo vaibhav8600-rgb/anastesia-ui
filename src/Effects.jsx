@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
 import {
   unsupported, EASINGS, parseEventList as parseList, parseEvent, validateEvent,
@@ -6,6 +6,10 @@ import {
 
 // Per-event RGB and vibration. Events cover idle, USB connect/disconnect,
 // each Bluetooth profile, battery warnings and every keymap layer.
+//
+// Only the event list is read up front. Fetching all ~20 events' details
+// meant twenty round trips behind a 200 ms floor before the tab drew
+// anything, so details load on selection and are cached after that.
 
 const ANIMS = { solid: "Solid", blink: "Blink", breathe: "Breathe", flash: "Flash" };
 
@@ -21,80 +25,113 @@ const rgb = (h) => ({
   b: parseInt(h.slice(5, 7), 16),
 });
 
-const DEMO = [
-  { name: "idle", label: "Idle" },
-  { name: "usb-conn", label: "USB connected" },
-  { name: "usb-disconn", label: "USB disconnected" },
-  ...[1, 2, 3, 4, 5].map((n) => ({ name: `ble-profile ${n}`, label: `Bluetooth profile ${n}` })),
-  { name: "no-endpoint", label: "No endpoint" },
-  { name: "batt-warn 1", label: "Battery warning 1" },
-  { name: "batt-crit 1", label: "Battery critical 1" },
-  { name: "layer 0", label: null },
-  { name: "layer 1", label: null },
+/** Twenty-odd events in one dropdown is a scroll hunt; four short lists is not. */
+export const CATEGORIES = [
+  { id: "bt", label: "Bluetooth", match: (n) => n.startsWith("ble-profile") },
+  { id: "layers", label: "Layers", match: (n) => n.startsWith("layer") },
+  { id: "battery", label: "Battery", match: (n) => n.startsWith("batt-") },
+  { id: "system", label: "System", match: () => true },
 ];
+
+export const categoryOf = (name) => CATEGORIES.find((c) => c.match(name)).id;
+
+const DEMO_NAMES = [
+  ["idle", "Idle"],
+  ["usb-conn", "USB connected"],
+  ["usb-disconn", "USB disconnected"],
+  ...[1, 2, 3, 4, 5].map((n) => [`ble-profile ${n}`, `Bluetooth device`]),
+  ["no-endpoint", "No endpoint available"],
+  ["studio-unlock", "Studio unlocked"],
+  ...[1, 2, 3].map((n) => [`batt-warn ${n}`, "Battery warning"]),
+  ...[1, 2, 3].map((n) => [`batt-crit ${n}`, "Battery critical"]),
+  ...[0, 1, 2, 3, 4].map((n) => [`layer ${n}`, null]),
+];
+
+const PALETTE = ["#7cd4ff", "#63e6a0", "#ffa06a", "#ff6b8a", "#c58cff"];
 
 const demoEvent = (name, i) => ({
   name,
-  label: DEMO.find((d) => d.name === name)?.label ?? null,
   anim: name.startsWith("layer") ? "solid" : "flash",
-  colors: [rgb(["#7cd4ff", "#63e6a0", "#ffa06a", "#ff6b8a", "#c58cff"][i % 5])],
+  colors: [rgb(PALETTE[i % PALETTE.length])],
   blinkOnMs: 100, blinkOffMs: 100, breatheDurMs: 1000,
   flashDurMs: 200, flashEaseInMs: 40, flashEaseInFn: "quad-in",
   flashEaseOutMs: 60, flashEaseOutFn: "quad-out", feedback: [],
 });
 
 export default function Effects({ live, onNote }) {
-  const [events, setEvents] = useState([]);
+  const [list, setList] = useState([]);        // [{ name, label }] — cheap
+  const [cat, setCat] = useState("bt");
   const [sel, setSel] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [loadingEvent, setLoadingEvent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [supportsRgb, setSupportsRgb] = useState(true);
-  const [note, setLocal] = useState(null);
+  const [err, setErr] = useState(null);
+  const cache = useRef(new Map());
 
-  const load = useCallback(async () => {
+  const loadList = useCallback(async () => {
     if (!live) {
-      const list = DEMO.map((d, i) => demoEvent(d.name, i));
-      setEvents(list);
-      setSel((s) => s ?? list[3].name);   // land on a Bluetooth profile
+      cache.current = new Map(DEMO_NAMES.map(([n], i) => [n, demoEvent(n, i)]));
+      setList(DEMO_NAMES.map(([name, label]) => ({ name, label })));
       return;
     }
     setBusy(true);
     try {
+      const listing = await device.send("argb list");
+      if (unsupported(listing)) {
+        onNote("Effects are not available on this firmware.");
+        setList([]);
+        return;
+      }
+      cache.current = new Map();
+      setList(parseList(listing));
       const support = await device.send("board rgb");
       setSupportsRgb(support.toLowerCase().includes("yes"));
-
-      const listing = await device.send("argb list");
-      if (unsupported(listing)) { onNote("Effects are not available on this firmware."); setEvents([]); return; }
-
-      const names = parseList(listing);
-      const out = [];
-      for (const { name } of names) {
-        try {
-          out.push(parseEvent(await device.send(`argb evt ${name} show`), name));
-        } catch { /* one unreadable event should not sink the list */ }
-      }
-      setEvents(out);
-      setSel((s) => (s && out.some((e) => e.name === s) ? s : out[0]?.name ?? null));
-    } catch (err) {
-      onNote(err.message);
+    } catch (e) {
+      onNote(e.message);
     } finally {
       setBusy(false);
     }
   }, [live, onNote]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadList(); }, [loadList]);
 
+  const inCat = list.filter((e) => categoryOf(e.name) === cat);
+
+  // Keep the selection inside the visible category.
   useEffect(() => {
-    const found = events.find((e) => e.name === sel);
-    setDraft(found ? { ...found, colors: found.colors.map((c) => ({ ...c })) } : null);
-    setLocal(null);
-  }, [sel, events]);
+    if (!inCat.length) return;
+    if (!inCat.some((e) => e.name === sel)) setSel(inCat[0].name);
+  }, [cat, list]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch the chosen event's detail once, then serve it from the cache.
+  useEffect(() => {
+    if (!sel) { setDraft(null); return; }
+    let stale = false;
+    const cached = cache.current.get(sel);
+    if (cached) { setDraft(clone(cached)); setErr(null); return; }
+    if (!live) return;
+
+    setLoadingEvent(true);
+    device.send(`argb evt ${sel} show`)
+      .then((out) => {
+        if (stale) return;
+        const parsed = parseEvent(out, sel);
+        cache.current.set(sel, parsed);
+        setDraft(clone(parsed));
+        setErr(null);
+      })
+      .catch((e) => !stale && onNote(e.message))
+      .finally(() => !stale && setLoadingEvent(false));
+
+    return () => { stale = true; };
+  }, [sel, live, onNote]);
 
   const patch = (p) => setDraft((d) => ({ ...d, ...p }));
 
   const save = async () => {
-    const err = validateEvent(draft);
-    if (err) { setLocal(err); return; }
+    const bad = validateEvent(draft);
+    if (bad) { setErr(bad); return; }
     const n = draft.name;
     const cmds = [`argb evt ${n} anim ${draft.anim}`];
 
@@ -114,26 +151,20 @@ export default function Effects({ live, onNote }) {
     if (draft.feedback.length) cmds.push(`argb evt ${n} feedback ${draft.feedback.join(" ")}`);
 
     if (!live) {
+      cache.current.set(n, clone(draft));
       onNote(`Demo mode — ${cmds.length} commands would be sent.`);
-      setEvents((es) => es.map((e) => (e.name === n ? draft : e)));
       return;
     }
     setBusy(true);
     try {
       for (const c of cmds) await device.send(c);
-      setEvents((es) => es.map((e) => (e.name === n ? draft : e)));
-      onNote(`Saved “${draft.label ?? n}”.`);
-    } catch (err2) {
-      onNote(err2.message);
+      cache.current.set(n, clone(draft));
+      onNote(`Saved “${labelFor(list, n)}”.`);
+    } catch (e) {
+      onNote(e.message);
     } finally {
       setBusy(false);
     }
-  };
-
-  const preview = async () => {
-    if (!live) { onNote(`Demo mode — would send: argb evt ${draft.name} show`); return; }
-    try { await device.send(`argb evt ${draft.name} show`); onNote("Triggered on the device."); }
-    catch (err) { onNote(err.message); }
   };
 
   const override = async () => {
@@ -141,15 +172,15 @@ export default function Effects({ live, onNote }) {
       await device.send("board rgb override");
       setSupportsRgb(true);
       onNote("RGB override applied. Restart the board for it to take effect.");
-    } catch (err) { onNote(err.message); }
+    } catch (e) { onNote(e.message); }
   };
 
-  if (!events.length) {
+  if (!list.length) {
     return (
       <>
         <p className="panel__blurb">Colour and vibration for each device event.</p>
         <p className="empty">{busy ? "Reading effects…" : "No effects reported by this board."}</p>
-        <button className="btn" onClick={load} disabled={busy}>Refresh</button>
+        <button className="btn" onClick={loadList} disabled={busy}>Refresh</button>
       </>
     );
   }
@@ -159,8 +190,7 @@ export default function Effects({ live, onNote }) {
   return (
     <>
       <p className="panel__blurb">
-        Pick an event, then give it a colour. Bluetooth profiles are in here, so each
-        one can light up differently.
+        Pick an event, then give it a colour. Each Bluetooth profile can light up differently.
       </p>
 
       {live && !supportsRgb && (
@@ -170,16 +200,36 @@ export default function Effects({ live, onNote }) {
         </div>
       )}
 
-      <label className="ctl__label" htmlFor="evt">Event</label>
-      <select id="evt" className="search" value={sel ?? ""} onChange={(e) => setSel(e.target.value)}>
-        {events.map((e) => (
-          <option key={e.name} value={e.name}>
-            {e.label ? `${e.label} — ${e.name}` : e.name}
-          </option>
-        ))}
-      </select>
+      <div className="row row--wrap" role="tablist" aria-label="Event category">
+        {CATEGORIES.map((c) => {
+          const n = list.filter((e) => categoryOf(e.name) === c.id).length;
+          if (!n) return null;
+          return (
+            <button
+              key={c.id}
+              role="tab"
+              aria-selected={cat === c.id}
+              className={"pill" + (cat === c.id ? " is-active" : "")}
+              onClick={() => setCat(c.id)}
+            >
+              {c.label} <em>{n}</em>
+            </button>
+          );
+        })}
+      </div>
 
-      {draft && (
+      <div className="ctl">
+        <label className="ctl__label" htmlFor="evt">Event</label>
+        <select id="evt" className="search" value={sel ?? ""} onChange={(e) => setSel(e.target.value)}>
+          {inCat.map((e) => (
+            <option key={e.name} value={e.name}>{display(e)}</option>
+          ))}
+        </select>
+      </div>
+
+      {loadingEvent && <p className="empty">Reading this event…</p>}
+
+      {draft && !loadingEvent && (
         <>
           <div className="swatches">
             {draft.colors.map((c, i) => (
@@ -188,10 +238,9 @@ export default function Effects({ live, onNote }) {
                   type="color"
                   aria-label={`Colour ${i + 1}`}
                   value={hex(c)}
-                  onChange={(e) => {
-                    const next = draft.colors.map((x, k) => (k === i ? rgb(e.target.value) : x));
-                    patch({ colors: next });
-                  }}
+                  onChange={(e) => patch({
+                    colors: draft.colors.map((x, k) => (k === i ? rgb(e.target.value) : x)),
+                  })}
                 />
                 <span>{hex(c)}</span>
               </div>
@@ -217,12 +266,7 @@ export default function Effects({ live, onNote }) {
 
           <div className="ctl">
             <label className="ctl__label" htmlFor="anim">Animation</label>
-            <select
-              id="anim"
-              className="search"
-              value={draft.anim}
-              onChange={(e) => patch({ anim: e.target.value })}
-            >
+            <select id="anim" className="search" value={draft.anim} onChange={(e) => patch({ anim: e.target.value })}>
               {allowed.map((a) => <option key={a} value={a}>{ANIMS[a]}</option>)}
             </select>
             {allowed.length === 1 && (
@@ -263,18 +307,26 @@ export default function Effects({ live, onNote }) {
             <p className="ctl__hint">Space-separated durations in ms. Leave empty for none.</p>
           </div>
 
-          {note && <p className="warn warn--inline">{note}</p>}
+          {err && <p className="warn warn--inline">{err}</p>}
 
           <div className="row row--wrap">
             <button className="btn btn--primary" onClick={save} disabled={busy}>Save event</button>
-            <button className="btn" onClick={preview} disabled={busy}>Show on device</button>
-            <button className="btn" onClick={load} disabled={busy}>Reload</button>
+            <button className="btn" onClick={loadList} disabled={busy}>Reload all</button>
           </div>
         </>
       )}
     </>
   );
 }
+
+const clone = (e) => ({ ...e, colors: e.colors.map((c) => ({ ...c })) });
+
+const display = (e) => (e.label ? `${e.label} — ${e.name}` : e.name);
+
+const labelFor = (list, name) => {
+  const e = list.find((x) => x.name === name);
+  return e?.label ?? name;
+};
 
 function NumRow({ label, value, unit, onChange }) {
   return (

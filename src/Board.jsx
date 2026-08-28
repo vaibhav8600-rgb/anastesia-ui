@@ -214,8 +214,9 @@ export function Board({ live, onNote, rtcfg }) {
         version: unsupported(version) ? null : version.trim(),
         status: unsupported(status) ? null : status.trim(),
       });
-      const bst = await device.send("rtcfg get bst/default");
-      setBistable(unsupported(bst) ? null : Number(bst.match(/(-?\d+)/)?.[1] ?? 0));
+      // `rtcfg get` output varies; the listing has a format we parse and test.
+      const all = parseRtcfg(await device.send("rtcfg list"));
+      setBistable("bst/default" in all ? all["bst/default"] : null);
     } catch (err) {
       onNote(err.message);
     } finally {
@@ -235,25 +236,64 @@ export function Board({ live, onNote, rtcfg }) {
     } catch (err) { onNote(err.message); } finally { setBusy(false); }
   };
 
-  const exportJson = () => {
-    const blob = JSON.stringify({ exported: new Date().toISOString(), rtcfg }, null, 2);
-    setJson(blob);
-    onNote("Settings written into the box below.");
+  /** Read the device fresh; the prop is a snapshot from connection time. */
+  const settingsBlob = async () => {
+    let current = rtcfg;
+    if (live) {
+      try { current = parseRtcfg(await device.send("rtcfg list")); }
+      catch { /* fall back to the snapshot rather than exporting nothing */ }
+    }
+    return JSON.stringify({
+      app: "anastesia-ui",
+      exported: new Date().toISOString(),
+      firmware: info.version,
+      rtcfg: current,
+    }, null, 2);
   };
 
-  const importJson = async () => {
+  const download = async () => {
+    const blob = new Blob([await settingsBlob()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `anastesia-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onNote("Settings file downloaded.");
+  };
+
+  const openFile = async (file) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      JSON.parse(text);            // fail here rather than halfway through applying
+      setJson(text);
+      onNote(`Loaded ${file.name}. Review it, then Apply.`);
+    } catch {
+      onNote(`${file.name} is not valid JSON.`);
+    }
+  };
+
+  const apply = async () => {
     let parsed;
     try { parsed = JSON.parse(json); } catch { onNote("That is not valid JSON."); return; }
-    const entries = Object.entries(parsed.rtcfg ?? parsed);
+    const entries = Object.entries(parsed.rtcfg ?? parsed)
+      .filter(([k, v]) => typeof v === "number" && /^[a-z0-9_]+(\/[a-z0-9_]+)+$/i.test(k));
     if (!entries.length) { onNote("No settings found in that JSON."); return; }
     if (!live) { onNote(`Demo mode — would write ${entries.length} settings.`); return; }
     setBusy(true);
+    let done = 0;
     try {
       for (const [k, v] of entries) {
-        if (typeof v === "number") await device.send(`rtcfg set ${k} ${Math.round(v)}`);
+        await device.send(`rtcfg set ${k} ${Math.round(v)}`);
+        done++;
       }
-      onNote(`Applied ${entries.length} settings.`);
-    } catch (err) { onNote(err.message); } finally { setBusy(false); }
+      onNote(`Applied ${done} settings. Reconnect to see them in the panels.`);
+    } catch (err) {
+      onNote(`Stopped after ${done} of ${entries.length}: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -311,20 +351,36 @@ export function Board({ live, onNote, rtcfg }) {
         </>
       )}
 
-      <h3 className="sec">Back up your settings</h3>
+      <h3 className="sec">Import / export settings</h3>
+      <div className="row row--wrap">
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={async () => { setJson(await settingsBlob()); onNote("Settings written into the box below."); }}
+        >
+          Read current
+        </button>
+        <button className="btn" onClick={download}>Download .json</button>
+        <label className="btn btn--file">
+          Upload .json
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => { openFile(e.target.files?.[0]); e.target.value = ""; }}
+          />
+        </label>
+        <button className="btn btn--primary" onClick={apply} disabled={!json.trim() || busy}>
+          Apply to device
+        </button>
+      </div>
       <textarea
         className="search"
         rows={5}
         value={json}
         onChange={(e) => setJson(e.target.value)}
-        placeholder="Export writes your settings here. Paste settings in to restore them."
+        placeholder="Read current, or upload a file, to see settings here."
         aria-label="Settings JSON"
       />
-      <div className="row row--wrap">
-        <button className="btn" onClick={exportJson}>Export</button>
-        <button className="btn" onClick={importJson} disabled={!json.trim() || busy}>Apply</button>
-        <button className="btn" onClick={load} disabled={busy}>Refresh</button>
-      </div>
       <p className="ctl__hint">
         This covers the runtime parameters. Full storage-partition backup over USB is not built in.
       </p>

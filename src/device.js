@@ -27,6 +27,7 @@ class Device {
     this.shell = null;     // BLE characteristic
     this.buffer = "";
     this.tail = Promise.resolve();  // command queue
+    this.pending = 0;               // lets background polls yield to real work
     this.lastCmdAt = 0;
     this.listeners = new Set();
   }
@@ -124,7 +125,10 @@ class Device {
     };
 
     // Chain onto the queue; a failed command must not poison later ones.
+    this.pending++;
+    const done = () => { this.pending--; };
     const result = this.tail.then(run, run);
+    result.then(done, done);
     this.tail = result.catch(() => {});
     return result;
   }
