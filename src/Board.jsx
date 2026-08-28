@@ -68,31 +68,28 @@ export function Surface({ live, onNote, active = true }) {
 
   return (
     <div className="surface">
-      <div className="surface__head">
-        <h3 className="sec">Surface quality</h3>
-        <span className="surface__live" aria-hidden="true">live</span>
-      </div>
+      <h3 className="surface__title">Surface quality</h3>
+      <p className="surface__sub">Live sensor surface tracking quality</p>
       {sensors.length > 0 ? (
-        <ul className="meters">
+        <ul className="gauges">
           {sensors.map((s) => (
             <li key={s.sensor}>
-              <span className="meters__label">Sensor {s.sensor}</span>
-              <span className="meters__bar">
-                <span
-                  className={"meters__fill meters__fill--" + qualityBand(s.quality, s.max)}
+              <div className="gauges__head">
+                <span className="gauges__name">Sensor #{s.sensor}</span>
+                <span className="gauges__val">{s.quality}/{s.max}</span>
+              </div>
+              <div className="gauges__track">
+                <div
+                  className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
                   style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
                 />
-              </span>
-              <span className="meters__val">{s.quality}/{s.max}</span>
+              </div>
             </li>
           ))}
         </ul>
       ) : (
         <p className="empty">Reading…</p>
       )}
-      <p className="ctl__hint">
-        How well each sensor sees the ball, on the scale that sensor reports. Roll the ball to watch it change.
-      </p>
     </div>
   );
 }

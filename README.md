@@ -93,6 +93,17 @@ what the setting is like:
 Sensor surface quality reads continuously while the Sensor(s) tab is open, so
 you can roll the ball and watch it move; between reads the last value stays.
 
+## Live vs demo
+
+`live` means "a device is attached", not "no command is in flight". Deriving it
+from a busy flag meant every save briefly flipped the whole UI into demo mode —
+panels swapped in sample data and the status bar showed a placeholder battery
+level on a genuinely connected board. Busy-ness is a separate `busy` flag that
+only disables controls.
+
+Demo mode never invents a reading: the battery gauge shows `--` and no firmware
+version, rather than a plausible-looking number.
+
 ## Header status
 
 The bar shows which endpoint is carrying the pointer (USB / Bluetooth /

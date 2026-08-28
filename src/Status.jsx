@@ -15,9 +15,11 @@ export default function Status({ live, onFirmware }) {
 
   useEffect(() => {
     if (!live) {
-      setInfo({ version: "1.4.4", battery: 95 });
-      setOutput("BLE");
-      onFirmware?.("1.4.4");
+      // Demo mode has no device to ask. Show the gauge empty rather than
+      // inventing a number that looks like a real reading.
+      setInfo({ version: null, battery: undefined });
+      setOutput(null);
+      onFirmware?.(null);
       return;
     }
     let stop = false;

@@ -181,7 +181,12 @@ export default function App() {
     return <Welcome status={status} note={note} onConnect={connect} onDemo={startDemo} />;
   }
 
-  const live = status === "ready";
+  // "is there a device" is not the same question as "is a command in flight".
+  // Deriving it from status === "ready" meant every save flipped this false for
+  // its duration, and each panel fell back to its demo data mid-save — the
+  // status bar included, which is how a placeholder 95% reached a live board.
+  const live = status !== "demo";
+  const busy = status === "busy";
   const open = (id) => { setTab(id); setVisited((v) => new Set(v).add(id)); };
 
   return (
@@ -195,7 +200,7 @@ export default function App() {
         <div className="bar__spacer" />
         <Status live={live} onFirmware={setFirmware} />
         {dirty.size > 0 && <button className="btn btn--ghost" onClick={revert}>Revert</button>}
-        <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || status === "busy"}>
+        <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || busy}>
           {dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
         </button>
         <button className="btn btn--ghost" onClick={disconnect}>{live ? "Disconnect" : "Exit"}</button>
@@ -247,7 +252,7 @@ export default function App() {
                     section={sec}
                     state={state}
                     values={values}
-                    busy={status === "busy"}
+                    busy={busy}
                     onChange={change}
                   />
                 ))}
@@ -258,7 +263,7 @@ export default function App() {
                 section={{ id: "lights", label: "Lighting", blurb: "Global brightness and battery warning levels.", controls: lightControls }}
                 state={state}
                 values={values}
-                busy={status === "busy"}
+                busy={busy}
                 onChange={change}
               />
               <h3 className="sec">Per-event colour</h3>

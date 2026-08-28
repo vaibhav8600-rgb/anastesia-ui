@@ -952,30 +952,52 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .grid2 .ctl--toggle .ctl__hint { display: none; }
 .grid2 .ctl--toggle .ctl__label { font-weight: 400; font-size: 0.87rem; }
 
-/* ---------- live surface strip ---------- */
+/* ---------- live surface quality ---------- */
 
 .surface {
   display: grid;
-  gap: 0.55rem;
-  padding: 0.85rem;
+  gap: 0.15rem;
+  padding: 1.15rem 1.25rem 1.35rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg);
 }
-.surface__head { display: flex; align-items: center; gap: 0.5rem; }
-.surface__head .sec { margin: 0; }
-.surface__live {
-  padding: 0.05rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 16%, transparent);
+
+.surface__title { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; }
+.surface__sub { margin: 0 0 0.9rem; color: var(--muted); font-size: 0.9rem; }
+
+.gauges { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+
+.gauges__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
 }
-.surface .meters__fill { transition: width 220ms ease; }
-.surface .ctl__hint { margin: 0; }
+.gauges__name { font-weight: 650; font-size: 0.95rem; }
+.gauges__val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gauges__track {
+  height: 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 13%, transparent);
+  overflow: hidden;
+}
+.gauges__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 220ms ease, background-color 220ms ease;
+}
+/* Bright, saturated green when tracking is good — the reading you want to see. */
+.gauges__fill--high { background: #22e06a; }
+.gauges__fill--mid { background: var(--warn); }
+.gauges__fill--low { background: var(--danger); }
 
 /* ---------- buttons: one scale everywhere ----------
    Buttons and pills previously disagreed on height (44 vs 38) and on padding,
