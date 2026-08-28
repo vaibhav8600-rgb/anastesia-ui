@@ -12,6 +12,15 @@ const BLE_CHUNK = 96;      // MTU-safe write size
 const CMD_GAP_MS = 200;    // shell needs breathing room between commands
 const CMD_TIMEOUT_MS = 10000;
 
+// The shell is not ready the instant the transport opens. The previous UI
+// waited, then probed with a junk command until the shell answered, and only
+// then sent anything real — without that, the first command (rtcfg list) goes
+// out into the void and times out. These are its numbers.
+const SETTLE_MS = { usb: 2000, ble: 1500 };
+const PROBE_TIMEOUT_MS = 3000;
+const PROBE_GAP_MS = 500;
+const HANDSHAKE_MS = 25000;
+
 const stripAnsi = (s) => s.replace(/\x1b\[[\d;]*[A-Za-z]/g, "");
 
 export const supported = {
@@ -45,6 +54,7 @@ class Device {
     this.port = port;
     this.kind = "usb";
     this.readLoop();
+    await this.handshake();
     return this;
   }
 
@@ -62,6 +72,13 @@ class Device {
     await this.shell.startNotifications();
     this.bleDevice = dev;
     this.kind = "ble";
+    // A dropped GATT link leaves the app thinking it is still connected.
+    dev.addEventListener("gattserverdisconnected", () => {
+      this.shell = this.bleDevice = null;
+      this.kind = null;
+      for (const fn of this.listeners) fn({ dir: "recv", text: "Bluetooth disconnected", at: Date.now() });
+    });
+    await this.handshake();
     return this;
   }
 
@@ -89,8 +106,30 @@ class Device {
     this.kind = null;
   }
 
+  /**
+   * Wait for the shell, then prove it is listening before anything real is
+   * sent. `__init` is not a command, so a shell that is up answers
+   * "__init: command not found" — which is exactly the reply we want.
+   */
+  async handshake() {
+    await sleep(SETTLE_MS[this.kind] ?? 1500);
+    const deadline = Date.now() + HANDSHAKE_MS;
+    for (;;) {
+      try {
+        const out = await this.send("__init", { timeout: PROBE_TIMEOUT_MS });
+        if (/command not found/i.test(out)) break;
+      } catch {
+        /* no answer yet; the device is still coming up */
+      }
+      if (Date.now() > deadline) throw new Error("The device did not respond. Try reconnecting.");
+      await sleep(PROBE_GAP_MS);
+    }
+    // Echo pollutes every reply we parse, so turn it off once we are talking.
+    try { await this.send("shell echo off"); } catch { /* older firmware lacks it */ }
+  }
+
   /** Send one shell command, resolve with its (cleaned) output. Serialised. */
-  send(cmd) {
+  send(cmd, { timeout = CMD_TIMEOUT_MS } = {}) {
     const run = async () => {
       if (!this.connected) throw new Error("Not connected");
       const wait = CMD_GAP_MS - (Date.now() - this.lastCmdAt);
@@ -118,7 +157,7 @@ class Device {
         }
       }
 
-      const out = await this.awaitPrompt(cmd);
+      const out = await this.awaitPrompt(cmd, timeout);
       this.lastCmdAt = Date.now();
       this.log("recv", out);
       return out;
@@ -133,8 +172,8 @@ class Device {
     return result;
   }
 
-  async awaitPrompt(cmd) {
-    const deadline = Date.now() + CMD_TIMEOUT_MS;
+  async awaitPrompt(cmd, timeout = CMD_TIMEOUT_MS) {
+    const deadline = Date.now() + timeout;
     for (;;) {
       const clean = stripAnsi(this.buffer);
       if (PROMPTS.some((p) => clean.includes(p))) return tidy(clean, cmd);

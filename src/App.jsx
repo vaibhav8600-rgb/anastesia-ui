@@ -103,7 +103,7 @@ export default function App() {
 
   const connect = async (kind) => {
     setStatus("busy");
-    setNote(kind === "usb" ? "Waiting for you to pick a port…" : "Scanning for your trackball…");
+    setNote(kind === "usb" ? "Pick your device, then wait for its shell…" : "Scanning, then waiting for the shell…");
     try {
       await (kind === "usb" ? device.connectUSB() : device.connectBLE());
       setNote("Reading settings…");

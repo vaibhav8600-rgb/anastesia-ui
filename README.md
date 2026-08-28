@@ -105,6 +105,14 @@ You can handle it the way the standalone model does:
 - **Colours** recolours the body, ball, wheels and each of the eight keys. The
   choice is remembered in `localStorage`.
 - Keyboard: arrows roll, shift with arrows turns, `+`/`-` zoom.
+- A **pointer output** pad, bottom left, shows where the pointer would travel
+  for the roll you just made at your current sensitivity, plus ball speed in
+  rpm. A spun wheel registers on it as scroll. Desktop only — the phone
+  viewport is ~32dvh and the model needs that frame.
+
+Per-frame values (the pad's dot and rpm) are written straight to the DOM in the
+render loop. Routing them through React state would re-render the settings
+panel on every frame.
 
 The camera fits the model's real bounding-box corners at the current orbit
 angle, so it fills a phone strip and a desktop panel equally well.
@@ -126,8 +134,29 @@ what the setting is like:
   there an exact value matters more than a sweep.
 - Anything with a 0-1 range is a **switch**, decided from the device's own range.
 
+Advanced controls additionally name a sub-group (`adv:`), so a run of twenty
+rows renders as a handful of short titled ones rather than one flat list.
+
 Sensor surface quality reads continuously while the Sensor(s) tab is open, so
 you can roll the ball and watch it move; between reads the last value stays.
+
+## Layout and alignment
+
+The panel takes a straight 33% share of the stage (`minmax(360px, 33%)`). It
+was capped at 27rem, which read as 65/35 at 1280 but degraded to 77/23 by 1920
+and worse on anything wider; a share holds at 31-32% from 1280 through 2560.
+
+Two rules keep controls on a grid rather than merely near one:
+
+- one `--field-h` for everything you type into or pick from, so a number field,
+  a select and a switch share a row rhythm;
+- a reserved `--unit-slot` after every number field, whether or not it has a
+  unit — and the same gutter on toggles, since otherwise a switch sits a slot
+  further right than every box beside it.
+
+Widths that matter are asked of the container, not the viewport: the advanced
+grid goes two-column via `@container panel (min-width: 400px)`, because the
+panel is a fixed side column whose width has nothing to do with the window's.
 
 ## Nothing is silently hidden
 
@@ -175,6 +204,21 @@ Two things dominated first-paint, and both are fixed:
 
 The event picker is grouped (Bluetooth / Layers / Battery / System) so no list
 is more than a handful of entries.
+
+## Connecting
+
+The shell is not ready the moment the transport opens, and sending to it too
+early gets no reply at all — the symptom is `Timed out: rtcfg list` on the very
+first read. So `device.js` runs the previous UI's handshake on connect:
+
+1. settle — 2000 ms on USB, 1500 ms on BLE;
+2. probe — send `__init` until the reply contains `command not found`, which is
+   how a live shell answers a command it does not have. Retries every 500 ms up
+   to 25 s, each probe capped at 3 s so a dead link fails fast;
+3. `shell echo off`, so replies are not polluted by the echoed command.
+
+Only then does `readAll()` run. A dropped BLE link is caught via
+`gattserverdisconnected` rather than leaving the app believing it is connected.
 
 ## Talking to the device
 

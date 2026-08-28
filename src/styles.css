@@ -14,6 +14,9 @@
   --ok: #63e6a0;
   --radius: 8px;
   --radius-sm: 4px;
+  /* Reserved slot after a number field, so a unit never shifts the box. */
+  --unit-slot: 1.6rem;
+  --unit-gap: 0.35rem;
   --gap: clamp(0.75rem, 2.2vw, 1.25rem);
   --pad: clamp(1rem, 3.5vw, 2rem);
 
@@ -528,7 +531,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .ctl--inline { grid-template-columns: 1fr auto; align-items: center; }
 .ctl--inline .ctl__label { grid-column: 1; }
 
-.numwrap { display: inline-flex; align-items: center; gap: 0.35rem; flex: none; white-space: nowrap; }
+.numwrap { display: inline-flex; align-items: center; gap: var(--unit-gap); flex: none; white-space: nowrap; }
 .numwrap input {
   width: 5.5rem;
   padding: 0.3rem 0.5rem;
@@ -1264,7 +1267,7 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .numwrap { justify-content: flex-end; }
 .numwrap .unit {
   display: inline-block;
-  min-width: 1.6rem;
+  min-width: var(--unit-slot);
   text-align: left;
 }
 .ctl--compact .numwrap input,
@@ -1347,4 +1350,12 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 @media (max-width: 620px) {
   .pad { display: none; }
+}
+
+/* A toggle has no unit after it, so in a grid of number fields it sat a slot
+   further right than every box beside it. Give it the same reserved gutter so
+   the switch and the input boxes share an edge. */
+.grid2 .ctl--toggle .switch,
+.ctl--compact .switch {
+  margin-right: calc(var(--unit-slot) + var(--unit-gap));
 }
