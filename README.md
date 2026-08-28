@@ -250,6 +250,18 @@ a write that threw on every attempt looked identical to a silent device. They
 are logged to the Logs tab now and the final message carries the last real
 error, not just "did not respond".
 
+**If Bluetooth connects but nothing ever comes back**, the link is almost
+certainly unencrypted. The shell characteristic offers only
+`writeWithoutResponse`, which is unacknowledged — a write "succeeding" means
+Chrome queued it, not that the device took it. An unbonded peer silently drops
+those writes and never enables the CCCD, so notifications never fire either.
+Both symptoms, one cause.
+
+Bluetooth permission and bonding are **per-origin**. A build served from
+`localhost:5173` starts with neither, even when the same device works from a
+page opened another way. Pair the device in the system Bluetooth settings, and
+open `dist/index.html` the same way you open the app that does connect.
+
 **A failed connect tears the transport down.** `connectUSB`/`connectBLE` call
 `disconnect()` first and again if the handshake fails. Without that, a failed
 BLE attempt left `this.shell` set, and since `send()` chose its transport by

@@ -290,9 +290,14 @@ class Device {
           // which is exactly this signature.
           if (this.kind === "ble") {
             throw new Error(
-              "Connected, but the device never sent anything back. If another " +
-              "page or app is still connected to it over Bluetooth, close that " +
-              "first — the shell only talks to one client at a time.",
+              "Connected, but the device never sent a single byte. Writes to " +
+              "this characteristic are unacknowledged, so this is what an " +
+              "unencrypted link looks like: the device quietly drops them and " +
+              "never enables notifications. Pair the trackball in your system " +
+              "Bluetooth settings, and open this app from the same place you " +
+              "open the one that does connect — Bluetooth permission and " +
+              "bonding are per-origin, so a page served from somewhere else " +
+              "starts with neither.",
             );
           }
         }
