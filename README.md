@@ -75,8 +75,14 @@ names drift too (`p2sm/twist_dy_mag_mul`, not `p2sm/dy_mag_mul`). Controls whose
 key the firmware does not report are hidden, so both spellings can be listed
 and only the real one appears.
 
-Sensor surface quality is likewise out of whatever the sensor reports — 361 on
-one part, 1000 on another — so the good/warning/bad bands scale with it.
+Sensor surface quality is out of whatever the sensor reports — 361 on one
+part, 1000 on another — so the good/warning/bad bands scale with it. One
+exception is a firmware quirk carried over from the previous UI: a reported
+maximum of **728 means 1000**, so it is substituted at parse time. The raw
+figure is kept as `reportedMax` and shown in the gauge's tooltip.
+
+Battery is read verbatim from `board status` with no scaling, exactly as the
+previous UI did — whatever percentage appears is the number the board gave.
 
 ## Choosing a control's shape
 

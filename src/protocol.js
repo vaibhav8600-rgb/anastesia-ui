@@ -218,7 +218,15 @@ export function parseAssignments(text) {
   return out;
 }
 
-/** `sensor surface` -> [{ sensor, quality, max }] */
+/**
+ * The firmware reports a maximum of 728 where the true scale is 1000. The
+ * previous UI carried the same substitution (`max === 728 ? 1e3 : max`); it is
+ * a hardware quirk, not a display preference, so keep it here where the value
+ * is parsed. `reportedMax` preserves what the board actually said.
+ */
+export const SURFACE_MAX_FIX = { 728: 1000 };
+
+/** `sensor surface` -> [{ sensor, quality, max, reportedMax }] */
 export function parseSurface(text) {
   const out = [];
   // Seen as "= 664/1000"; also accept "= 664 / 1000", "(max 1000)" and a bare
@@ -226,8 +234,14 @@ export function parseSurface(text) {
   const re = /Sensor\s*#?(\d+)\s*:\s*surface\s*quality\s*[:=]\s*(\d+)\s*(?:\/\s*(\d+)|\(\s*max\s*[:=]?\s*(\d+)\s*\))?/gi;
   let m;
   while ((m = re.exec(text)) !== null) {
-    const max = m[3] ?? m[4];
-    out.push({ sensor: +m[1], quality: +m[2], max: max === undefined ? null : +max });
+    const reported = m[3] ?? m[4];
+    const reportedMax = reported === undefined ? null : +reported;
+    out.push({
+      sensor: +m[1],
+      quality: +m[2],
+      max: reportedMax === null ? null : (SURFACE_MAX_FIX[reportedMax] ?? reportedMax),
+      reportedMax,
+    });
   }
   return out;
 }

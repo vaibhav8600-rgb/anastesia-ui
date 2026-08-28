@@ -78,7 +78,14 @@ export function Surface({ live, onNote, active = true }) {
       {sensors.length > 0 ? (
         <ul className="gauges">
           {sensors.map((s) => (
-            <li key={s.sensor} title={`Reported by the board as ${s.quality}${s.max ? "/" + s.max : ""}`}>
+            <li
+              key={s.sensor}
+              title={
+                s.reportedMax && s.reportedMax !== s.max
+                  ? `Board reports ${s.quality}/${s.reportedMax}; its true scale is ${s.max}.`
+                  : `Reported by the board as ${s.quality}${s.max ? "/" + s.max : ""}`
+              }
+            >
               <div className="gauges__head">
                 <span className="gauges__name">Sensor #{s.sensor}</span>
                 <span className="gauges__val">{s.max ? `${s.quality}/${s.max}` : s.quality}</span>
