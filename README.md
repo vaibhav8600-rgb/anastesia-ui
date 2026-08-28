@@ -93,6 +93,20 @@ what the setting is like:
 Sensor surface quality reads continuously while the Sensor(s) tab is open, so
 you can roll the ball and watch it move; between reads the last value stays.
 
+## Nothing is silently hidden
+
+A curated control is hidden when the firmware does not report its key. On its
+own that means a *renamed* key just disappears — which is how the brightness
+control and the `twist_dy_mag` pair went missing on real boards. Each section
+therefore claims key prefixes (`argb/`, `p2sm/`, `ec11/`, ...) and any key
+under them that no curated control covers is added automatically, auto-labelled
+from the key name. A section shows everything the firmware has under it.
+
+Readings are auditable rather than asserted: the battery gauge's tooltip
+carries the raw `board status` reply it was parsed from, and if
+`sensor surface` answers in a wording the parser does not recognise, the card
+prints the raw text instead of rendering an empty gauge.
+
 ## Live vs demo
 
 `live` means "a device is attached", not "no command is in flight". Deriving it

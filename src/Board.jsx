@@ -28,6 +28,7 @@ export function qualityBand(quality, max) {
 export function Surface({ live, onNote, active = true }) {
   const [sensors, setSensors] = useState([]);
   const [error, setError] = useState(null);
+  const [raw, setRaw] = useState(null);
 
   // Reads continuously while the tab is open so you can watch the numbers move
   // as you roll the ball. Between reads the last value simply stays on screen.
@@ -55,10 +56,14 @@ export function Surface({ live, onNote, active = true }) {
         const out = await device.send("sensor surface");
         if (stop) return;
         if (unsupported(out)) { setError("This board does not report surface quality."); return; }
-        setSensors(parseSurface(out));
+        const parsed = parseSurface(out);
+        // Show what the board actually said rather than an empty card when the
+        // wording is not one we recognise.
+        setRaw(parsed.length ? null : out.trim());
+        setSensors(parsed);
         setError(null);
       } catch { /* a missed sample just leaves the last one showing */ }
-      if (!stop) timer = setTimeout(tick, 600);
+      if (!stop) timer = setTimeout(tick, 1000);
     };
     tick();
     return () => { stop = true; clearTimeout(timer); };
@@ -73,20 +78,24 @@ export function Surface({ live, onNote, active = true }) {
       {sensors.length > 0 ? (
         <ul className="gauges">
           {sensors.map((s) => (
-            <li key={s.sensor}>
+            <li key={s.sensor} title={`Reported by the board as ${s.quality}${s.max ? "/" + s.max : ""}`}>
               <div className="gauges__head">
                 <span className="gauges__name">Sensor #{s.sensor}</span>
-                <span className="gauges__val">{s.quality}/{s.max}</span>
+                <span className="gauges__val">{s.max ? `${s.quality}/${s.max}` : s.quality}</span>
               </div>
-              <div className="gauges__track">
-                <div
-                  className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
-                  style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
-                />
-              </div>
+              {s.max != null && (
+                <div className="gauges__track">
+                  <div
+                    className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
+                    style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>
+      ) : raw ? (
+        <pre className="surface__raw">{raw}</pre>
       ) : (
         <p className="empty">Reading…</p>
       )}

@@ -221,9 +221,14 @@ export function parseAssignments(text) {
 /** `sensor surface` -> [{ sensor, quality, max }] */
 export function parseSurface(text) {
   const out = [];
-  const re = /Sensor #(\d+):\s*surface quality\s*=\s*(\d+)\/(\d+)/gi;
+  // Seen as "= 664/1000"; also accept "= 664 / 1000", "(max 1000)" and a bare
+  // value, rather than silently rendering nothing when the wording shifts.
+  const re = /Sensor\s*#?(\d+)\s*:\s*surface\s*quality\s*[:=]\s*(\d+)\s*(?:\/\s*(\d+)|\(\s*max\s*[:=]?\s*(\d+)\s*\))?/gi;
   let m;
-  while ((m = re.exec(text)) !== null) out.push({ sensor: +m[1], quality: +m[2], max: +m[3] });
+  while ((m = re.exec(text)) !== null) {
+    const max = m[3] ?? m[4];
+    out.push({ sensor: +m[1], quality: +m[2], max: max === undefined ? null : +max });
+  }
   return out;
 }
 

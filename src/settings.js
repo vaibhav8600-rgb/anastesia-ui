@@ -110,6 +110,7 @@ export const sensorSections = [
     id: "pointer",
     label: "Pointer",
     blurb: "How the ball moves the cursor.",
+    prefixes: ["accel/", "rp/", "ac/", "rrl/", "ah/", "usb/", "esb/"],
     controls: [
       {
         id: "sens", label: "Sensitivity", kind: "range",
@@ -161,6 +162,7 @@ export const sensorSections = [
     id: "scroll",
     label: "Twist scroll",
     blurb: "Twist the ball on the spot to scroll.",
+    prefixes: ["p2sm/"],
     controls: [
       {
         id: "twist", label: "Twist to scroll", kind: "toggle", drives: "twist",
@@ -208,6 +210,7 @@ export const sensorSections = [
     id: "encoder",
     label: "Rotary encoder",
     blurb: "Pulse handling, if the board has an encoder.",
+    prefixes: ["ec11/"],
     optional: true,
     controls: [
       toggle("ec11/do_comp", "Error correction"),
@@ -218,6 +221,8 @@ export const sensorSections = [
     ],
   },
 ];
+
+export const LIGHT_PREFIXES = ["argb/"];
 
 /** Global lighting, shown above the per-event editor on the Effects tab. */
 export const lightControls = [
@@ -235,6 +240,23 @@ export const lightControls = [
   cfg("argb/bc2", "Critical warning 2", { unit: "%", advanced: true }),
   cfg("argb/bc3", "Critical warning 3", { unit: "%", advanced: true }),
 ];
+
+/**
+ * Any rtcfg key under a section's prefixes that no curated control covers.
+ *
+ * Curated controls are hidden when the firmware does not report their key,
+ * which is right — but on its own it means a renamed key just disappears, and
+ * that is how the brightness control and the twist_dy_mag pair went missing.
+ * Filling the gap from the device's own listing means a section shows
+ * everything the firmware has under it, named or not.
+ */
+export function extraControls(prefixes, rtcfg, covered) {
+  if (!prefixes?.length || !rtcfg) return [];
+  return Object.keys(rtcfg)
+    .filter((k) => prefixes.some((p) => k.startsWith(p)) && !covered.has(k))
+    .sort()
+    .map((k) => cfg(k, autoLabel(k), { advanced: true, hint: RTCFG_HELP[k] ?? k }));
+}
 
 export const allControls = [
   ...sensorSections.flatMap((s) => s.controls),
@@ -303,6 +325,14 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("settings.js")
   console.assert(resolveSpec(find("sens"), ranges).max === 10, "non-rtcfg controls keep their own bounds");
   console.assert(resolveSpec(find("p2sm/fb_dur"), {}).max === 100, "unknown key falls back");
   console.assert(autoLabel("p2sm/twist_dy_mag_mul") === "Twist dy mag mul", "auto label");
+
+  // A renamed key must still surface, rather than silently vanishing.
+  const covered = new Set(lightControls.map((c) => c.key).filter(Boolean));
+  const extras = extraControls(["argb/"], { "argb/brightness": 60, "argb/brt": 60, "p2sm/x": 1 }, covered);
+  console.assert(extras.length === 1, `only the uncovered argb key, got ${extras.length}`);
+  console.assert(extras[0].key === "argb/brightness", "picks the renamed key");
+  console.assert(extras[0].label === "Brightness", "auto-labelled");
+  console.assert(extraControls([], { "argb/x": 1 }, covered).length === 0, "no prefixes, no extras");
 
   console.log(`settings.js self-check OK (${ids.length} controls)`);
 }

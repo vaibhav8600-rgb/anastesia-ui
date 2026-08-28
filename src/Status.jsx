@@ -51,6 +51,8 @@ export default function Status({ live, onFirmware }) {
           : null;
         if (stop) return;
         const parsed = parseBoardStatus(status, version);
+        // Keep the raw reply so the gauge can show exactly what it came from.
+        parsed.raw = status.trim();
         setInfo(parsed);
         onFirmware?.(parsed.version);
       } catch { /* a poll that misses is not worth reporting */ }
@@ -76,7 +78,7 @@ export default function Status({ live, onFirmware }) {
 
       {info.version && <span className="status__ver" title="Firmware version">v{info.version}</span>}
 
-      {info.battery !== null && <Battery level={info.battery} />}
+      {info.battery !== null && <Battery level={info.battery} raw={info.raw} />}
 
       {link && (
         <span className="status__link" title={`Configuring over ${link}`}>{link}</span>
@@ -98,14 +100,19 @@ function Endpoint({ icon, label, on }) {
 }
 
 /** Always drawn: an empty gauge reading "--" beats no gauge while we wait. */
-function Battery({ level }) {
+function Battery({ level, raw }) {
   const known = typeof level === "number";
   const bars = known ? Math.max(0, Math.min(8, Math.round((level / 100) * 8))) : 0;
   const band = !known ? "none" : level <= 15 ? "low" : level <= 30 ? "mid" : "high";
   return (
     <span
       className={"batt batt--" + band}
-      title={known ? `Battery ${level}%` : "Battery level not reported yet"}
+      title={
+        known
+          ? `Battery ${level}% — from "board status":
+${raw ?? ""}`
+          : "Battery level not reported yet"
+      }
     >
       <span className="batt__shell">
         {Array.from({ length: 8 }, (_, i) => (

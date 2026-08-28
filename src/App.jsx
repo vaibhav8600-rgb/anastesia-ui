@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device, supported } from "./device.js";
 import {
-  sensorSections, lightControls, allControls, readAll, resolveSpec,
-  RTCFG_HELP, autoLabel,
+  sensorSections, lightControls, LIGHT_PREFIXES, allControls, readAll,
+  resolveSpec, extraControls, RTCFG_HELP, autoLabel,
 } from "./settings.js";
 import Trackball, { hasWebGL } from "./Trackball.jsx";
 import Control from "./Control.jsx";
@@ -260,7 +260,13 @@ export default function App() {
 
             <Pane active={tab === "effects"} visited={visited.has("effects")}>
               <KnobSection
-                section={{ id: "lights", label: "Lighting", blurb: "Global brightness and battery warning levels.", controls: lightControls }}
+                section={{
+                  id: "lights",
+                  label: "Lighting",
+                  blurb: "Global brightness and battery warning levels.",
+                  controls: lightControls,
+                  prefixes: LIGHT_PREFIXES,
+                }}
                 state={state}
                 values={values}
                 busy={busy}
@@ -298,8 +304,9 @@ function Pane({ active, visited, children }) {
 
 /** A titled run of knobs: dials for the few, sliders next, fields for the tail. */
 function KnobSection({ section, state, values, busy, onChange }) {
-  const shown = section.controls
-    .filter((c) => !state.missing.has(c.id))
+  const curated = section.controls.filter((c) => !state.missing.has(c.id));
+  const covered = new Set(section.controls.map((c) => c.key).filter(Boolean));
+  const shown = [...curated, ...extraControls(section.prefixes, state.rtcfg, covered)]
     .map((c) => resolveSpec(c, state.ranges));
 
   if (!shown.length) return null;

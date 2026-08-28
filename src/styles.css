@@ -1074,3 +1074,15 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 @media (pointer: coarse) {
   .bar .btn { height: 40px; min-height: 40px; }
 }
+
+.surface__raw {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
