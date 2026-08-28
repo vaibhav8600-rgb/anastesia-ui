@@ -1,25 +1,49 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device, supported } from "./device.js";
-import { groups, allControls, readAll } from "./settings.js";
+import { groups, allControls, readAll, RTCFG_HELP } from "./settings.js";
 import Trackball from "./Trackball.jsx";
 import Control from "./Control.jsx";
+import Curves from "./Curves.jsx";
+import Effects from "./Effects.jsx";
+import { Keymap, Board } from "./Board.jsx";
 
-const DEMO_STATE = {
-  rtcfg: {
-    "accel/dz_enable": 1, "accel/dz_thres": 6, "accel/dz_cooldown": 120,
-    "p2sm/frame_sync": 0, "p2sm/twist_thres": 40, "p2sm/twist_deb": 25,
-    "p2sm/ema_alpha": 45, "p2sm/scroll_dis_ptr": 1, "p2sm/feedback_en": 1,
-    "p2sm/fb_dur": 12, "p2sm/fb_thres": 30,
-    "argb/brt": 60, "argb/tick": 30, "argb/bw1": 25, "argb/bc1": 10,
-  },
-  sens: 3.2, plane: 0, sma: 4, rrl: 0,
-  twist: 1, twistSens: 2.5, argb: 1,
-  missing: new Set(),
+const DEMO_RTCFG = {
+  "accel/dz_enable": 1, "accel/dz_thres": 6, "accel/dz_cooldown": 120, "accel/dz_before": 0,
+  "p2sm/frame_sync": 0, "p2sm/steady_thres": 12, "p2sm/steady_cd": 150,
+  "p2sm/twist_thres": 40, "p2sm/twist_deb": 25, "p2sm/twist_ttl": 120,
+  "p2sm/ema_alpha": 45, "p2sm/scroll_dis_ptr": 1, "p2sm/ptr_after_scroll": 200,
+  "p2sm/twist_global_en": 1, "p2sm/dy_mag_mul": 3, "p2sm/dy_mag_div": 2,
+  "p2sm/twist_hyst_en": 1, "p2sm/twist_hyst_thres": 25, "p2sm/twist_hyst_mul": 2, "p2sm/twist_hyst_div": 3,
+  "p2sm/feedback_en": 1, "p2sm/fb_dur": 12, "p2sm/fb_thres": 30,
+  "p2sm/fb_cooldown": 400, "p2sm/fb_max_cont": 1200,
+  "rp/timeout_ms": 4, "ac/history_ttl": 80, "rrl/auto_off_ms": 30000,
+  "ah/timeout_ms": 250, "usb/quar_n": 8, "esb/quar_n": 8,
+  "argb/brt": 60, "argb/tick": 30,
+  "argb/bw1": 25, "argb/bw2": 15, "argb/bw3": 10,
+  "argb/bc1": 8, "argb/bc2": 5, "argb/bc3": 3,
+  "ec11/do_comp": 1, "ec11/comp_half": 1, "ec11/debounce_ms": 3,
+  "ec11/trigger_window": 40, "ec11/rec_depth": 4,
+  "keymap/autoswitch": 1, "bst/default": 0,
 };
 
+const DEMO_STATE = {
+  rtcfg: DEMO_RTCFG,
+  sens: 3.2, plane: 0, sma: 4, rrl: 0,
+  twist: 1, twistSens: 2.5, twistReverse: 0, argb: 1,
+  missing: new Set(),
+  status: "demo",
+};
+
+const EXTRA_TABS = [
+  { id: "curves", label: "Curves" },
+  { id: "effects", label: "Effects" },
+  { id: "keymap", label: "Keymap" },
+  { id: "board", label: "Board" },
+  { id: "expert", label: "Expert" },
+];
+
 export default function App() {
-  // ?demo opens the cockpit with sample values — handy for a look around,
-  // and for screenshots.
+  // ?demo opens the cockpit with sample values — handy for a look around.
   const [status, setStatus] = useState(() =>
     new URLSearchParams(location.search).has("demo") ? "demo" : "idle");
   const [note, setNote] = useState(null);
@@ -72,7 +96,11 @@ export default function App() {
   };
 
   const save = async () => {
-    if (status !== "ready") { setDirty(new Set()); return; }
+    if (status !== "ready") {
+      setDirty(new Set());
+      setNote("Demo mode — nothing was written.");
+      return;
+    }
     setStatus("busy");
     setNote("Saving…");
     try {
@@ -92,8 +120,6 @@ export default function App() {
 
   const revert = () => state && seed(state);
 
-  // What the 3D preview reads. Names here are the scene's vocabulary, not the
-  // firmware's, so the scene stays independent of the settings table.
   const scene = useMemo(() => ({
     sens: values.sens,
     plane: values.plane,
@@ -123,24 +149,27 @@ export default function App() {
     return <Welcome status={status} note={note} onConnect={connect} onDemo={startDemo} />;
   }
 
-  const group = groups.find((g) => g.id === tab);
+  const live = status === "ready";
+  // Hide a whole group when this firmware carries none of its keys.
+  const visibleGroups = groups.filter(
+    (g) => !g.optional || g.controls.some((c) => !state.missing.has(c.id)),
+  );
+  const group = visibleGroups.find((g) => g.id === tab);
 
   return (
     <div className="app">
       <header className="bar">
         <h1 className="bar__title">Anastesia</h1>
-        <span className={"chip chip--" + (status === "demo" ? "demo" : "live")}>
-          {status === "demo" ? "Demo" : device.kind === "ble" ? "Bluetooth" : "USB"}
+        <span className={"chip chip--" + (live ? "live" : "demo")}>
+          {live ? (device.kind === "ble" ? "Bluetooth" : "USB") : "Demo"}
         </span>
         <div className="bar__spacer" />
-        {dirty.size > 0 && (
-          <button className="btn btn--ghost" onClick={revert}>Revert</button>
-        )}
+        {dirty.size > 0 && <button className="btn btn--ghost" onClick={revert}>Revert</button>}
         <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || status === "busy"}>
           {dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
         </button>
         <button className="btn btn--ghost" onClick={disconnect}>
-          {status === "demo" ? "Exit" : "Disconnect"}
+          {live ? "Disconnect" : "Exit"}
         </button>
       </header>
 
@@ -155,7 +184,7 @@ export default function App() {
 
         <section className="stage__panel">
           <nav className="tabs" role="tablist" aria-label="Settings groups">
-            {groups.map((g) => (
+            {[...visibleGroups, ...EXTRA_TABS].map((g) => (
               <button
                 key={g.id}
                 role="tab"
@@ -166,35 +195,23 @@ export default function App() {
                 {g.label}
               </button>
             ))}
-            <button
-              role="tab"
-              aria-selected={tab === "expert"}
-              className={"tab" + (tab === "expert" ? " is-active" : "")}
-              onClick={() => setTab("expert")}
-            >
-              Expert
-            </button>
           </nav>
 
           <div className="panel" role="tabpanel">
-            {group ? (
-              <>
-                <p className="panel__blurb">{group.blurb}</p>
-                {group.controls
-                  .filter((c) => !state.missing.has(c.id))
-                  .map((c) => (
-                    <Control
-                      key={c.id}
-                      spec={c}
-                      value={values[c.id]}
-                      disabled={status === "busy"}
-                      onChange={(v) => change(c.id, v)}
-                    />
-                  ))}
-              </>
-            ) : (
-              <Expert rtcfg={state.rtcfg} live={status === "ready"} onNote={setNote} />
+            {group && (
+              <KnobGroup
+                group={group}
+                state={state}
+                values={values}
+                busy={status === "busy"}
+                onChange={change}
+              />
             )}
+            {tab === "curves" && <Curves live={live} onNote={setNote} />}
+            {tab === "effects" && <Effects live={live} onNote={setNote} />}
+            {tab === "keymap" && <Keymap live={live} onNote={setNote} />}
+            {tab === "board" && <Board live={live} onNote={setNote} rtcfg={state.rtcfg} />}
+            {tab === "expert" && <Expert rtcfg={state.rtcfg} live={live} onNote={setNote} />}
           </div>
         </section>
       </main>
@@ -206,6 +223,36 @@ export default function App() {
         <pre>{log.map((l) => `${l.dir === "send" ? "›" : "‹"} ${l.text}`).join("\n")}</pre>
       </details>
     </div>
+  );
+}
+
+/** The handful of everyday knobs, with the rest folded away behind a summary. */
+function KnobGroup({ group, state, values, busy, onChange }) {
+  const shown = group.controls.filter((c) => !state.missing.has(c.id));
+  const main = shown.filter((c) => !c.advanced);
+  const advanced = shown.filter((c) => c.advanced);
+
+  const render = (c) => (
+    <Control
+      key={c.id}
+      spec={c}
+      value={values[c.id]}
+      disabled={busy}
+      onChange={(v) => onChange(c.id, v)}
+    />
+  );
+
+  return (
+    <>
+      <p className="panel__blurb">{group.blurb}</p>
+      {main.map(render)}
+      {advanced.length > 0 && (
+        <details className="sub">
+          <summary>Advanced ({advanced.length})</summary>
+          {advanced.map(render)}
+        </details>
+      )}
+    </>
   );
 }
 
@@ -247,7 +294,9 @@ function Welcome({ status, note, onConnect, onDemo }) {
 /** Every runtime parameter the firmware exposes, flat and searchable. */
 function Expert({ rtcfg, live, onNote }) {
   const [q, setQ] = useState("");
-  const keys = Object.keys(rtcfg).filter((k) => k.includes(q.toLowerCase())).sort();
+  const keys = Object.keys(rtcfg)
+    .filter((k) => k.toLowerCase().includes(q.toLowerCase().trim()))
+    .sort();
 
   const set = async (key, v) => {
     if (!live) { onNote("Demo mode — nothing was written."); return; }
@@ -261,11 +310,14 @@ function Expert({ rtcfg, live, onNote }) {
 
   return (
     <>
-      <p className="panel__blurb">Raw firmware parameters. Changes here apply immediately.</p>
+      <p className="panel__blurb">
+        Every runtime parameter on the device, including any this build has no
+        friendly control for. Changes here apply immediately.
+      </p>
       <input
         className="search"
         type="search"
-        placeholder="Filter parameters"
+        placeholder={`Filter ${Object.keys(rtcfg).length} parameters`}
         aria-label="Filter parameters"
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -273,7 +325,10 @@ function Expert({ rtcfg, live, onNote }) {
       <ul className="raw">
         {keys.map((k) => (
           <li key={k}>
-            <code>{k}</code>
+            <span className="raw__key">
+              <code>{k}</code>
+              {RTCFG_HELP[k] && <span className="raw__hint">{RTCFG_HELP[k]}</span>}
+            </span>
             <input
               type="number"
               defaultValue={rtcfg[k]}
