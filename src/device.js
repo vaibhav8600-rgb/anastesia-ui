@@ -6,6 +6,7 @@
 const USB = { usbVendorId: 17, usbProductId: 7, baudRate: 460800 };
 const BLE_SERVICE = "c901c4e9-5770-4bf1-96b2-2dd287813e6e";
 const BLE_SHELL = "c901c4ea-5770-4bf1-96b2-2dd287813e6e";
+const BLE_DATA = "c901c4eb-5770-4bf1-96b2-2dd287813e6e";
 
 const PROMPTS = ["endgame$ ", "uart:~$ ", "zmk$", "zmk:~$"];
 const BLE_CHUNK = 96;      // MTU-safe write size
@@ -40,7 +41,8 @@ class Device {
   constructor() {
     this.kind = null;      // 'usb' | 'ble'
     this.port = null;      // SerialPort
-    this.shell = null;     // BLE characteristic
+    this.shell = null;     // BLE shell characteristic
+    this.data = null;      // BLE data channel, notify-only
     this.buffer = "";
     this.tail = Promise.resolve();  // command queue
     this.pending = 0;               // lets background polls yield to real work
@@ -77,18 +79,34 @@ class Device {
     });
     const server = await dev.gatt.connect();
     const svc = await server.getPrimaryService(BLE_SERVICE);
-    this.shell = await svc.getCharacteristic(BLE_SHELL);
+
+    // Enumerate rather than fetch by uuid: it gives a clearer failure when the
+    // shell characteristic is absent, and we need the data one anyway.
+    const chars = new Map((await svc.getCharacteristics()).map((c) => [c.uuid, c]));
+    this.shell = chars.get(BLE_SHELL);
+    if (!this.shell) throw new Error(`Shell characteristic ${BLE_SHELL} not found on this device.`);
+
     this.decoder = new TextDecoder();
     this.shell.addEventListener("characteristicvaluechanged", (e) => {
       this.buffer += this.decoder.decode(e.target.value);
       this.lastByteAt = Date.now();
     });
     await this.shell.startNotifications();
+
+    // The previous UI subscribes to the data channel too, before it says a
+    // word to the shell. Some firmware will not start talking until both
+    // subscriptions exist, so match it.
+    this.data = chars.get(BLE_DATA) ?? null;
+    if (this.data) {
+      try { await this.data.startNotifications(); }
+      catch { /* the stream channel is optional */ }
+    }
+
     this.bleDevice = dev;
     this.kind = "ble";
     // A dropped GATT link leaves the app thinking it is still connected.
     dev.addEventListener("gattserverdisconnected", () => {
-      this.shell = this.bleDevice = null;
+      this.shell = this.bleDevice = this.data = null;
       this.kind = null;
       for (const fn of this.listeners) fn({ dir: "recv", text: "Bluetooth disconnected", at: Date.now() });
     });
@@ -119,7 +137,7 @@ class Device {
     try { await this.port?.close(); } catch { /* already closed */ }
     try { await this.shell?.stopNotifications(); } catch { /* already stopped */ }
     try { this.bleDevice?.gatt?.disconnect(); } catch { /* already gone */ }
-    this.port = this.shell = this.reader = this.bleDevice = null;
+    this.port = this.shell = this.reader = this.bleDevice = this.data = null;
     this.kind = null;
     // Leftovers here would be read as the next connection's first reply.
     this.buffer = "";
@@ -144,6 +162,7 @@ class Device {
   async handshake() {
     await sleep(SETTLE_MS[this.kind] ?? 1500);
     const deadline = Date.now() + HANDSHAKE_MS;
+    let lastError = null;
     for (;;) {
       try {
         const out = await this.send("__init", { timeout: PROBE_TIMEOUT_MS });
@@ -154,10 +173,19 @@ class Device {
           this.log("recv", "Shell is responding; continuing.");
           break;
         }
-      } catch {
-        /* no answer yet; the device is still coming up */
+      } catch (err) {
+        // Swallowing this is what made a genuine write failure look like an
+        // unresponsive device. Record it; the Logs tab shows it.
+        lastError = err;
+        if (!/^Timed out/.test(err.message)) this.log("recv", `Probe failed: ${err.message}`);
       }
-      if (Date.now() > deadline) throw new Error("The device did not respond. Try reconnecting.");
+      if (Date.now() > deadline) {
+        throw new Error(
+          lastError && !/^Timed out/.test(lastError.message)
+            ? `The device did not respond: ${lastError.message}`
+            : "The device did not respond. Try reconnecting.",
+        );
+      }
       await sleep(PROBE_GAP_MS);
     }
     // Echo pollutes every reply we parse, so turn it off once we are talking.
@@ -178,7 +206,7 @@ class Device {
 
       if (this.kind === "ble") {
         for (let i = 0; i < bytes.length; i += BLE_CHUNK) {
-          await this.shell.writeValueWithoutResponse(bytes.subarray(i, i + BLE_CHUNK));
+          await this.writeBle(bytes.subarray(i, i + BLE_CHUNK));
           if (i + BLE_CHUNK < bytes.length) await sleep(20);
         }
       } else {
@@ -207,6 +235,27 @@ class Device {
     result.then(done, done);
     this.tail = result.catch(() => {});
     return result;
+  }
+
+  /**
+   * Write-without-response is what the previous UI uses, but a characteristic
+   * that does not advertise it throws — and inside the handshake that error
+   * was invisible, so the connection just looked unresponsive. Fall back to a
+   * plain write, and remember which one worked.
+   */
+  async writeBle(chunk) {
+    if (this.bleWrite !== "withResponse") {
+      try {
+        await this.shell.writeValueWithoutResponse(chunk);
+        this.bleWrite = "withoutResponse";
+        return;
+      } catch (err) {
+        if (this.bleWrite === "withoutResponse") throw err;
+        this.log("recv", `Write without response failed (${err.message}); using a plain write.`);
+      }
+    }
+    await this.shell.writeValue(chunk);
+    this.bleWrite = "withResponse";
   }
 
   async awaitPrompt(cmd, timeout = CMD_TIMEOUT_MS) {

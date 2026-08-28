@@ -229,6 +229,18 @@ and returns a partial rather than throwing when the deadline passes with
 something in hand. Only total silence is an error. The handshake is likewise
 satisfied by any reply, not just the exact "command not found" wording.
 
+**Bluetooth needs both characteristics and a write it can actually use.** The
+service carries a shell characteristic (`c901c4ea`) and a data channel
+(`c901c4eb`); both reference builds subscribe to both before saying a word, so
+this does too — some firmware will not start talking until both subscriptions
+exist. Writes prefer `writeValueWithoutResponse` and fall back to a plain
+`writeValue` if the characteristic does not offer it, remembering which worked.
+
+**Handshake failures name their cause.** Probe errors used to be swallowed, so
+a write that threw on every attempt looked identical to a silent device. They
+are logged to the Logs tab now and the final message carries the last real
+error, not just "did not respond".
+
 **A failed connect tears the transport down.** `connectUSB`/`connectBLE` call
 `disconnect()` first and again if the handshake fails. Without that, a failed
 BLE attempt left `this.shell` set, and since `send()` chose its transport by

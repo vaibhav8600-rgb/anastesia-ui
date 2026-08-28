@@ -1110,6 +1110,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
    the parent grid centres its items — which is what blanked the 3D on the
    connect screen. */
 .viewport {
+  container-type: inline-size;
   position: relative;
   min-height: 0;
   height: 100%;
@@ -1318,18 +1319,19 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 .pad__label,
 .pad__rpm {
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
 }
+.pad__rpm b { font-size: 0.86rem; }
 .pad__rpm b { color: var(--text); font-variant-numeric: tabular-nums; }
 
 .pad__box {
   position: relative;
-  width: 120px;
-  height: 84px;
+  width: clamp(150px, 22cqw, 210px);
+  aspect-ratio: 10 / 7;
   border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--text) 4%, transparent);
@@ -1341,11 +1343,12 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 9px;
-  height: 9px;
-  margin: -4.5px 0 0 -4.5px;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
   border-radius: 2px;
   background: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 @media (max-width: 620px) {
