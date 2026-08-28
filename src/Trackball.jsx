@@ -18,6 +18,12 @@ const BTN_IN = 3.44;       // inner edge of the key ring
 const GAP = 0.13;          // gap between keys
 const BTN_REST = 2.83;
 const SPIN = 0.0068;
+// ExtrudeGeometry's bevel pushes the shell's surface outward by bevelSize, so
+// the real skin is HALF + this, not HALF. Everything mounted on the shell has
+// to measure from there: the USB-C port was being swallowed by the wall, and
+// the wheels stood proud by that much more than intended.
+const SHELL_BEVEL = 0.3;
+const FRONT = HALF + SHELL_BEVEL;
 
 export const DEFAULT_COLOURS = {
   body: "#eeebe5",
@@ -69,7 +75,7 @@ export function hasWebGL() {
 const reducedMotion = () =>
   typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export default function Trackball({ values, onScrollTick }) {
+export default function Trackball({ values, onScrollTick, tools = true }) {
   const host = useRef(null);
   const api = useRef(null);
   const live = useRef(values);
@@ -347,7 +353,7 @@ export default function Trackball({ values, onScrollTick }) {
       track(new THREE.BoxGeometry(5.8, 1.85, 0.1)),
       track(new THREE.MeshStandardMaterial({ color: 0x181717, roughness: 0.42, metalness: 0.25, envMapIntensity: 0.5 })),
     ));
-    panel.position.set(0, 1.35, HALF - 0.03);
+    panel.position.set(0, 1.35, FRONT - 0.06);
 
     const racetrack = (w, h, r) => {
       const s = new THREE.Shape();
@@ -370,18 +376,18 @@ export default function Trackball({ values, onScrollTick }) {
       })),
       track(new THREE.MeshStandardMaterial({ color: 0xdfe3e8, roughness: 0.15, metalness: 1, envMapIntensity: 1.7 })),
     ));
-    portRing.position.set(0, 1.35, HALF - 0.02);
+    portRing.position.set(0, 1.35, FRONT - 0.05);
 
     const portCavity = add(new THREE.Mesh(
       track(new THREE.BoxGeometry(1.44, 0.42, 0.1)),
       track(new THREE.MeshStandardMaterial({ color: 0x040405, roughness: 0.75 })),
     ));
-    portCavity.position.set(0, 1.35, HALF + 0.09);
+    portCavity.position.set(0, 1.35, FRONT + 0.06);
     const tongue = add(new THREE.Mesh(
       track(new THREE.BoxGeometry(1.06, 0.13, 0.05)),
       track(new THREE.MeshStandardMaterial({ color: 0xa5a8ad, roughness: 0.28, metalness: 0.95 })),
     ));
-    tongue.position.set(0, 1.35, HALF + 0.12);
+    tongue.position.set(0, 1.35, FRONT + 0.09);
 
     // ---------------------------------------------------------- encoder wheels
     const treadTex = (() => {
@@ -410,9 +416,9 @@ export default function Trackball({ values, onScrollTick }) {
     // ~1.86 from the corner centre, putting the surface 6.456 from the origin
     // along the diagonal. The wheel is sized so a band of tread clears that,
     // and its flat caps stay buried inside the shell.
-    const CORNER_SURFACE = 3.25 * Math.SQRT2 + 1.86;
+    const CORNER_SURFACE = 3.25 * Math.SQRT2 + 1.86 + SHELL_BEVEL;
     const WHEEL_R = 1.25;
-    const PROUD = 0.72;   // how far the tread clears the shell
+    const PROUD = 0.2;   // how far the tread clears the shell   // how far the tread clears the shell
     const WHEEL_DIST = CORNER_SURFACE + PROUD - WHEEL_R;
     const wheels = [];
     for (const sx of [1, -1]) {
@@ -789,7 +795,7 @@ export default function Trackball({ values, onScrollTick }) {
         aria-label="Trackball preview. Drag the ball to roll it, drag the body to turn the device, scroll to zoom. Arrow keys roll, shift with arrows turns, plus and minus zoom."
       />
 
-      {supported && (
+      {supported && tools && (
         <div className="viewport__tools">
           <button className="vbtn" onClick={() => api.current?.setView("home")}>Reset</button>
           <button className="vbtn" onClick={() => api.current?.setView("top")}>Top</button>
@@ -807,7 +813,7 @@ export default function Trackball({ values, onScrollTick }) {
         </div>
       )}
 
-      {palette && supported && (
+      {palette && supported && tools && (
         <div className="palette" role="group" aria-label="Part colours">
           <Swatch label="Body" value={colours.body} onChange={(v) => setPart("body", v)} />
           <Swatch label="Ball" value={colours.ball} onChange={(v) => setPart("ball", v)} />

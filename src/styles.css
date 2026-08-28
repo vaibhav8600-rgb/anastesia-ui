@@ -1089,7 +1089,16 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 /* ---------- 3D viewport: toolbar and colour panel ---------- */
 
-.viewport { position: relative; min-height: 0; }
+/* .ball inside is absolutely positioned, so this box has no in-flow content
+   to size against. Without stretching, it collapses to zero height wherever
+   the parent grid centres its items — which is what blanked the 3D on the
+   connect screen. */
+.viewport {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
+}
 
 .viewport .ball {
   position: absolute;

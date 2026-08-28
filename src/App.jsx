@@ -346,7 +346,8 @@ function Welcome({ status, note, onConnect, onDemo }) {
   const none = !supported.usb && !supported.ble;
   return (
     <div className="welcome">
-      <Trackball values={{ sens: 4, sma: 3, glow: 1, brightness: 70 }} />
+      {/* Splash: the model, without the view controls that belong to the editor. */}
+      <Trackball values={{ sens: 4, sma: 3, glow: 1, brightness: 70 }} tools={false} />
       <div className="welcome__copy">
         <h1>Anastesia</h1>
         <p>Tune your trackball by feel. Spin the ball — that is the preview, and it moves the way your settings will.</p>
