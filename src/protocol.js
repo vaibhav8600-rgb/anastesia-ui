@@ -5,9 +5,10 @@
 export const unsupported = (t) => /command not found/i.test(String(t));
 
 /**
- * `rtcfg list` prints `  <key>  <value>  (default: <n>)`, and keys can have
- * three segments (`bst/<name>/s0_div`). Anchoring at end-of-line, or assuming
- * two segments, silently yields an empty config.
+ * `rtcfg list` prints
+ *   `  p2sm/ema_alpha   15  (default: 15, range: [1, 50])`
+ * and keys can have three segments (`bst/<name>/s0_div`). Anchoring at end of
+ * line, or assuming two segments, silently yields an empty config.
  */
 export function parseRtcfg(text) {
   const out = {};
@@ -15,6 +16,32 @@ export function parseRtcfg(text) {
   let m;
   while ((m = re.exec(text)) !== null) out[m[1]] = Number(m[2]);
   return out;
+}
+
+/**
+ * The same listing carries each key's default and permitted range. Reading
+ * those beats hard-coding slider bounds that drift out of step with the
+ * firmware — every bound we hard-coded was already wrong somewhere.
+ */
+export function parseRtcfgRanges(text) {
+  const out = {};
+  const re = /^\s*([a-z0-9_]+(?:\/[a-z0-9_]+)+)\s+(-?\d+)\s*\(default:\s*(-?\d+)(?:,\s*range:\s*\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\])?\)/gim;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    out[m[1]] = {
+      value: Number(m[2]),
+      def: Number(m[3]),
+      min: m[4] === undefined ? null : Number(m[4]),
+      max: m[5] === undefined ? null : Number(m[5]),
+    };
+  }
+  return out;
+}
+
+/** `rtcfg get <key>` answers `<key> = <value>`. */
+export function parseRtcfgGet(text) {
+  const m = String(text).match(/=\s*(-?\d+)/);
+  return m ? Number(m[1]) : null;
 }
 
 // ---------------------------------------------------------------- curves
@@ -220,6 +247,27 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   eq(cfg["bst/mymap/s0_div"], 3, "three-segment key");
   eq(cfg["rp/timeout_ms"], -2, "negative value");
   eq(Object.keys(cfg).length, 4, "ignores noise");
+
+  // ranges, from output captured off a real board
+  const listing = [
+    "  p2sm/scroll_dis_ptr          1  (default: 1, range: [0, 1])",
+    "  p2sm/ptr_after_scroll      100  (default: 100, range: [0, 5000])",
+    "  p2sm/ema_alpha              15  (default: 15, range: [1, 50])",
+    "  p2sm/twist_dy_mag_mul        2  (default: 2, range: [1, 100])",
+    "  p2sm/twist_act_ms           16  (default: 16, range: [0, 5000])",
+    "  legacy/no_range              7  (default: 7)",
+  ].join(String.fromCharCode(10));
+  const vals = parseRtcfg(listing);
+  eq(vals["p2sm/ema_alpha"], 15, "value not the default");
+  eq(vals["p2sm/twist_dy_mag_mul"], 2, "twist-prefixed key");
+  const meta = parseRtcfgRanges(listing);
+  eq(meta["p2sm/ema_alpha"], { value: 15, def: 15, min: 1, max: 50 }, "range parsed");
+  eq(meta["p2sm/ptr_after_scroll"].max, 5000, "wide range");
+  eq(meta["legacy/no_range"], { value: 7, def: 7, min: null, max: null }, "range is optional");
+  eq(Object.keys(meta).length, 6, "every line has meta");
+  eq(parseRtcfgGet("p2sm/frame_sync = 1"), 1, "rtcfg get");
+  eq(parseRtcfgGet("bst/default = 0"), 0, "rtcfg get zero");
+  eq(parseRtcfgGet("nope"), null, "rtcfg get miss");
 
   // curves: round-trip, and the start/END/cp1/cp2 ordering
   const flat = [0, 0, 116, 41, 10, 32, 16, 39];

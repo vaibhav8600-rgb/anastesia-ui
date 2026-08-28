@@ -6,7 +6,7 @@ import { unsupported } from "./protocol.js";
 // firmware version, and battery. Polled in the background like the original —
 // output changes often, status rarely.
 
-const OUTPUT_POLL_MS = 5000;
+const OUTPUT_POLL_MS = 3000;
 const STATUS_POLL_MS = 300000;
 
 /** `board status` -> firmware + battery, falling back to `board version`. */
@@ -27,7 +27,7 @@ export function parseOutput(text) {
   return text?.match(/Output:\s*(USB|BLE|ESB)/i)?.[1]?.toUpperCase() ?? null;
 }
 
-export default function Status({ live }) {
+export default function Status({ live, onFirmware }) {
   const [info, setInfo] = useState({ version: null, battery: null });
   const [output, setOutput] = useState(null);
 
@@ -35,6 +35,7 @@ export default function Status({ live }) {
     if (!live) {
       setInfo({ version: "1.4.4", battery: 95 });
       setOutput("BLE");
+      onFirmware?.("1.4.4");
       return;
     }
     let stop = false;
@@ -46,7 +47,10 @@ export default function Status({ live }) {
         const version = status.includes("Control the device")
           ? await device.send("board version")
           : null;
-        if (!stop) setInfo(parseBoardStatus(status, version));
+        if (stop) return;
+        const parsed = parseBoardStatus(status, version);
+        setInfo(parsed);
+        onFirmware?.(parsed.version);
       } catch { /* a poll that misses is not worth reporting */ }
     };
     const readOutput = async () => {
@@ -62,7 +66,7 @@ export default function Status({ live }) {
     const a = setInterval(readStatus, STATUS_POLL_MS);
     const b = setInterval(readOutput, OUTPUT_POLL_MS);
     return () => { stop = true; clearInterval(a); clearInterval(b); };
-  }, [live]);
+  }, [live, onFirmware]);
 
   const link = device.kind === "ble" ? "BLE" : live ? "USB" : null;
 
@@ -74,7 +78,7 @@ export default function Status({ live }) {
 
       {info.version && <span className="status__ver" title="Firmware version">v{info.version}</span>}
 
-      {info.battery != null && <Battery level={info.battery} />}
+      <Battery level={info.battery} />
 
       {link && (
         <span className="status__link" title={`Configuring over ${link}`}>{link}</span>
@@ -95,19 +99,24 @@ function Endpoint({ icon, label, on }) {
   );
 }
 
+/** Always drawn: an empty gauge reading "--" beats no gauge while we wait. */
 function Battery({ level }) {
-  const bars = Math.max(0, Math.min(8, Math.round((level / 100) * 8)));
-  const band = level <= 15 ? "low" : level <= 30 ? "mid" : "high";
+  const known = typeof level === "number";
+  const bars = known ? Math.max(0, Math.min(8, Math.round((level / 100) * 8))) : 0;
+  const band = !known ? "none" : level <= 15 ? "low" : level <= 30 ? "mid" : "high";
   return (
-    <span className={"batt batt--" + band} title={`Battery ${level}%`}>
+    <span
+      className={"batt batt--" + band}
+      title={known ? `Battery ${level}%` : "Battery level not reported yet"}
+    >
       <span className="batt__shell">
         {Array.from({ length: 8 }, (_, i) => (
           <span key={i} className={"batt__cell" + (i < bars ? " is-on" : "")} />
         ))}
       </span>
       <span className="batt__cap" />
-      <span className="batt__pct">{level}%</span>
-      <span className="sr-only">Battery {level} percent</span>
+      <span className="batt__pct">{known ? `${level}%` : "--"}</span>
+      <span className="sr-only">{known ? `Battery ${level} percent` : "Battery unknown"}</span>
     </span>
   );
 }

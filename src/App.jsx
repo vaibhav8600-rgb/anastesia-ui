@@ -1,19 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device, supported } from "./device.js";
-import { groups, allControls, readAll, RTCFG_HELP } from "./settings.js";
+import {
+  sensorSections, lightControls, allControls, readAll, resolveSpec,
+  RTCFG_HELP, autoLabel,
+} from "./settings.js";
 import Trackball, { hasWebGL } from "./Trackball.jsx";
 import Control from "./Control.jsx";
 import Curves from "./Curves.jsx";
 import Effects from "./Effects.jsx";
-import { Keymap, Board } from "./Board.jsx";
+import Logs from "./Logs.jsx";
+import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Status from "./Status.jsx";
+
+// The seven tabs mirror the original's shape, so anyone coming from it knows
+// where to look.
+const TABS = [
+  { id: "keymap", label: "Keymap" },
+  { id: "acceleration", label: "Acceleration" },
+  { id: "sensors", label: "Sensor(s)" },
+  { id: "effects", label: "Effects" },
+  { id: "io", label: "Import/Export" },
+  { id: "raw", label: "Raw settings" },
+  { id: "logs", label: "Logs" },
+];
 
 const DEMO_RTCFG = {
   "accel/dz_enable": 1, "accel/dz_thres": 6, "accel/dz_cooldown": 120, "accel/dz_before": 0,
-  "p2sm/frame_sync": 0, "p2sm/steady_thres": 12, "p2sm/steady_cd": 150,
+  "p2sm/frame_sync": 1, "p2sm/steady_thres": 12, "p2sm/steady_cd": 150,
   "p2sm/twist_thres": 40, "p2sm/twist_deb": 25, "p2sm/twist_ttl": 120,
-  "p2sm/ema_alpha": 45, "p2sm/scroll_dis_ptr": 1, "p2sm/ptr_after_scroll": 200,
-  "p2sm/twist_global_en": 1, "p2sm/dy_mag_mul": 3, "p2sm/dy_mag_div": 2,
+  "p2sm/twist_act_ms": 16, "p2sm/ema_alpha": 15,
+  "p2sm/scroll_dis_ptr": 1, "p2sm/ptr_after_scroll": 100,
+  "p2sm/twist_global_en": 1, "p2sm/twist_dy_mag_mul": 2, "p2sm/twist_dy_mag_div": 1,
   "p2sm/twist_hyst_en": 1, "p2sm/twist_hyst_thres": 25, "p2sm/twist_hyst_mul": 2, "p2sm/twist_hyst_div": 3,
   "p2sm/feedback_en": 1, "p2sm/fb_dur": 12, "p2sm/fb_thres": 30,
   "p2sm/fb_cooldown": 400, "p2sm/fb_max_cont": 1200,
@@ -27,39 +44,42 @@ const DEMO_RTCFG = {
   "keymap/autoswitch": 1, "bst/default": 0,
 };
 
+// Ranges the demo pretends the firmware reported, so sliders behave as they
+// would on a real board.
+const DEMO_RANGES = Object.fromEntries(Object.entries(DEMO_RTCFG).map(([k, v]) => {
+  const known = {
+    "p2sm/ema_alpha": [1, 50], "p2sm/ptr_after_scroll": [0, 5000],
+    "p2sm/twist_dy_mag_mul": [1, 100], "p2sm/twist_dy_mag_div": [1, 100],
+    "p2sm/twist_act_ms": [0, 5000], "argb/brt": [0, 100], "argb/tick": [1, 200],
+    "rrl/auto_off_ms": [0, 60000],
+  }[k] ?? (v === 0 || v === 1 ? [0, 1] : [0, Math.max(100, v * 4)]);
+  return [k, { value: v, def: v, min: known[0], max: known[1] }];
+}));
+
 const DEMO_STATE = {
   rtcfg: DEMO_RTCFG,
+  ranges: DEMO_RANGES,
   sens: 3.2, plane: 0, sma: 4, rrl: 0,
   twist: 1, twistSens: 2.5, twistReverse: 0, argb: 1,
   missing: new Set(),
-  status: "demo",
 };
 
-const EXTRA_TABS = [
-  { id: "curves", label: "Curves" },
-  { id: "effects", label: "Effects" },
-  { id: "keymap", label: "Keymap" },
-  { id: "board", label: "Board" },
-  { id: "expert", label: "Expert" },
-];
-
 export default function App() {
-  // ?demo opens the cockpit with sample values — handy for a look around.
   const [status, setStatus] = useState(() =>
     new URLSearchParams(location.search).has("demo") ? "demo" : "idle");
   const [note, setNote] = useState(null);
   const [state, setState] = useState(null);
   const [values, setValues] = useState({});
   const [dirty, setDirty] = useState(() => new Set());
-  const [tab, setTab] = useState("feel");
-  // Panels talk to the device when they mount. Remounting on every tab switch
-  // meant paying for those round trips again, so a visited tab stays mounted
-  // and is only hidden.
-  const [visited, setVisited] = useState(() => new Set(["feel"]));
+  const [tab, setTab] = useState("sensors");
+  // Panels talk to the device when they mount, so a visited tab stays mounted
+  // and is only hidden — returning to it costs nothing.
+  const [visited, setVisited] = useState(() => new Set(["sensors"]));
   const [log, setLog] = useState([]);
+  const [firmware, setFirmware] = useState(null);
   const scrollHint = useRef(null);
 
-  useEffect(() => device.onLog((e) => setLog((l) => [...l.slice(-120), e])), []);
+  useEffect(() => device.onLog((e) => setLog((l) => [...l.slice(-400), e])), []);
 
   const seed = useCallback((s) => {
     setState(s);
@@ -93,6 +113,8 @@ export default function App() {
     setState(null);
     setValues({});
     setDirty(new Set());
+    setVisited(new Set(["sensors"]));
+    setTab("sensors");
   };
 
   const change = (id, v) => {
@@ -116,8 +138,8 @@ export default function App() {
         await spec.write(values[id]);
         if (spec.key) written[spec.key] = Math.round(values[id]);
       }
-      // Expert and the settings export both read state.rtcfg, so it has to
-      // follow what we just wrote or they show stale numbers.
+      // Raw settings and the export both read state.rtcfg, so it has to follow
+      // what we just wrote or they show stale numbers.
       setState((s) => ({ ...s, rtcfg: { ...s.rtcfg, ...written } }));
       setDirty(new Set());
       setNote("Saved.");
@@ -153,7 +175,6 @@ export default function App() {
   }, []);
 
   const startDemo = useCallback(() => { seed(DEMO_STATE); setStatus("demo"); }, [seed]);
-
   useEffect(() => { if (status === "demo") startDemo(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!state) {
@@ -161,10 +182,8 @@ export default function App() {
   }
 
   const live = status === "ready";
-  // Hide a whole group when this firmware carries none of its keys.
-  const visibleGroups = groups.filter(
-    (g) => !g.optional || g.controls.some((c) => !state.missing.has(c.id)),
-  );
+  const open = (id) => { setTab(id); setVisited((v) => new Set(v).add(id)); };
+
   return (
     <div className="app">
       <header className="bar">
@@ -174,17 +193,16 @@ export default function App() {
         </span>
         {!live && <span className="chip">Demo</span>}
         <div className="bar__spacer" />
-        <Status live={live} />
+        <Status live={live} onFirmware={setFirmware} />
         {dirty.size > 0 && <button className="btn btn--ghost" onClick={revert}>Revert</button>}
         <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || status === "busy"}>
           {dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
         </button>
-        <button className="btn btn--ghost" onClick={disconnect}>
-          {live ? "Disconnect" : "Exit"}
-        </button>
+        <button className="btn btn--ghost" onClick={disconnect}>{live ? "Disconnect" : "Exit"}</button>
       </header>
 
-      <main className="stage">
+      {/* The console wants the whole width; everything else keeps the preview. */}
+      <main className={"stage" + (tab === "logs" ? " stage--wide" : "")}>
         <section className="stage__view">
           <Trackball values={scene} onScrollTick={onScrollTick} />
           <p className="stage__caption">
@@ -196,54 +214,76 @@ export default function App() {
         </section>
 
         <section className="stage__panel">
-          <nav className="tabs" role="tablist" aria-label="Settings groups">
-            {[...visibleGroups, ...EXTRA_TABS].map((g) => (
+          <nav className="tabs" role="tablist" aria-label="Sections">
+            {TABS.map((t) => (
               <button
-                key={g.id}
+                key={t.id}
                 role="tab"
-                aria-selected={tab === g.id}
-                className={"tab" + (tab === g.id ? " is-active" : "")}
-                onClick={() => { setTab(g.id); setVisited((v) => new Set(v).add(g.id)); }}
+                aria-selected={tab === t.id}
+                className={"tab" + (tab === t.id ? " is-active" : "")}
+                onClick={() => open(t.id)}
               >
-                {g.label}
+                {t.label}
               </button>
             ))}
           </nav>
 
-          <div className="panel" role="tabpanel">
-            {visibleGroups.map((g) => (
-              <Pane key={g.id} active={tab === g.id} visited={visited.has(g.id)}>
-                <KnobGroup
-                  group={g}
-                  state={state}
-                  values={values}
-                  busy={status === "busy"}
-                  onChange={change}
-                />
-              </Pane>
-            ))}
-            <Pane active={tab === "curves"} visited={visited.has("curves")}>
-              <Curves live={live} onNote={setNote} />
-            </Pane>
-            <Pane active={tab === "effects"} visited={visited.has("effects")}>
-              <Effects live={live} onNote={setNote} />
-            </Pane>
+          <div className={"panel" + (tab === "logs" ? " panel--flush" : "")} role="tabpanel">
             <Pane active={tab === "keymap"} visited={visited.has("keymap")}>
               <Keymap live={live} onNote={setNote} />
             </Pane>
-            <Pane active={tab === "board"} visited={visited.has("board")}>
-              <Board live={live} onNote={setNote} rtcfg={state.rtcfg} />
+
+            <Pane active={tab === "acceleration"} visited={visited.has("acceleration")}>
+              <Curves live={live} onNote={setNote} />
             </Pane>
-            <Pane active={tab === "expert"} visited={visited.has("expert")}>
-              <Expert rtcfg={state.rtcfg} live={live} onNote={setNote} />
+
+            <Pane active={tab === "sensors"} visited={visited.has("sensors")}>
+              {sensorSections
+                .filter((sec) => !sec.optional || sec.controls.some((c) => !state.missing.has(c.id)))
+                .map((sec) => (
+                  <KnobSection
+                    key={sec.id}
+                    section={sec}
+                    state={state}
+                    values={values}
+                    busy={status === "busy"}
+                    onChange={change}
+                  />
+                ))}
+              <details className="sub">
+                <summary>Sensor surface quality</summary>
+                <Surface live={live} onNote={setNote} />
+              </details>
+            </Pane>
+
+            <Pane active={tab === "effects"} visited={visited.has("effects")}>
+              <KnobSection
+                section={{ id: "lights", label: "Lighting", blurb: "Global brightness and battery warning levels.", controls: lightControls }}
+                state={state}
+                values={values}
+                busy={status === "busy"}
+                onChange={change}
+              />
+              <h3 className="sec">Per-event colour</h3>
+              <Effects live={live} onNote={setNote} />
+            </Pane>
+
+            <Pane active={tab === "io"} visited={visited.has("io")}>
+              <ImportExport live={live} onNote={setNote} rtcfg={state.rtcfg} firmware={firmware} />
+            </Pane>
+
+            <Pane active={tab === "raw"} visited={visited.has("raw")}>
+              <Raw rtcfg={state.rtcfg} ranges={state.ranges} live={live} onNote={setNote} />
+            </Pane>
+
+            <Pane active={tab === "logs"} visited={visited.has("logs")}>
+              <Logs log={log} onClear={() => setLog([])} live={live} onNote={setNote} />
             </Pane>
           </div>
         </section>
       </main>
 
       {note && <p className="toast" role="status">{note}</p>}
-
-      <DeviceLog log={log} onClear={() => setLog([])} />
     </div>
   );
 }
@@ -254,55 +294,24 @@ function Pane({ active, visited, children }) {
   return <div hidden={!active}>{children}</div>;
 }
 
-/** One line per exchange: time, direction, text — sent in green, replies dim. */
-function DeviceLog({ log, onClear }) {
-  const body = useRef(null);
-  useEffect(() => {
-    const el = body.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [log.length]);
-
-  return (
-    <details className="console">
-      <summary>
-        Device log <span className="console__count">{log.length}</span>
-      </summary>
-      <div className="console__body" ref={body}>
-        {log.length === 0 && <p className="empty">Nothing sent yet.</p>}
-        {log.map((l, i) => (
-          <div key={i} className={"logline logline--" + l.dir}>
-            <time>{new Date(l.at).toLocaleTimeString()}</time>
-            <span className="logline__arrow">{l.dir === "send" ? "›" : "‹"}</span>
-            <span className="logline__text">{l.text || "(no output)"}</span>
-          </div>
-        ))}
-      </div>
-      <div className="console__foot">
-        <button className="pill" onClick={onClear}>Clear</button>
-      </div>
-    </details>
-  );
-}
-
-/** The handful of everyday knobs, with the rest folded away behind a summary. */
-function KnobGroup({ group, state, values, busy, onChange }) {
-  const shown = group.controls.filter((c) => !state.missing.has(c.id));
+/** A titled run of knobs, with the long tail folded away. */
+function KnobSection({ section, state, values, busy, onChange }) {
+  const shown = section.controls
+    .filter((c) => !state.missing.has(c.id))
+    .map((c) => resolveSpec(c, state.ranges));
   const main = shown.filter((c) => !c.advanced);
   const advanced = shown.filter((c) => c.advanced);
 
+  if (!shown.length) return null;
+
   const render = (c) => (
-    <Control
-      key={c.id}
-      spec={c}
-      value={values[c.id]}
-      disabled={busy}
-      onChange={(v) => onChange(c.id, v)}
-    />
+    <Control key={c.id} spec={c} value={values[c.id]} disabled={busy} onChange={(v) => onChange(c.id, v)} />
   );
 
   return (
-    <>
-      <p className="panel__blurb">{group.blurb}</p>
+    <section className="knobs">
+      <h3 className="sec">{section.label}</h3>
+      {section.blurb && <p className="panel__blurb">{section.blurb}</p>}
       {main.map(render)}
       {advanced.length > 0 && (
         <details className="sub">
@@ -310,7 +319,7 @@ function KnobGroup({ group, state, values, busy, onChange }) {
           {advanced.map(render)}
         </details>
       )}
-    </>
+    </section>
   );
 }
 
@@ -349,8 +358,8 @@ function Welcome({ status, note, onConnect, onDemo }) {
   );
 }
 
-/** Every runtime parameter the firmware exposes, flat and searchable. */
-function Expert({ rtcfg, live, onNote }) {
+/** Every runtime parameter the firmware reports, flat and searchable. */
+function Raw({ rtcfg, ranges, live, onNote }) {
   const [q, setQ] = useState("");
   const keys = Object.keys(rtcfg)
     .filter((k) => k.toLowerCase().includes(q.toLowerCase().trim()))
@@ -369,8 +378,7 @@ function Expert({ rtcfg, live, onNote }) {
   return (
     <>
       <p className="panel__blurb">
-        Every runtime parameter on the device, including any this build has no
-        friendly control for. Changes here apply immediately.
+        Runtime configuration parameters stored on the device. Changes here apply immediately.
       </p>
       <input
         className="search"
@@ -381,20 +389,28 @@ function Expert({ rtcfg, live, onNote }) {
         onChange={(e) => setQ(e.target.value)}
       />
       <ul className="raw">
-        {keys.map((k) => (
-          <li key={k}>
-            <span className="raw__key">
-              <code>{k}</code>
-              {RTCFG_HELP[k] && <span className="raw__hint">{RTCFG_HELP[k]}</span>}
-            </span>
-            <input
-              type="number"
-              defaultValue={rtcfg[k]}
-              aria-label={k}
-              onBlur={(e) => Number(e.target.value) !== rtcfg[k] && set(k, e.target.value)}
-            />
-          </li>
-        ))}
+        {keys.map((k) => {
+          const r = ranges?.[k];
+          return (
+            <li key={k}>
+              <span className="raw__key">
+                <code>{k}</code>
+                <span className="raw__hint">
+                  {RTCFG_HELP[k] ?? autoLabel(k)}
+                  {r && r.min !== null && <em> · {r.min}–{r.max}, default {r.def}</em>}
+                </span>
+              </span>
+              <input
+                type="number"
+                min={r?.min ?? undefined}
+                max={r?.max ?? undefined}
+                defaultValue={rtcfg[k]}
+                aria-label={k}
+                onBlur={(e) => Number(e.target.value) !== rtcfg[k] && set(k, e.target.value)}
+              />
+            </li>
+          );
+        })}
         {keys.length === 0 && <li className="raw__empty">Nothing matches “{q}”.</li>}
       </ul>
     </>

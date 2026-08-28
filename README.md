@@ -24,17 +24,17 @@ attached.
 
 ## What is in it
 
+Seven tabs, matching the original's shape:
+
 | Tab | What it covers |
 | --- | --- |
-| Feel | Pointer sensitivity, plane rotation, smoothing, report rate, dead zone, and eleven more under Advanced |
-| Scroll | Twist-to-scroll speed, direction, thresholds, hysteresis and haptics |
-| Lights | Global brightness, animation tick, all six battery warning levels |
-| Encoder | Rotary encoder pulse handling (hidden when the board has no `ec11` keys) |
-| Curves | Acceleration curve editor — a draggable Bezier graph per device, log scales, import/export |
-| Effects | Per-event RGB and vibration, including a colour for each Bluetooth profile |
-| Keymap | Profile slots, per-connection assignments, autoswitch, restore defaults |
-| Board | Firmware info, sensor surface quality meters, Windows/macOS mode, settings import/export |
-| Expert | Every runtime parameter the device reports, each with its firmware description |
+| Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
+| Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
+| Sensor(s) | Pointer feel, twist scroll, rotary encoder, sensor surface quality |
+| Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
+| Import/Export | Download and upload settings as .json, or paste them |
+| Raw settings | Every runtime parameter, with its description, range and default |
+| Logs | Console with SEND/RECEIVE, millisecond timestamps, download, and a command prompt |
 
 ## Layout
 
@@ -49,7 +49,8 @@ attached.
 | `src/Control.jsx` | renders one knob (range or toggle) |
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
-| `src/Board.jsx` | keymap profiles and board panel |
+| `src/Board.jsx` | keymap profiles, import/export, surface quality |
+| `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview |
 | `src/styles.css` | all of the styling |
@@ -57,6 +58,24 @@ attached.
 Adding a setting is one line in `src/settings.js`; there is no per-setting
 component to write. Anything with an `advanced: true` flag folds into a
 collapsed section rather than crowding the panel.
+
+## Ranges come from the device
+
+`rtcfg list` reports each key's value, default and permitted range:
+
+```
+p2sm/ema_alpha    15  (default: 15, range: [1, 50])
+```
+
+Sliders take their bounds from that rather than from anything hard-coded here.
+Every bound this project did hard-code was wrong on real firmware — `ema_alpha`
+tops out at 50 not 100, `ptr_after_scroll` reaches 5000 not 1000 — and key
+names drift too (`p2sm/twist_dy_mag_mul`, not `p2sm/dy_mag_mul`). Controls whose
+key the firmware does not report are hidden, so both spellings can be listed
+and only the real one appears.
+
+Sensor surface quality is likewise out of whatever the sensor reports — 361 on
+one part, 1000 on another — so the good/warning/bad bands scale with it.
 
 ## Header status
 
