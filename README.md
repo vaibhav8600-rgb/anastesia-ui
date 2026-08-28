@@ -250,17 +250,21 @@ a write that threw on every attempt looked identical to a silent device. They
 are logged to the Logs tab now and the final message carries the last real
 error, not just "did not respond".
 
-**If Bluetooth connects but nothing ever comes back**, the link is almost
-certainly unencrypted. The shell characteristic offers only
-`writeWithoutResponse`, which is unacknowledged — a write "succeeding" means
-Chrome queued it, not that the device took it. An unbonded peer silently drops
-those writes and never enables the CCCD, so notifications never fire either.
-Both symptoms, one cause.
+**If Bluetooth connects but nothing ever comes back, it is a stale pairing.**
+Observed once and worth writing down: GATT connected, both characteristics were
+found with the right properties, both subscribed, and every write returned
+without error — yet not one byte ever arrived, from either a dev server or the
+built file.
 
-Bluetooth permission and bonding are **per-origin**. A build served from
-`localhost:5173` starts with neither, even when the same device works from a
-page opened another way. Pair the device in the system Bluetooth settings, and
-open `dist/index.html` the same way you open the app that does connect.
+The shell characteristic offers only `writeWithoutResponse`, which is
+unacknowledged: a write "succeeding" means Chrome queued it, not that the
+device took it. A half-established link drops those silently and never enables
+the CCCD, so notifications never fire either — one cause, both symptoms, and no
+error anywhere to point at it.
+
+The fix was to clear the trackball's saved Bluetooth profiles and toggle
+Bluetooth off and on on the host, then pair again. It then worked from both
+origins, so this is not about where the page is served from.
 
 **A failed connect tears the transport down.** `connectUSB`/`connectBLE` call
 `disconnect()` first and again if the handshake fails. Without that, a failed
