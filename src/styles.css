@@ -113,7 +113,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   padding: var(--gap) var(--pad);
   /* Phones: ball on top at a fixed slice of the screen, settings scroll under.
      The tab strip wraps to three rows here, so the ball gives up some height. */
-  grid-template-rows: minmax(150px, 27dvh) minmax(0, 1fr);
+  grid-template-rows: minmax(170px, 32dvh) minmax(0, 1fr);
 }
 
 /* Side by side once there is width to spare — and also on short landscape
@@ -1085,4 +1085,98 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--muted);
+}
+
+/* ---------- 3D viewport: toolbar and colour panel ---------- */
+
+.viewport { position: relative; min-height: 0; }
+
+.viewport .ball {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;   /* we handle drag, pinch and wheel ourselves */
+}
+.viewport .ball[data-grabbing] { cursor: grabbing; }
+
+.viewport__tools {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  right: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  pointer-events: none;   /* the empty gaps stay draggable */
+}
+.viewport__tools > * { pointer-events: auto; }
+
+.vbtn {
+  height: 30px;
+  padding: 0 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
+}
+.vbtn:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 34%, transparent); }
+.vbtn.is-on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+
+@media (pointer: coarse) { .vbtn { height: 36px; padding: 0 0.75rem; } }
+
+.palette {
+  position: absolute;
+  top: 3rem;
+  right: 0.55rem;
+  width: 12.5rem;
+  max-height: calc(100% - 4rem);
+  overflow-y: auto;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-soft) 94%, transparent);
+  backdrop-filter: blur(10px);
+  z-index: 2;
+}
+
+.palette__row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.palette__row span { font-size: 0.82rem; }
+
+.palette__head {
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.palette__keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; }
+
+.palette input[type="color"] {
+  width: 100%;
+  min-width: 2.1rem;
+  height: 28px;
+  min-height: 28px;
+  padding: 1px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.palette__row input[type="color"] { width: 3.2rem; flex: none; }
+
+@media (max-width: 620px) {
+  /* The toolbar overlays the viewport, so keep it out of the model's way. */
+  .viewport__tools { top: 0.4rem; left: 0.4rem; right: 0.4rem; gap: 0.25rem; }
+  .vbtn { height: 30px; padding: 0 0.5rem; font-size: 0.68rem; }
+  .palette { top: 2.6rem; width: 11rem; }
 }

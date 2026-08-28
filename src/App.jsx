@@ -212,7 +212,7 @@ export default function App() {
           <Trackball values={scene} onScrollTick={onScrollTick} />
           <p className="stage__caption">
             {hasWebGL()
-              ? "Drag the ball to feel your settings."
+              ? "Roll the ball · drag the body to turn · scroll to zoom"
               : "This device has no 3D preview, but every setting below still works."}
             <span className="ticker" ref={scrollHint} data-live="0" />
           </p>

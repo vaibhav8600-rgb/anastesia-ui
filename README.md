@@ -54,7 +54,7 @@ Seven tabs, matching the original's shape:
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
-| `trackball3d.html` | standalone model this was ported from; kept as the reference |
+| `reference/trackball3d.html` | standalone model this was ported from; kept as the reference |
 | `src/styles.css` | all of the styling |
 
 Adding a setting is one line in `src/settings.js`; there is no per-setting
@@ -92,11 +92,22 @@ radial keys, the ball in its socket, the USB-C port and both corner encoder
 wheels, all built procedurally from `trackball3d.html`'s geometry constants so
 the proportions match the hardware.
 
-It still reacts to your settings — sensitivity changes the ball's weight under
-your finger, the dead zone flares the socket ring when it swallows a movement,
-and twist-scroll turns the encoder wheels. The camera fits the model's real
-bounding-box corners, so it fills a phone strip and a desktop panel equally
-well without cropping.
+You can handle it the way the standalone model does:
+
+- **Drag the ball** to roll it, with inertia. This is the settings preview —
+  sensitivity changes its weight, the dead zone flares the socket ring when it
+  swallows a movement, smoothing lengthens the coast.
+- **Drag the body** to turn the device through 360 degrees, **scroll or pinch**
+  to zoom.
+- **Click a key** to press it, **click a wheel** to spin it. Twist-scroll spins
+  them too.
+- **Reset / Top / Port / Wheels** jump to framed views; **Flick** spins the ball.
+- **Colours** recolours the body, ball, wheels and each of the eight keys. The
+  choice is remembered in `localStorage`.
+- Keyboard: arrows roll, shift with arrows turns, `+`/`-` zoom.
+
+The camera fits the model's real bounding-box corners at the current orbit
+angle, so it fills a phone strip and a desktop panel equally well.
 
 Two things keep it cheap: the shadow pass runs once and is then frozen (only
 the ball and wheels move, and both are surfaces of revolution turning about

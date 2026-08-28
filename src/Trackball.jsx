@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 // The real device, built procedurally: rounded-square shell, eight radial keys
@@ -17,7 +17,40 @@ const SOCKET = 3.28;
 const BTN_IN = 3.44;       // inner edge of the key ring
 const GAP = 0.13;          // gap between keys
 const BTN_REST = 2.83;
-const ACCENT_KEYS = { 0: 1, 2: 1, 5: 1, 7: 1 };
+const SPIN = 0.0068;
+
+export const DEFAULT_COLOURS = {
+  body: "#eeebe5",
+  ball: "#a01730",
+  wheel: "#4a4a52",
+  keys: ["#ef6b6b", "#eceae4", "#ef6b6b", "#eceae4", "#eceae4", "#ef6b6b", "#eceae4", "#ef6b6b"],
+};
+
+const STORE = "anastesia-colours";
+
+const loadColours = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(STORE) || "null");
+    if (!v) return DEFAULT_COLOURS;
+    return {
+      body: v.body ?? DEFAULT_COLOURS.body,
+      ball: v.ball ?? DEFAULT_COLOURS.ball,
+      wheel: v.wheel ?? DEFAULT_COLOURS.wheel,
+      keys: Array.isArray(v.keys) && v.keys.length === 8 ? v.keys : DEFAULT_COLOURS.keys,
+    };
+  } catch {
+    return DEFAULT_COLOURS;   // private windows and blocked storage both land here
+  }
+};
+
+// Orbit presets. zoom multiplies the auto-fitted distance, so each frames the
+// same way whatever size the panel is.
+const VIEWS = {
+  home: { az: 0.34, el: 0.46, zoom: 1 },
+  top: { az: 0, el: 1.45, zoom: 1.06 },
+  port: { az: 0, el: 0.12, zoom: 0.72 },
+  wheels: { az: 0.72, el: 0.2, zoom: 0.62 },
+};
 
 /** Cached WebGL probe, so callers can word their copy honestly. */
 let webglOk = null;
@@ -38,8 +71,13 @@ const reducedMotion = () =>
 
 export default function Trackball({ values, onScrollTick }) {
   const host = useRef(null);
+  const api = useRef(null);
   const live = useRef(values);
   live.current = values;
+
+  const [colours, setColours] = useState(loadColours);
+  const [palette, setPalette] = useState(false);
+  const [supported, setSupported] = useState(true);
 
   useEffect(() => {
     const el = host.current;
@@ -49,6 +87,7 @@ export default function Trackball({ values, onScrollTick }) {
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     } catch {
+      setSupported(false);
       el.dataset.fallback = "1";
       return;
     }
@@ -239,6 +278,8 @@ export default function Trackball({ values, onScrollTick }) {
     flat(tray); tray.position.y = 2.76; tray.receiveShadow = true;
 
     // ---------------------------------------------------------- keys
+    const buttons = [];
+    const keyMats = [];
     for (let i = 0; i < 8; i++) {
       const a0 = (i * 45) * Math.PI / 180;
       const a1 = ((i + 1) * 45) * Math.PI / 180;
@@ -259,16 +300,18 @@ export default function Trackball({ values, onScrollTick }) {
       }
       shape.closePath();
       const mat = track(new THREE.MeshStandardMaterial({
-        color: ACCENT_KEYS[i] ? 0xef6b6b : 0xeceae4,
         map: keyMap, bumpMap: keyMap, bumpScale: 0.03,
-        roughness: ACCENT_KEYS[i] ? 0.84 : 0.74, metalness: 0, envMapIntensity: 0.5,
+        roughness: 0.78, metalness: 0, envMapIntensity: 0.5,
       }));
+      keyMats.push(mat);
       const key = add(new THREE.Mesh(track(new THREE.ExtrudeGeometry(shape, {
         depth: 0.3, bevelEnabled: true, bevelThickness: 0.09, bevelSize: 0.09,
         bevelSegments: 3, curveSegments: 14,
       })), mat));
       flat(key); key.position.y = BTN_REST;
       key.castShadow = key.receiveShadow = true;
+      key.userData.press = 0;
+      buttons.push(key);
     }
 
     // ---------------------------------------------------------- socket + ball
@@ -379,6 +422,7 @@ export default function Trackball({ values, onScrollTick }) {
       ));
       wheel.position.copy(outward).multiplyScalar(WHEEL_DIST).setY(0.95);
       wheel.castShadow = true;
+      wheel.userData.spin = 0;
       wheels.push(wheel);
     }
 
@@ -420,82 +464,9 @@ export default function Trackball({ values, onScrollTick }) {
     glow.position.set(0, 1.1, 0);
     scene.add(glow);
 
-    // ---------------------------------------------------------- input
-    const vel = new THREE.Vector2();
-    const smoothed = new THREE.Vector2();
-    let dragging = false;
-    let last = null;
-    let deadFlash = 0;
-    let twistAcc = 0;
-    let wheelSpin = 0;
-
-    function apply(dx, dy) {
-      const v = live.current;
-      const mag = Math.hypot(dx, dy);
-
-      // Below the threshold the firmware reports nothing at all.
-      if (v.deadzone && mag <= (v.deadzoneSize ?? 0) * 0.4) {
-        deadFlash = 1;
-        return;
-      }
-
-      const a = ((v.plane ?? 0) * Math.PI) / 180;
-      const rx = dx * Math.cos(a) - dy * Math.sin(a);
-      const ry = dx * Math.sin(a) + dy * Math.cos(a);
-
-      const gain = 0.0007 * (v.sens ?? 1);
-      vel.x += ry * gain;
-      vel.y += rx * gain;
-
-      if (v.twist) {
-        twistAcc += Math.abs(rx) * (v.twistSens ?? 1);
-        if (twistAcc > 60) {
-          twistAcc = 0;
-          wheelSpin = Math.sign(rx) * 6;
-          onScrollTick?.(Math.sign(rx));
-        }
-      }
-    }
-
-    const onPointerDown = (e) => {
-      dragging = true;
-      last = { x: e.clientX, y: e.clientY };
-      el.setPointerCapture?.(e.pointerId);
-    };
-    const onPointerMove = (e) => {
-      if (!dragging) return;
-      apply(e.clientX - last.x, e.clientY - last.y);
-      last = { x: e.clientX, y: e.clientY };
-    };
-    const onPointerUp = (e) => {
-      dragging = false;
-      el.releasePointerCapture?.(e.pointerId);
-    };
-    const nudges = {
-      ArrowLeft: [-26, 0], ArrowRight: [26, 0], ArrowUp: [0, -26], ArrowDown: [0, 26],
-    };
-    const onKey = (e) => {
-      if (!nudges[e.key]) return;
-      e.preventDefault();
-      apply(...nudges[e.key]);
-    };
-
-    el.addEventListener("pointerdown", onPointerDown);
-    el.addEventListener("pointermove", onPointerMove);
-    el.addEventListener("pointerup", onPointerUp);
-    el.addEventListener("pointercancel", onPointerUp);
-    el.addEventListener("keydown", onKey);
-
-    // ---------------------------------------------------------- framing
-    // Fit from the model's real bounds, so it never crops and never floats in
-    // a sea of empty frame at any panel size.
+    // ---------------------------------------------------------- camera
     const bounds = new THREE.Box3().setFromObject(rig);
     const centre = bounds.getCenter(new THREE.Vector3());
-    const EYE = new THREE.Vector3(0.34, 0.42, 0.86).normalize();
-
-    // The eight corners of the bounding box, relative to its centre. Fitting
-    // against these exactly beats a bounding-sphere estimate, which for a wide
-    // flat device leaves it marooned in the middle of the frame.
     const corners = [];
     for (const x of [bounds.min.x, bounds.max.x]) {
       for (const y of [bounds.min.y, bounds.max.y]) {
@@ -504,43 +475,220 @@ export default function Trackball({ values, onScrollTick }) {
         }
       }
     }
-    const right = new THREE.Vector3().crossVectors(EYE, new THREE.Vector3(0, 1, 0)).normalize();
-    const up = new THREE.Vector3().crossVectors(right, EYE).normalize();
 
-    const resize = () => {
-      const { width, height: h } = el.getBoundingClientRect();
-      if (!width || !h) return;
-      renderer.setSize(width, h, false);
-      camera.aspect = width / h;
-      const vFov = (camera.fov * Math.PI) / 180;
-      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-      const tanV = Math.tan(vFov / 2);
-      const tanH = Math.tan(hFov / 2);
+    const view = { ...VIEWS.home };
+    let fitDist = 24;
 
-      // For a corner at depth (D - p·eye), it fits when its sideways offset is
-      // within tan(fov/2) * depth. Solve each for D and take the largest.
-      let dist = 0;
+    /**
+     * Distance at which every bounding-box corner sits inside both fields of
+     * view. Solving the corners beats a bounding-sphere estimate, which leaves
+     * a wide flat device marooned in the middle of the frame.
+     */
+    const fitFor = (az, elev) => {
+      const eye = new THREE.Vector3(
+        Math.cos(elev) * Math.sin(az), Math.sin(elev), Math.cos(elev) * Math.cos(az),
+      ).normalize();
+      const right = new THREE.Vector3().crossVectors(eye, new THREE.Vector3(0, 1, 0)).normalize();
+      const up = new THREE.Vector3().crossVectors(right, eye).normalize();
+      const tanV = Math.tan((camera.fov * Math.PI) / 360);
+      const tanH = tanV * camera.aspect;
+      let d = 0;
       for (const p of corners) {
-        const along = p.dot(EYE);
-        dist = Math.max(
-          dist,
-          along + Math.abs(p.dot(right)) / tanH,
-          along + Math.abs(p.dot(up)) / tanV,
-        );
+        const along = p.dot(eye);
+        d = Math.max(d, along + Math.abs(p.dot(right)) / tanH, along + Math.abs(p.dot(up)) / tanV);
       }
-      dist *= 1.04;   // a hair of breathing room
+      return d * 1.04;
+    };
 
-      camera.position.copy(EYE).multiplyScalar(dist).add(centre);
+    const placeCamera = () => {
+      const d = fitDist * view.zoom;
+      camera.position.set(
+        centre.x + d * Math.cos(view.el) * Math.sin(view.az),
+        centre.y + d * Math.sin(view.el),
+        centre.z + d * Math.cos(view.el) * Math.cos(view.az),
+      );
       camera.lookAt(centre);
-      camera.updateProjectionMatrix();
       renderer.shadowMap.needsUpdate = true;
+    };
+
+    // ---------------------------------------------------------- input
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    let mode = null;
+    let lastX = 0, lastY = 0, velX = 0, velY = 0;
+    let deadFlash = 0;
+    let twistAcc = 0;
+    const reduced = reducedMotion();
+    const DAMP = reduced ? 0.9 : 0.972;
+
+    const setNDC = (e) => {
+      const r = renderer.domElement.getBoundingClientRect();
+      ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+      ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+    };
+
+    /** Roll about the camera axes, so the ball follows your hand. */
+    const rollBall = (dx, dy) => {
+      const v = live.current;
+      const mag = Math.hypot(dx, dy);
+
+      // Below the threshold the firmware reports nothing at all.
+      if (v.deadzone && mag <= (v.deadzoneSize ?? 0) * 0.4) {
+        deadFlash = 1;
+        return;
+      }
+      // A rotated tracking plane turns the movement before it is applied.
+      const a = ((v.plane ?? 0) * Math.PI) / 180;
+      const rx = dx * Math.cos(a) - dy * Math.sin(a);
+      const ry = dx * Math.sin(a) + dy * Math.cos(a);
+      const gain = SPIN * (v.sens ?? 1) * 0.55;
+
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+      const q = new THREE.Quaternion();
+      q.setFromAxisAngle(up, rx * gain); ball.quaternion.premultiply(q);
+      q.setFromAxisAngle(right, ry * gain); ball.quaternion.premultiply(q);
+
+      if (v.twist) {
+        twistAcc += Math.abs(rx) * (v.twistSens ?? 1);
+        if (twistAcc > 60) {
+          twistAcc = 0;
+          for (const w of wheels) w.userData.spin = Math.sign(rx) * 7.5;
+          onScrollTick?.(Math.sign(rx));
+        }
+      }
+    };
+
+    // Grab the ball and it rolls; grab anywhere else and the device turns.
+    // Clicking a key presses it, clicking a wheel spins it.
+    const onPointerDown = (e) => {
+      // Capture is a nicety, not a requirement. It throws in some environments
+      // and it used to be the first statement here, so a failure took the rest
+      // of the handler with it and dragging silently stopped working.
+      try { el.setPointerCapture?.(e.pointerId); } catch { /* drag still works */ }
+      setNDC(e);
+      raycaster.setFromCamera(ndc, camera);
+      if (raycaster.intersectObject(ball).length) {
+        mode = "ball";
+        velX = velY = 0;
+      } else {
+        const hitWheel = raycaster.intersectObjects(wheels)[0];
+        if (hitWheel) hitWheel.object.userData.spin = 7.5;
+        const hitKey = raycaster.intersectObjects(buttons)[0];
+        if (hitKey) hitKey.object.userData.press = 1;
+        mode = "orbit";
+      }
+      el.dataset.grabbing = "1";
+      lastX = e.clientX; lastY = e.clientY;
+    };
+
+    const onPointerMove = (e) => {
+      if (!mode) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      if (mode === "ball") {
+        rollBall(dx, dy);
+        velX = velX * 0.55 + dx * 0.45;
+        velY = velY * 0.55 + dy * 0.45;
+      } else {
+        view.az -= dx * 0.006;
+        view.el = Math.min(1.5, Math.max(0.02, view.el + dy * 0.005));
+        fitDist = fitFor(view.az, view.el);
+        placeCamera();
+      }
+    };
+
+    const onPointerUp = (e) => {
+      mode = null;
+      delete el.dataset.grabbing;
+      try { el.releasePointerCapture?.(e.pointerId); } catch { /* never captured */ }
+    };
+
+    const zoomBy = (d) => {
+      view.zoom = Math.min(1.6, Math.max(0.42, view.zoom + d));
+      placeCamera();
+    };
+    const onWheel = (e) => { e.preventDefault(); zoomBy(e.deltaY * 0.0012); };
+
+    let pinch = 0;
+    const onTouchMove = (e) => {
+      if (e.touches.length !== 2) return;
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      if (pinch) zoomBy((pinch - d) * 0.003);
+      pinch = d;
+    };
+    const onTouchEnd = () => { pinch = 0; };
+
+    // Arrows roll the ball, shift+arrows turn the device, +/- zoom, so all of
+    // it is reachable without a pointer.
+    const onKey = (e) => {
+      const step = 26;
+      const map = {
+        ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+        ArrowUp: [0, -step], ArrowDown: [0, step],
+      };
+      if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomBy(-0.08); return; }
+      if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomBy(0.08); return; }
+      if (!map[e.key]) return;
+      e.preventDefault();
+      const [dx, dy] = map[e.key];
+      if (e.shiftKey) {
+        view.az -= dx * 0.02;
+        view.el = Math.min(1.5, Math.max(0.02, view.el + dy * 0.015));
+        fitDist = fitFor(view.az, view.el);
+        placeCamera();
+      } else {
+        rollBall(dx, dy);
+      }
+    };
+
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointermove", onPointerMove);
+    el.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("pointercancel", onPointerUp);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("keydown", onKey);
+
+    // ---------------------------------------------------------- resize
+    const resize = () => {
+      const { width, height } = el.getBoundingClientRect();
+      if (!width || !height) return;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      fitDist = fitFor(view.az, view.el);
+      placeCamera();
     };
     const ro = new ResizeObserver(resize);
     ro.observe(el);
     resize();
 
+    // ---------------------------------------------------------- api
+    api.current = {
+      applyColours(c) {
+        shellMat.color.set(c.body);
+        ballMat.color.set(c.ball);
+        wheelMat.color.set(c.wheel);
+        c.keys.forEach((hex, i) => keyMats[i]?.color.set(hex));
+      },
+      setView(name) {
+        Object.assign(view, VIEWS[name] ?? VIEWS.home);
+        fitDist = fitFor(view.az, view.el);
+        placeCamera();
+      },
+      flick() {
+        velX = 26 + Math.random() * 16;
+        velY = -9 + Math.random() * 18;
+      },
+    };
+
     // ---------------------------------------------------------- loop
-    const reduced = reducedMotion();
     const clock = new THREE.Clock();
     let raf;
     let visible = true;
@@ -548,6 +696,8 @@ export default function Trackball({ values, onScrollTick }) {
     const FRAME = 1 / 30;
     const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     io.observe(el);
+
+    const spinAxis = new THREE.Vector3(0, 1, 0);
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
@@ -559,18 +709,28 @@ export default function Trackball({ values, onScrollTick }) {
       acc = 0;
       const v = live.current;
 
-      // Smoothing window: how sluggishly the ball chases your hand.
-      const chase = 1 - Math.pow(0.001, (step * 12) / Math.max(1, v.sma ?? 1));
-      smoothed.lerp(vel, chase);
-      vel.multiplyScalar(Math.pow(0.12, step));
+      // The ball keeps rolling after you let go. Smoothing lengthens the
+      // coast, the way a larger averaging window does on the hardware.
+      if (mode !== "ball" && (Math.abs(velX) > 0.02 || Math.abs(velY) > 0.02)) {
+        rollBall(velX * step * 30, velY * step * 30);
+        const d = Math.pow(DAMP, (step * 60) / Math.max(1, (v.sma ?? 1) * 0.4));
+        velX *= d;
+        velY *= d;
+      }
 
-      ball.rotation.x += smoothed.x;
-      ball.rotation.y += smoothed.y;
-      if (!reduced && !dragging) ball.rotation.y += step * 0.05;
+      for (const b of buttons) {
+        if (b.userData.press > 0) {
+          b.userData.press = Math.max(0, b.userData.press - step * 3.6);
+          b.position.y = BTN_REST - Math.sin(b.userData.press * Math.PI) * 0.11;
+        }
+      }
 
-      // Twist-scroll turns the encoder wheels, the way it would on the desk.
-      wheelSpin *= Math.pow(0.02, step);
-      for (const w of wheels) w.rotation.y += wheelSpin * step;
+      for (const w of wheels) {
+        if (Math.abs(w.userData.spin) > 0.01) {
+          w.rotateOnAxis(spinAxis, w.userData.spin * step);
+          w.userData.spin *= Math.pow(0.94, step * 60);
+        }
+      }
 
       deadFlash = Math.max(0, deadFlash - step * 2.4);
       deadRing.material.opacity = deadFlash * 0.9;
@@ -582,14 +742,21 @@ export default function Trackball({ values, onScrollTick }) {
     };
     tick();
 
+    // A gentle roll on arrival, so it reads as a thing that moves.
+    if (!reduced) { velX = 12; velY = 4; }
+
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       io.disconnect();
+      api.current = null;
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointermove", onPointerMove);
       el.removeEventListener("pointerup", onPointerUp);
       el.removeEventListener("pointercancel", onPointerUp);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("keydown", onKey);
       for (const d of disposables) d.dispose?.();
       envRT.dispose();
@@ -598,13 +765,77 @@ export default function Trackball({ values, onScrollTick }) {
     };
   }, [onScrollTick]);
 
+  // Colours live in React so the pickers are controlled; the scene is told
+  // whenever they change, including on first mount.
+  useEffect(() => {
+    api.current?.applyColours(colours);
+    try { localStorage.setItem(STORE, JSON.stringify(colours)); } catch { /* storage may be blocked */ }
+  }, [colours]);
+
+  const setPart = useCallback((part, hex) => {
+    setColours((c) => ({ ...c, [part]: hex }));
+  }, []);
+  const setKeyColour = useCallback((i, hex) => {
+    setColours((c) => ({ ...c, keys: c.keys.map((k, n) => (n === i ? hex : k)) }));
+  }, []);
+
   return (
-    <div
-      ref={host}
-      className="ball"
-      tabIndex={0}
-      role="application"
-      aria-label="Trackball preview. Drag it, or use the arrow keys, to spin the ball."
-    />
+    <div className="viewport">
+      <div
+        ref={host}
+        className="ball"
+        tabIndex={0}
+        role="application"
+        aria-label="Trackball preview. Drag the ball to roll it, drag the body to turn the device, scroll to zoom. Arrow keys roll, shift with arrows turns, plus and minus zoom."
+      />
+
+      {supported && (
+        <div className="viewport__tools">
+          <button className="vbtn" onClick={() => api.current?.setView("home")}>Reset</button>
+          <button className="vbtn" onClick={() => api.current?.setView("top")}>Top</button>
+          <button className="vbtn" onClick={() => api.current?.setView("port")}>Port</button>
+          <button className="vbtn" onClick={() => api.current?.setView("wheels")}>Wheels</button>
+          <button className="vbtn" onClick={() => api.current?.flick()}>Flick</button>
+          <button
+            className={"vbtn" + (palette ? " is-on" : "")}
+            aria-pressed={palette}
+            aria-expanded={palette}
+            onClick={() => setPalette((v) => !v)}
+          >
+            Colours
+          </button>
+        </div>
+      )}
+
+      {palette && supported && (
+        <div className="palette" role="group" aria-label="Part colours">
+          <Swatch label="Body" value={colours.body} onChange={(v) => setPart("body", v)} />
+          <Swatch label="Ball" value={colours.ball} onChange={(v) => setPart("ball", v)} />
+          <Swatch label="Wheels" value={colours.wheel} onChange={(v) => setPart("wheel", v)} />
+          <p className="palette__head">Keys</p>
+          <div className="palette__keys">
+            {colours.keys.map((hex, i) => (
+              <input
+                key={i}
+                type="color"
+                value={hex}
+                aria-label={`Key ${i + 1} colour`}
+                onChange={(e) => setKeyColour(i, e.target.value)}
+              />
+            ))}
+          </div>
+          <button className="vbtn" onClick={() => setColours(DEFAULT_COLOURS)}>Reset colours</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Swatch({ label, value, onChange }) {
+  return (
+    <label className="palette__row">
+      <span>{label}</span>
+      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
   );
 }
