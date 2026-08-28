@@ -1351,7 +1351,9 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
-@media (max-width: 620px) {
+/* Narrow phones, and short landscape ones where it lands on top of the model:
+   the viewport is only ~390px tall there and the pad needs ~150. */
+@media (max-width: 620px), (max-height: 560px) {
   .pad { display: none; }
 }
 

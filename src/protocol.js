@@ -38,12 +38,6 @@ export function parseRtcfgRanges(text) {
   return out;
 }
 
-/** `rtcfg get <key>` answers `<key> = <value>`. */
-export function parseRtcfgGet(text) {
-  const m = String(text).match(/=\s*(-?\d+)/);
-  return m ? Number(m[1]) : null;
-}
-
 // ---------------------------------------------------------------- curves
 
 const SCALE = 100;
@@ -76,7 +70,7 @@ export function toFlat(segs) {
   return out;
 }
 
-export const bezierAt = (s, t) => {
+const bezierAt = (s, t) => {
   const u = 1 - t;
   return {
     x: u * u * u * s.start.x + 3 * u * u * t * s.cp1.x + 3 * u * t * t * s.cp2.x + t * t * t * s.end.x,
@@ -224,7 +218,7 @@ export function parseAssignments(text) {
  * a hardware quirk, not a display preference, so keep it here where the value
  * is parsed. `reportedMax` preserves what the board actually said.
  */
-export const SURFACE_MAX_FIX = { 728: 1000 };
+const SURFACE_MAX_FIX = { 728: 1000 };
 
 /** `sensor surface` -> [{ sensor, quality, max, reportedMax }] */
 export function parseSurface(text) {
@@ -306,9 +300,6 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   eq(meta["p2sm/ptr_after_scroll"].max, 5000, "wide range");
   eq(meta["legacy/no_range"], { value: 7, def: 7, min: null, max: null }, "range is optional");
   eq(Object.keys(meta).length, 6, "every line has meta");
-  eq(parseRtcfgGet("p2sm/frame_sync = 1"), 1, "rtcfg get");
-  eq(parseRtcfgGet("bst/default = 0"), 0, "rtcfg get zero");
-  eq(parseRtcfgGet("nope"), null, "rtcfg get miss");
 
   // curves: round-trip, and the start/END/cp1/cp2 ordering
   const flat = [0, 0, 116, 41, 10, 32, 16, 39];
