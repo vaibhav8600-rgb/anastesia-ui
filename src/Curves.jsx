@@ -144,12 +144,9 @@ export default function Curves({ live, onNote }) {
 
       {segs && <CurveChart segs={segs} logX={logX} logY={logY} onChange={update} />}
 
-      <div className="row row--wrap">
+      <div className="chartbar">
         <button className="pill" aria-pressed={logX} onClick={() => setLogX((v) => !v)}>X log scale</button>
         <button className="pill" aria-pressed={logY} onClick={() => setLogY((v) => !v)}>Y log scale</button>
-      </div>
-
-      <div className="row row--wrap">
         <button
           className="btn"
           onClick={() => update([...segs, extend(segs)])}
@@ -160,14 +157,15 @@ export default function Curves({ live, onNote }) {
         <button className="btn" onClick={() => update(segs.slice(0, -1))} disabled={segs.length <= 1}>
           Remove point
         </button>
-        <button className="btn" onClick={reset}>Reset to default</button>
+        <button className="btn" onClick={reset}>Reset</button>
       </div>
 
-      <div className="row row--wrap">
+      <div className="actions">
         <button className="btn btn--primary" onClick={save} disabled={busy || !dirty}>
           {dirty ? "Save curve" : "Saved"}
         </button>
         <button className="btn" onClick={load} disabled={busy}>Reload</button>
+        <span className="actions__gap" />
         <button className="btn btn--danger" onClick={destroy} disabled={busy}>Destroy</button>
       </div>
 

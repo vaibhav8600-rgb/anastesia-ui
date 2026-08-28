@@ -309,7 +309,7 @@ export default function Effects({ live, onNote }) {
 
           {err && <p className="warn warn--inline">{err}</p>}
 
-          <div className="row row--wrap">
+          <div className="actions">
             <button className="btn btn--primary" onClick={save} disabled={busy}>Save event</button>
             <button className="btn" onClick={loadList} disabled={busy}>Reload all</button>
           </div>

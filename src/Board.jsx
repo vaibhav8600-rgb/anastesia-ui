@@ -229,7 +229,7 @@ export function Keymap({ live, onNote }) {
                 `Wrote “${name.trim()}” to slot ${s.id}.`,
               )}
             >
-              → {s.id}
+              Slot {s.id}
             </button>
           ))}
         </div>
@@ -296,8 +296,9 @@ export function Keymap({ live, onNote }) {
         </>
       )}
 
-      <div className="row row--wrap">
+      <div className="actions">
         <button className="btn" onClick={load} disabled={busy}>Refresh</button>
+        <span className="actions__gap" />
         <button className="btn btn--danger" disabled={busy} onClick={() => run("keymap restore", "Restored the default keymap.")}>
           Reset to default keymap
         </button>

@@ -566,7 +566,8 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         twistAcc += Math.abs(rx) * (v.twistSens ?? 1);
         if (twistAcc > 60) {
           twistAcc = 0;
-          for (const w of wheels) w.userData.spin = Math.sign(rx) * 7.5;
+          // The wheels are separate hardware from the ball, so rolling the
+          // ball must not turn them. Only clicking one does.
           onScrollTick?.(Math.sign(rx));
         }
       }
