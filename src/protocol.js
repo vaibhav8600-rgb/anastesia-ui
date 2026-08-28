@@ -227,6 +227,28 @@ export function parseSurface(text) {
   return out;
 }
 
+// ------------------------------------------------------------ board status
+
+/** `board status` -> firmware + battery, falling back to `board version`. */
+export function parseBoardStatus(status, version) {
+  // battery null means the board answered but reports no level; undefined
+  // means we have not had an answer yet.
+  const out = { version: null, battery: null };
+  // An unsupported `board status` prints the command's help text instead.
+  if (!status || unsupported(status) || status.includes("Control the device")) {
+    out.version = version?.match(/Firmware version:\s*(\S+)/)?.[1] ?? null;
+    return out;
+  }
+  out.version = status.match(/Firmware:\s*v?(\S+)/i)?.[1] ?? null;
+  const b = status.match(/Batt(?:ery)?\s*(?:level)?\s*[:=]\s*(\d+)/i);
+  if (b) out.battery = Number(b[1]);
+  return out;
+}
+
+export function parseOutput(text) {
+  return text?.match(/Output:\s*(USB|BLE|ESB)/i)?.[1]?.toUpperCase() ?? null;
+}
+
 export const studioLocked = (t) => /Unlock ZMK Studio first/i.test(String(t));
 
 // ------------------------------------------------------------ self-check
@@ -347,6 +369,19 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   const surf = parseSurface("Sensor #0: surface quality = 240/361\nSensor #1: surface quality = 96/361");
   eq(surf.length, 2, "two sensors");
   eq(surf[0].quality, 240, "quality");
+
+  // board status
+  const NL = String.fromCharCode(10);
+  const bs = parseBoardStatus("Firmware: v1.4.4" + NL + "Battery: 95" + NL + "Output: BLE", null);
+  eq(bs.version, "1.4.4", "firmware from status");
+  eq(bs.battery, 95, "battery from status");
+  eq(parseBoardStatus("Firmware: 2.0.1" + NL + "Batt: 42", null).battery, 42, "short spelling");
+  eq(parseBoardStatus("Firmware: 2.0.1", null).battery, null, "no level reported");
+  const help = parseBoardStatus("Control the device", "Firmware version: 0.9.9");
+  eq(help.version, "0.9.9", "falls back to board version");
+  eq(help.battery, null, "help text carries no battery");
+  eq(parseOutput("Output: usb"), "USB", "output normalised");
+  eq(parseOutput("nothing"), null, "no output line");
 
   console.assert(unsupported("plane: command not found"), "unsupported detected");
   console.assert(studioLocked("Unlock ZMK Studio first"), "studio lock detected");

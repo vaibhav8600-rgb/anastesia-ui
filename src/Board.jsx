@@ -25,30 +25,53 @@ export function qualityBand(quality, max) {
   return ratio < warn ? "low" : ratio < good ? "mid" : "high";
 }
 
-export function Surface({ live, onNote }) {
+export function Surface({ live, onNote, active = true }) {
   const [sensors, setSensors] = useState([]);
-  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
-  const measure = useCallback(async () => {
+  // Reads continuously while the tab is open so you can watch the numbers move
+  // as you roll the ball. Between reads the last value simply stays on screen.
+  useEffect(() => {
+    if (!active) return;
     if (!live) {
-      setSensors([{ sensor: 0, quality: 742, max: 1000 }, { sensor: 1, quality: 208, max: 1000 }]);
-      return;
+      let t;
+      const wobble = () => {
+        setSensors([
+          { sensor: 0, quality: 690 + Math.round(Math.random() * 90), max: 1000 },
+          { sensor: 1, quality: 180 + Math.round(Math.random() * 70), max: 1000 },
+        ]);
+        t = setTimeout(wobble, 700);
+      };
+      wobble();
+      return () => clearTimeout(t);
     }
-    setBusy(true);
-    try {
-      const out = await device.send("sensor surface");
-      if (unsupported(out)) { onNote("This board does not report surface quality."); return; }
-      setSensors(parseSurface(out));
-    } catch (e) { onNote(e.message); } finally { setBusy(false); }
-  }, [live, onNote]);
 
-  useEffect(() => { measure(); }, [measure]);
+    let stop = false;
+    let timer;
+    const tick = async () => {
+      if (stop) return;
+      if (device.pending) { timer = setTimeout(tick, 200); return; }
+      try {
+        const out = await device.send("sensor surface");
+        if (stop) return;
+        if (unsupported(out)) { setError("This board does not report surface quality."); return; }
+        setSensors(parseSurface(out));
+        setError(null);
+      } catch { /* a missed sample just leaves the last one showing */ }
+      if (!stop) timer = setTimeout(tick, 600);
+    };
+    tick();
+    return () => { stop = true; clearTimeout(timer); };
+  }, [live, active]);
+
+  if (error) return <p className="empty">{error}</p>;
 
   return (
-    <>
-      <p className="ctl__hint">
-        How well each sensor can see the ball, on the scale that sensor reports. Higher is better.
-      </p>
+    <div className="surface">
+      <div className="surface__head">
+        <h3 className="sec">Surface quality</h3>
+        <span className="surface__live" aria-hidden="true">live</span>
+      </div>
       {sensors.length > 0 ? (
         <ul className="meters">
           {sensors.map((s) => (
@@ -65,10 +88,12 @@ export function Surface({ live, onNote }) {
           ))}
         </ul>
       ) : (
-        <p className="empty">{busy ? "Measuring…" : "Not measured yet."}</p>
+        <p className="empty">Reading…</p>
       )}
-      <button className="btn" onClick={measure} disabled={busy}>Measure again</button>
-    </>
+      <p className="ctl__hint">
+        How well each sensor sees the ball, on the scale that sensor reports. Roll the ball to watch it change.
+      </p>
+    </div>
   );
 }
 

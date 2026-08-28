@@ -46,7 +46,8 @@ Seven tabs, matching the original's shape:
 | `src/device.js` | USB-serial + BLE transport and the shell protocol |
 | `src/protocol.js` | parsers for the device's text output, with a runnable self-check |
 | `src/settings.js` | the settings catalogue — one table drives every knob |
-| `src/Control.jsx` | renders one knob (range or toggle) |
+| `src/Control.jsx` | picks the shape for one setting: dial, slider, field or switch |
+| `src/Dial.jsx` | the radial knob |
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles, import/export, surface quality |
@@ -76,6 +77,21 @@ and only the real one appears.
 
 Sensor surface quality is likewise out of whatever the sensor reports — 361 on
 one part, 1000 on another — so the good/warning/bad bands scale with it.
+
+## Choosing a control's shape
+
+A page of forty sliders reads as a spreadsheet, so `src/Control.jsx` picks by
+what the setting is like:
+
+- `hero: true` in the catalogue gets a **dial** — the few settings people
+  actually reach for (sensitivity, rotation, smoothing, scroll speed).
+- Everyday settings get a **slider**, where sweeping is the point.
+- Anything under Advanced gets a **number field** in a two-column grid, because
+  there an exact value matters more than a sweep.
+- Anything with a 0-1 range is a **switch**, decided from the device's own range.
+
+Sensor surface quality reads continuously while the Sensor(s) tab is open, so
+you can roll the ball and watch it move; between reads the last value stays.
 
 ## Header status
 

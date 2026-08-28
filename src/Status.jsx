@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { device } from "./device.js";
-import { unsupported } from "./protocol.js";
+import { parseBoardStatus, parseOutput } from "./protocol.js";
 
 // Live device readout for the header: which endpoint is carrying the pointer,
 // firmware version, and battery. Polled in the background like the original —
@@ -9,26 +9,8 @@ import { unsupported } from "./protocol.js";
 const OUTPUT_POLL_MS = 3000;
 const STATUS_POLL_MS = 300000;
 
-/** `board status` -> firmware + battery, falling back to `board version`. */
-export function parseBoardStatus(status, version) {
-  const out = { version: null, battery: null };
-  // An unsupported `board status` prints the command's help text instead.
-  if (!status || unsupported(status) || status.includes("Control the device")) {
-    out.version = version?.match(/Firmware version:\s*(\S+)/)?.[1] ?? null;
-    return out;
-  }
-  out.version = status.match(/Firmware:\s*v?(\S+)/i)?.[1] ?? null;
-  const b = status.match(/Battery:\s*(\d+)/i);
-  if (b) out.battery = Number(b[1]);
-  return out;
-}
-
-export function parseOutput(text) {
-  return text?.match(/Output:\s*(USB|BLE|ESB)/i)?.[1]?.toUpperCase() ?? null;
-}
-
 export default function Status({ live, onFirmware }) {
-  const [info, setInfo] = useState({ version: null, battery: null });
+  const [info, setInfo] = useState({ version: null, battery: undefined });
   const [output, setOutput] = useState(null);
 
   useEffect(() => {
@@ -39,9 +21,27 @@ export default function Status({ live, onFirmware }) {
       return;
     }
     let stop = false;
+    const timers = [];
 
-    const readStatus = async () => {
-      if (device.pending) return;   // never make the user wait behind a poll
+    /**
+     * Yield to the user's own commands, but come straight back — skipping
+     * outright meant the first read landed during the initial settings load
+     * and then waited a full interval, which for status is five minutes.
+     */
+    const poll = (fn, every) => {
+      const run = async () => {
+        if (stop) return;
+        if (device.pending) {
+          timers.push(setTimeout(run, 300));
+          return;
+        }
+        await fn();
+        if (!stop) timers.push(setTimeout(run, every));
+      };
+      run();
+    };
+
+    poll(async () => {
       try {
         const status = await device.send("board status");
         const version = status.includes("Control the device")
@@ -52,20 +52,16 @@ export default function Status({ live, onFirmware }) {
         setInfo(parsed);
         onFirmware?.(parsed.version);
       } catch { /* a poll that misses is not worth reporting */ }
-    };
-    const readOutput = async () => {
-      if (device.pending) return;
+    }, STATUS_POLL_MS);
+
+    poll(async () => {
       try {
         const o = parseOutput(await device.send("board output"));
         if (!stop && o) setOutput(o);
       } catch { /* same */ }
-    };
+    }, OUTPUT_POLL_MS);
 
-    readStatus();
-    readOutput();
-    const a = setInterval(readStatus, STATUS_POLL_MS);
-    const b = setInterval(readOutput, OUTPUT_POLL_MS);
-    return () => { stop = true; clearInterval(a); clearInterval(b); };
+    return () => { stop = true; timers.forEach(clearTimeout); };
   }, [live, onFirmware]);
 
   const link = device.kind === "ble" ? "BLE" : live ? "USB" : null;
@@ -78,7 +74,7 @@ export default function Status({ live, onFirmware }) {
 
       {info.version && <span className="status__ver" title="Firmware version">v{info.version}</span>}
 
-      <Battery level={info.battery} />
+      {info.battery !== null && <Battery level={info.battery} />}
 
       {link && (
         <span className="status__link" title={`Configuring over ${link}`}>{link}</span>

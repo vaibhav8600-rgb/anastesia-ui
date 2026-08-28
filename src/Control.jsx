@@ -1,9 +1,14 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
+import Dial from "./Dial.jsx";
 
-// One renderer for every knob in the catalogue. Native <input> underneath, so
-// keyboard, touch and screen readers work without us reimplementing any of it.
+// Three shapes, chosen by what the setting is actually like:
+//   hero    -> a dial you turn, for the few settings people reach for
+//   compact -> a number field, for the long tail where an exact value matters
+//              more than sweeping (and where a stack of sliders is just noise)
+//   default -> a slider, for the middle ground
+// Toggles are always a switch. All of them are native inputs underneath.
 
-export default function Control({ spec, value, onChange, disabled }) {
+export default function Control({ spec, value, onChange, disabled, compact }) {
   const id = useId();
   const hintId = spec.hint ? `${id}-hint` : undefined;
 
@@ -31,6 +36,19 @@ export default function Control({ spec, value, onChange, disabled }) {
     );
   }
 
+  if (spec.hero) {
+    return <Dial spec={spec} value={value} onChange={onChange} disabled={disabled} />;
+  }
+
+  if (compact) {
+    return (
+      <div className="ctl ctl--compact">
+        <label className="ctl__label" htmlFor={id} title={spec.hint}>{spec.label}</label>
+        <NumberField id={id} spec={spec} value={value} onChange={onChange} disabled={disabled} />
+      </div>
+    );
+  }
+
   const v = value ?? spec.min;
   const pct = ((v - spec.min) / (spec.max - spec.min)) * 100;
 
@@ -38,9 +56,7 @@ export default function Control({ spec, value, onChange, disabled }) {
     <div className="ctl">
       <div className="ctl__head">
         <label className="ctl__label" htmlFor={id}>{spec.label}</label>
-        <output className="ctl__value" htmlFor={id}>
-          {formatValue(v, spec)}
-        </output>
+        <span className="ctl__value">{format(v, spec)}</span>
       </div>
       <input
         id={id}
@@ -60,7 +76,42 @@ export default function Control({ spec, value, onChange, disabled }) {
   );
 }
 
-function formatValue(v, spec) {
-  const decimals = spec.step < 1 ? 1 : 0;
-  return v.toFixed(decimals) + (spec.unit ?? "");
+/** Typed edits commit on blur or Enter, so a half-typed number is not sent. */
+function NumberField({ id, spec, value, onChange, disabled }) {
+  const [text, setText] = useState(String(value ?? spec.min ?? 0));
+
+  useEffect(() => { setText(String(value ?? spec.min ?? 0)); }, [value, spec.min]);
+
+  const commit = () => {
+    const n = Number(text);
+    if (Number.isNaN(n)) { setText(String(value)); return; }
+    const clamped = Math.min(spec.max ?? Infinity, Math.max(spec.min ?? -Infinity, n));
+    setText(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  };
+
+  return (
+    <span className="numwrap">
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={spec.min}
+        max={spec.max}
+        step={spec.step}
+        value={text}
+        disabled={disabled}
+        aria-label={spec.label}
+        title={spec.hint}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+      {spec.unit && <span className="unit">{spec.unit.trim()}</span>}
+    </span>
+  );
+}
+
+function format(v, spec) {
+  return v.toFixed(spec.step < 1 ? 1 : 0) + (spec.unit ?? "");
 }

@@ -238,6 +238,7 @@ export default function App() {
             </Pane>
 
             <Pane active={tab === "sensors"} visited={visited.has("sensors")}>
+              <Surface live={live} onNote={setNote} active={tab === "sensors"} />
               {sensorSections
                 .filter((sec) => !sec.optional || sec.controls.some((c) => !state.missing.has(c.id)))
                 .map((sec) => (
@@ -250,10 +251,6 @@ export default function App() {
                     onChange={change}
                   />
                 ))}
-              <details className="sub">
-                <summary>Sensor surface quality</summary>
-                <Surface live={live} onNote={setNote} />
-              </details>
             </Pane>
 
             <Pane active={tab === "effects"} visited={visited.has("effects")}>
@@ -294,29 +291,39 @@ function Pane({ active, visited, children }) {
   return <div hidden={!active}>{children}</div>;
 }
 
-/** A titled run of knobs, with the long tail folded away. */
+/** A titled run of knobs: dials for the few, sliders next, fields for the tail. */
 function KnobSection({ section, state, values, busy, onChange }) {
   const shown = section.controls
     .filter((c) => !state.missing.has(c.id))
     .map((c) => resolveSpec(c, state.ranges));
-  const main = shown.filter((c) => !c.advanced);
-  const advanced = shown.filter((c) => c.advanced);
 
   if (!shown.length) return null;
 
-  const render = (c) => (
-    <Control key={c.id} spec={c} value={values[c.id]} disabled={busy} onChange={(v) => onChange(c.id, v)} />
+  const heroes = shown.filter((c) => c.hero && !c.advanced);
+  const main = shown.filter((c) => !c.hero && !c.advanced);
+  const advanced = shown.filter((c) => c.advanced);
+
+  const render = (c, compact) => (
+    <Control
+      key={c.id}
+      spec={c}
+      value={values[c.id]}
+      disabled={busy}
+      compact={compact}
+      onChange={(v) => onChange(c.id, v)}
+    />
   );
 
   return (
     <section className="knobs">
       <h3 className="sec">{section.label}</h3>
       {section.blurb && <p className="panel__blurb">{section.blurb}</p>}
-      {main.map(render)}
+      {heroes.length > 0 && <div className="dials">{heroes.map((c) => render(c, false))}</div>}
+      {main.map((c) => render(c, false))}
       {advanced.length > 0 && (
         <details className="sub">
           <summary>Advanced ({advanced.length})</summary>
-          {advanced.map(render)}
+          <div className="grid2">{advanced.map((c) => render(c, true))}</div>
         </details>
       )}
     </section>

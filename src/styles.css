@@ -863,3 +863,192 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   .logrow { grid-template-columns: auto 1fr; gap: 0.35rem 0.6rem; }
   .logrow__text { grid-column: 1 / -1; }
 }
+
+/* ---------- dials ---------- */
+
+.dials {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 0.5rem;
+  padding: 0.9rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(120% 130% at 50% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 65%),
+    var(--bg);
+}
+
+.dial { display: grid; justify-items: center; gap: 0.3rem; }
+
+.dial__face {
+  width: 100%;
+  max-width: 108px;
+  touch-action: none;
+  cursor: ns-resize;
+  border-radius: 50%;
+}
+.dial__face:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.dial__track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 14%, transparent);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.dial__value {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dasharray 90ms linear;
+}
+.dial__knob {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2.5;
+  transition: cx 90ms linear, cy 90ms linear;
+}
+.dial__num {
+  fill: var(--text);
+  font-size: 21px;
+  font-weight: 650;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+.dial__unit {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: middle;
+}
+.dial__label {
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.25;
+}
+.dial.is-disabled { opacity: 0.5; }
+
+/* ---------- compact rows for the long tail ---------- */
+
+.grid2 { display: grid; gap: 0.15rem 1.4rem; }
+@media (min-width: 560px) {
+  .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.ctl--compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.ctl--compact .ctl__label { font-weight: 400; font-size: 0.87rem; min-width: 0; }
+.ctl--compact .numwrap input { width: 5rem; }
+
+/* Toggles in the compact grid drop their hint to stay on one line. */
+.grid2 .ctl--toggle { padding: 0.3rem 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.grid2 .ctl--toggle .ctl__hint { display: none; }
+.grid2 .ctl--toggle .ctl__label { font-weight: 400; font-size: 0.87rem; }
+
+/* ---------- live surface strip ---------- */
+
+.surface {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.surface__head { display: flex; align-items: center; gap: 0.5rem; }
+.surface__head .sec { margin: 0; }
+.surface__live {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+}
+.surface .meters__fill { transition: width 220ms ease; }
+.surface .ctl__hint { margin: 0; }
+
+/* ---------- buttons: one scale everywhere ----------
+   Buttons and pills previously disagreed on height (44 vs 38) and on padding,
+   so any row mixing them looked ragged. One set of tokens fixes the lot. */
+
+:root {
+  --btn-h: 38px;
+  --btn-pad: 0.9rem;
+  --btn-radius: 10px;
+}
+
+.btn, .pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--btn-h);
+  min-height: var(--btn-h);
+  padding: 0 var(--btn-pad);
+  border: 1px solid var(--line);
+  border-radius: var(--btn-radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 100ms ease;
+}
+
+.btn:hover:not(:disabled), .pill:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text) 22%, transparent);
+}
+.btn:active:not(:disabled), .pill:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled, .pill:disabled { opacity: 0.42; cursor: not-allowed; }
+
+.pill { border-radius: 999px; color: var(--muted); font-size: 0.84rem; }
+.pill.is-active, .pill[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.pill.is-active:hover, .pill[aria-pressed="true"]:hover { background: var(--accent); filter: brightness(1.06); }
+
+.btn--primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn--primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); border-color: transparent; }
+
+.btn--ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn--ghost:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+.btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Rows of actions get consistent, slightly roomier spacing. */
+.row { gap: 0.55rem; }
+.row--wrap { row-gap: 0.55rem; }
+
+/* Touch pointers get taller targets; mice do not need them. */
+@media (pointer: coarse) {
+  :root { --btn-h: 44px; }
+}
+
+.logs__bar { gap: 0.55rem; padding: 0.75rem var(--gap); }
+.logs__bar .logs__count { margin-left: 0.25rem; }
+
+/* The header keeps its own slightly larger primary action. */
+.bar .btn { height: 36px; min-height: 36px; }
+@media (pointer: coarse) {
+  .bar .btn { height: 40px; min-height: 40px; }
+}
