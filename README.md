@@ -55,7 +55,8 @@ Seven tabs, matching the original's shape:
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
-| `reference/trackball3d.html` | standalone model this was ported from; kept as the reference |
+| `reference/trackball3d.html` | standalone model the preview was ported from |
+| `reference/marshmellow-ui.html` | later build of the original app; the protocol reference |
 | `src/styles.css` | all of the styling |
 
 Adding a setting is one line in `src/settings.js`; there is no per-setting
