@@ -18,8 +18,8 @@ const CMD_TIMEOUT_MS = 10000;
 // then sent anything real — without that, the first command (rtcfg list) goes
 // out into the void and times out. These are its numbers.
 const SETTLE_MS = { usb: 2000, ble: 1500 };
-const PROBE_TIMEOUT_MS = 4500;
-const PROBE_GAP_MS = 500;
+const PROBE_TIMEOUT_MS = 2500;
+const PROBE_GAP_MS = 300;
 const HANDSHAKE_MS = 25000;
 
 // A reply is finished when the prompt arrives — but not every firmware and
@@ -28,6 +28,19 @@ const HANDSHAKE_MS = 25000;
 // accepted "the device has stopped talking" as the end of a reply. This is
 // that fallback, at a tighter gap since replies normally arrive in one burst.
 const QUIET_MS = 1200;
+
+// Zephyr shells do not agree on what ends a line. The previous UI only ever
+// sent LF, which is right for the USB console; if the BLE backend wants CR it
+// simply never sees a command. Probe with each until one answers.
+const LINE_ENDINGS = ["\n", "\r", "\r\n"];
+
+/** Named reads, since these live on the prototype and do not enumerate. */
+function describeProps(ch) {
+  const p = ch.properties;
+  if (!p) return "unknown";
+  const on = ["notify", "indicate", "read", "write", "writeWithoutResponse"].filter((k) => p[k]);
+  return on.join(", ") || "none";
+}
 
 const stripAnsi = (s) => s.replace(/\x1b\[[\d;]*[A-Za-z]/g, "");
 
@@ -61,6 +74,7 @@ class Device {
     // would then write USB commands into a dead BLE characteristic, which is
     // why USB only worked again after a page refresh.
     await this.disconnect();
+    this.closing = false;   // after disconnect, which sets it
     const port = await navigator.serial.requestPort({
       filters: [{ usbVendorId: USB.usbVendorId }],
     });
@@ -74,6 +88,7 @@ class Device {
 
   async connectBLE() {
     await this.disconnect();
+    this.closing = false;
     const dev = await navigator.bluetooth.requestDevice({
       filters: [{ services: [BLE_SERVICE] }],
       optionalServices: [BLE_SERVICE],
@@ -92,16 +107,16 @@ class Device {
     this.shell = chars.get(BLE_SHELL);
     if (!this.shell) throw new Error(`Shell characteristic ${BLE_SHELL} not found on this device.`);
 
-    // Which of these are missing tells you immediately why nothing arrives.
-    const props = Object.entries(this.shell.properties ?? {})
-      .filter(([, on]) => on)
-      .map(([k]) => k);
-    this.log("recv", `Shell supports: ${props.join(", ") || "unknown"}`);
+    // BluetoothCharacteristicProperties exposes getters on its prototype, so
+    // Object.entries() sees nothing. Read the ones that matter by name.
+    this.log("recv", `Shell supports: ${describeProps(this.shell)}`);
 
     this.decoder = new TextDecoder();
     this.shell.addEventListener("characteristicvaluechanged", (e) => {
-      this.buffer += this.decoder.decode(e.target.value);
+      const text = this.decoder.decode(e.target.value);
+      this.buffer += text;
       this.lastByteAt = Date.now();
+      this.sawShellBytes = true;
     });
     await this.shell.startNotifications();
     this.log("recv", "Subscribed to the shell channel");
@@ -112,6 +127,13 @@ class Device {
     this.data = chars.get(BLE_DATA) ?? null;
     if (this.data) {
       try {
+        // If the device answers here instead of on the shell, that is the
+        // whole mystery, so watch it rather than ignoring it.
+        this.data.addEventListener("characteristicvaluechanged", (e) => {
+          if (this.sawDataBytes) return;
+          this.sawDataBytes = true;
+          this.log("recv", `Data channel produced: ${JSON.stringify(new TextDecoder().decode(e.target.value))}`);
+        });
         await this.data.startNotifications();
         this.log("recv", "Subscribed to the data channel");
       } catch (err) {
@@ -120,14 +142,16 @@ class Device {
     } else {
       this.log("recv", "No data channel on this device");
     }
+    if (this.data) this.log("recv", `Data supports: ${describeProps(this.data)}`);
 
     this.bleDevice = dev;
     this.kind = "ble";
     // A dropped GATT link leaves the app thinking it is still connected.
     dev.addEventListener("gattserverdisconnected", () => {
+      const ours = this.closing;
       this.shell = this.bleDevice = this.data = null;
       this.kind = null;
-      for (const fn of this.listeners) fn({ dir: "recv", text: "Bluetooth disconnected", at: Date.now() });
+      this.log("recv", ours ? "Bluetooth closed" : "Bluetooth link dropped by the device");
     });
     await this.settle();
     return this;
@@ -151,6 +175,7 @@ class Device {
   }
 
   async disconnect() {
+    this.closing = true;   // so the drop handler knows this was us
     try { await this.reader?.cancel(); } catch { /* already gone */ }
     try { this.reader?.releaseLock(); } catch { /* already released */ }
     try { await this.port?.close(); } catch { /* already closed */ }
@@ -161,6 +186,9 @@ class Device {
     // Leftovers here would be read as the next connection's first reply.
     this.buffer = "";
     this.lastByteAt = 0;
+    this.bleWrite = null;
+    this.lineEnding = null;
+    this.sawShellBytes = this.sawDataBytes = false;
   }
 
   /** Handshake, tearing the transport down if the device never answers. */
@@ -183,10 +211,16 @@ class Device {
     await sleep(SETTLE_MS[this.kind] ?? 1500);
     const deadline = Date.now() + HANDSHAKE_MS;
     let lastError = null;
+    let attempt = 0;
     for (;;) {
+      this.lineEnding = LINE_ENDINGS[attempt % LINE_ENDINGS.length];
+      attempt++;
       try {
         const out = await this.send("__init", { timeout: PROBE_TIMEOUT_MS });
-        if (/command not found/i.test(out)) break;
+        if (/command not found/i.test(out)) {
+          this.log("recv", `Shell answered with ${JSON.stringify(this.lineEnding)} line endings`);
+          break;
+        }
         // Wording varies between firmwares. Anything coming back at all means
         // the shell is up and listening, which is all we needed to establish.
         if (out.trim().length > 0) {
@@ -197,9 +231,14 @@ class Device {
         // Swallowing this is what made a genuine write failure look like an
         // unresponsive device. Record it; the Logs tab shows it.
         lastError = err;
-        if (!/^Timed out/.test(err.message)) this.log("recv", `Probe failed: ${err.message}`);
+        this.log("recv", `No reply to ${JSON.stringify(this.lineEnding)} (${err.message})`);
       }
       if (Date.now() > deadline) {
+        if (!this.sawShellBytes) {
+          this.log("recv", this.sawDataBytes
+            ? "The shell channel never produced a byte, but the data channel did."
+            : "Neither channel produced a byte. Writes left, nothing came back.");
+        }
         throw new Error(
           lastError && !/^Timed out/.test(lastError.message)
             ? `The device did not respond: ${lastError.message}`
@@ -222,7 +261,7 @@ class Device {
       this.buffer = "";
       this.lastByteAt = 0;
       this.log("send", cmd);
-      const bytes = new TextEncoder().encode(cmd + "\n");
+      const bytes = new TextEncoder().encode(cmd + (this.lineEnding ?? "\n"));
 
       if (this.kind === "ble") {
         for (let i = 0; i < bytes.length; i += BLE_CHUNK) {
