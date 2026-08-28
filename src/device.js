@@ -113,10 +113,23 @@ class Device {
 
     this.decoder = new TextDecoder();
     this.shell.addEventListener("characteristicvaluechanged", (e) => {
-      const text = this.decoder.decode(e.target.value);
-      this.buffer += text;
-      this.lastByteAt = Date.now();
+      // Flag first and decode inside a guard: if decoding ever threw, the
+      // handler would look exactly like an event that never fired.
       this.sawShellBytes = true;
+      this.lastByteAt = Date.now();
+      let text = "";
+      try {
+        text = this.decoder.decode(e.target.value);
+      } catch (err) {
+        this.log("recv", `Could not decode a notification: ${err.message}`);
+        return;
+      }
+      this.buffer += text;
+      if (this.shellDumps === undefined) this.shellDumps = 0;
+      if (this.shellDumps < 3) {
+        this.shellDumps++;
+        this.log("recv", `Shell notification: ${JSON.stringify(text)}`);
+      }
     });
     await this.shell.startNotifications();
     this.log("recv", "Subscribed to the shell channel");
@@ -189,6 +202,7 @@ class Device {
     this.bleWrite = null;
     this.lineEnding = null;
     this.sawShellBytes = this.sawDataBytes = false;
+    this.shellDumps = 0;
   }
 
   /** Handshake, tearing the transport down if the device never answers. */
@@ -209,6 +223,39 @@ class Device {
   async handshake() {
     this.log("send", `Waiting ${SETTLE_MS[this.kind] ?? 1500}ms for the shell…`);
     await sleep(SETTLE_MS[this.kind] ?? 1500);
+
+    if (this.kind === "ble") {
+      // The previous UI sees the device volunteer a banner in this window;
+      // if we saw nothing, the subscription did not take. Re-arming it is the
+      // usual remedy for a CCCD write that landed before the peer was ready.
+      if (!this.sawShellBytes) {
+        this.log("send", "No banner yet; re-arming the shell subscription");
+        try {
+          await this.shell.stopNotifications();
+          await sleep(200);
+          await this.shell.startNotifications();
+          await sleep(800);
+          this.log("recv", this.sawShellBytes ? "Banner arrived after re-arming" : "Still silent after re-arming");
+        } catch (err) {
+          this.log("recv", `Could not re-arm: ${err.message}`);
+        }
+      }
+      // A bare newline flushes any half-typed line and makes a shell print its
+      // prompt — the cheapest way to ask "are you there?".
+      for (const ending of LINE_ENDINGS) {
+        try {
+          await this.writeBle(new TextEncoder().encode(ending));
+          await sleep(400);
+          if (this.sawShellBytes) {
+            this.lineEnding = ending;
+            this.log("recv", `Shell woke on a bare ${JSON.stringify(ending)}`);
+            break;
+          }
+        } catch (err) {
+          this.log("recv", `Bare ${JSON.stringify(ending)} failed: ${err.message}`);
+        }
+      }
+    }
     const deadline = Date.now() + HANDSHAKE_MS;
     let lastError = null;
     let attempt = 0;
@@ -238,6 +285,16 @@ class Device {
           this.log("recv", this.sawDataBytes
             ? "The shell channel never produced a byte, but the data channel did."
             : "Neither channel produced a byte. Writes left, nothing came back.");
+          // A device shell serves one client. If another page still holds it,
+          // GATT connects and writes succeed while nothing is ever sent back —
+          // which is exactly this signature.
+          if (this.kind === "ble") {
+            throw new Error(
+              "Connected, but the device never sent anything back. If another " +
+              "page or app is still connected to it over Bluetooth, close that " +
+              "first — the shell only talks to one client at a time.",
+            );
+          }
         }
         throw new Error(
           lastError && !/^Timed out/.test(lastError.message)
