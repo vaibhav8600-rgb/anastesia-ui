@@ -54,7 +54,7 @@ const loadColours = () => {
 const VIEWS = {
   home: { az: 0.34, el: 0.46, zoom: 1 },
   top: { az: 0, el: 1.45, zoom: 1.06 },
-  port: { az: 0, el: 0.12, zoom: 0.72 },
+  port: { az: Math.PI, el: 0.12, zoom: 0.72 },
   wheels: { az: 0.72, el: 0.2, zoom: 0.62 },
 };
 
@@ -349,7 +349,14 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     deadRing.position.y = 2.9;
 
     // ---------------------------------------------------------- USB-C port
-    const panel = add(new THREE.Mesh(
+    // The wheels sit on the +Z corners, so the port goes on the opposite face.
+    // Turning a group 180 degrees keeps every local +Z offset below as written.
+    const portGroup = new THREE.Group();
+    portGroup.rotation.y = Math.PI;
+    rig.add(portGroup);
+    const addPort = (m) => { portGroup.add(m); return m; };
+
+    const panel = addPort(new THREE.Mesh(
       track(new THREE.BoxGeometry(5.8, 1.85, 0.1)),
       track(new THREE.MeshStandardMaterial({ color: 0x181717, roughness: 0.42, metalness: 0.25, envMapIntensity: 0.5 })),
     ));
@@ -369,7 +376,7 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     for (let hp = holePts.length - 1; hp > 0; hp--) hole.lineTo(holePts[hp].x, holePts[hp].y);
     rimShape.holes.push(hole);
 
-    const portRing = add(new THREE.Mesh(
+    const portRing = addPort(new THREE.Mesh(
       track(new THREE.ExtrudeGeometry(rimShape, {
         depth: 0.2, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05,
         bevelSegments: 2, curveSegments: 14,
@@ -378,12 +385,12 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     ));
     portRing.position.set(0, 1.35, FRONT - 0.05);
 
-    const portCavity = add(new THREE.Mesh(
+    const portCavity = addPort(new THREE.Mesh(
       track(new THREE.BoxGeometry(1.44, 0.42, 0.1)),
       track(new THREE.MeshStandardMaterial({ color: 0x040405, roughness: 0.75 })),
     ));
     portCavity.position.set(0, 1.35, FRONT + 0.06);
-    const tongue = add(new THREE.Mesh(
+    const tongue = addPort(new THREE.Mesh(
       track(new THREE.BoxGeometry(1.06, 0.13, 0.05)),
       track(new THREE.MeshStandardMaterial({ color: 0xa5a8ad, roughness: 0.28, metalness: 0.95 })),
     ));
