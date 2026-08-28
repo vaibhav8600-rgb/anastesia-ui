@@ -78,6 +78,8 @@ const reducedMotion = () =>
 export default function Trackball({ values, onScrollTick, tools = true }) {
   const host = useRef(null);
   const api = useRef(null);
+  const dot = useRef(null);
+  const rpm = useRef(null);
   const live = useRef(values);
   live.current = values;
 
@@ -531,6 +533,8 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     let lastX = 0, lastY = 0, velX = 0, velY = 0;
     let deadFlash = 0;
     let twistAcc = 0;
+    // Where the pointer would have travelled, in pad pixels.
+    const cursor = { x: 0, y: 0 };
     const reduced = reducedMotion();
     const DAMP = reduced ? 0.9 : 0.972;
 
@@ -561,6 +565,10 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
       const q = new THREE.Quaternion();
       q.setFromAxisAngle(up, rx * gain); ball.quaternion.premultiply(q);
       q.setFromAxisAngle(right, ry * gain); ball.quaternion.premultiply(q);
+
+      // The pad shows the pointer this roll would produce, at your settings.
+      cursor.x += rx * 0.55 * (v.sens ?? 1) * 0.4;
+      cursor.y += ry * 0.55 * (v.sens ?? 1) * 0.4;
 
       if (v.twist) {
         twistAcc += Math.abs(rx) * (v.twistSens ?? 1);
@@ -742,6 +750,7 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
       for (const w of wheels) {
         if (Math.abs(w.userData.spin) > 0.01) {
           w.rotateOnAxis(spinAxis, w.userData.spin * step);
+          cursor.y -= w.userData.spin * step * 5;
           w.userData.spin *= Math.pow(0.94, step * 60);
         }
       }
@@ -751,6 +760,22 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
 
       const bright = v.glow ? (v.brightness ?? 60) / 100 : 0;
       glow.intensity = THREE.MathUtils.lerp(glow.intensity, bright * 26, 0.08);
+
+      // Pointer output readout. Written straight to the DOM: it changes every
+      // frame, and routing that through React state would re-render the panel.
+      if (dot.current) {
+        const pad = dot.current.parentElement;
+        const hx = pad.clientWidth / 2 - 6;
+        const hy = pad.clientHeight / 2 - 6;
+        cursor.x = Math.max(-hx, Math.min(hx, cursor.x));
+        cursor.y = Math.max(-hy, Math.min(hy, cursor.y));
+        dot.current.style.transform =
+          `translate(${cursor.x.toFixed(1)}px, ${cursor.y.toFixed(1)}px)`;
+      }
+      if (rpm.current) {
+        const turns = Math.hypot(velX, velY) * SPIN * 3600 / (2 * Math.PI);
+        rpm.current.textContent = turns < 1 ? "0" : turns.toFixed(0);
+      }
 
       renderer.render(scene, camera);
     };
@@ -802,6 +827,16 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         role="application"
         aria-label="Trackball preview. Drag the ball to roll it, drag the body to turn the device, scroll to zoom. Arrow keys roll, shift with arrows turns, plus and minus zoom."
       />
+
+      {supported && tools && (
+        <div className="pad" aria-hidden="true">
+          <span className="pad__label">Pointer output</span>
+          <div className="pad__box">
+            <span className="pad__dot" ref={dot} />
+          </div>
+          <span className="pad__rpm">Ball speed <b ref={rpm}>0</b> rpm</span>
+        </div>
+      )}
 
       {supported && tools && (
         <div className="viewport__tools">

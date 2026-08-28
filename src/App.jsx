@@ -14,6 +14,11 @@ import Status from "./Status.jsx";
 
 // The seven tabs mirror the original's shape, so anyone coming from it knows
 // where to look.
+// Every key any curated control owns. A section's prefix fill must skip all of
+// them, or a key curated elsewhere is duplicated into whichever section claims
+// its prefix — p2sm/frame_sync lives under Pointer but Twist scroll claims p2sm/.
+const CURATED_KEYS = new Set(allControls.map((c) => c.key).filter(Boolean));
+
 const TABS = [
   { id: "keymap", label: "Keymap" },
   { id: "acceleration", label: "Acceleration" },
@@ -61,7 +66,11 @@ const DEMO_STATE = {
   ranges: DEMO_RANGES,
   sens: 3.2, plane: 0, sma: 4, rrl: 0,
   twist: 1, twistSens: 2.5, twistReverse: 0, argb: 1,
-  missing: new Set(),
+  // Hide the same controls a real board would, so demo does not show both
+  // spellings of a renamed key side by side.
+  missing: new Set(
+    allControls.filter((c) => c.key && !(c.key in DEMO_RTCFG)).map((c) => c.id),
+  ),
 };
 
 export default function App() {
@@ -296,6 +305,21 @@ export default function App() {
   );
 }
 
+/**
+ * Advanced settings in declaration order are one long undifferentiated run.
+ * Each control names the sub-group it belongs to, and they are gathered here
+ * in first-seen order so the grouping stays predictable.
+ */
+function groupByAdv(controls) {
+  const out = new Map();
+  for (const c of controls) {
+    const key = c.adv ?? "Other";
+    if (!out.has(key)) out.set(key, []);
+    out.get(key).push(c);
+  }
+  return [...out];
+}
+
 /** Mounted once visited, hidden rather than torn down when you switch away. */
 function Pane({ active, visited, children }) {
   if (!visited) return null;
@@ -305,7 +329,7 @@ function Pane({ active, visited, children }) {
 /** A titled run of knobs: dials for the few, sliders next, fields for the tail. */
 function KnobSection({ section, state, values, busy, onChange }) {
   const curated = section.controls.filter((c) => !state.missing.has(c.id));
-  const covered = new Set(section.controls.map((c) => c.key).filter(Boolean));
+  const covered = CURATED_KEYS;
   const shown = [...curated, ...extraControls(section.prefixes, state.rtcfg, covered)]
     .map((c) => resolveSpec(c, state.ranges));
 
@@ -335,7 +359,12 @@ function KnobSection({ section, state, values, busy, onChange }) {
       {advanced.length > 0 && (
         <details className="sub">
           <summary>Advanced ({advanced.length})</summary>
-          <div className="grid2">{advanced.map((c) => render(c, true))}</div>
+          {groupByAdv(advanced).map(([name, items]) => (
+            <div className="advgroup" key={name}>
+              <h4 className="advgroup__title">{name}</h4>
+              <div className="grid2">{items.map((c) => render(c, true))}</div>
+            </div>
+          ))}
         </details>
       )}
     </section>

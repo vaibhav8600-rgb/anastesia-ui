@@ -12,7 +12,8 @@
   --warn: #ffa06a;
   --danger: #ff6b8a;
   --ok: #63e6a0;
-  --radius: 14px;
+  --radius: 8px;
+  --radius-sm: 4px;
   --gap: clamp(0.75rem, 2.2vw, 1.25rem);
   --pad: clamp(1rem, 3.5vw, 2rem);
 
@@ -59,7 +60,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* ---------- shell ---------- */
@@ -93,7 +94,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 .chip {
   padding: 0.15rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -121,7 +122,9 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 @media (min-width: 900px), (min-width: 620px) and (max-height: 560px) {
   .stage {
     grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 27rem);
+    /* A share of the stage rather than a fixed cap: capping the panel at
+       27rem made the split 77/23 on a 1920 screen and worse beyond that. */
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 33%);
     align-items: stretch;
   }
 }
@@ -133,9 +136,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background:
-    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
-    var(--bg-soft);
+  background: var(--bg-soft);
   overflow: hidden;
 }
 
@@ -193,7 +194,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   padding: 0.4rem clamp(0.6rem, 2.4vw, 0.9rem);
   font-size: clamp(0.85rem, 0.8rem + 0.2vw, 1rem);
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font-weight: 550;
@@ -234,7 +235,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   font-size: 0.9rem;
   color: var(--accent);
   padding: 0.1rem 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
@@ -251,7 +252,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 /* The fill is painted on the track via --fill, set inline from the value. */
 .range::-webkit-slider-runnable-track {
   height: 8px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: linear-gradient(
     to right,
     var(--accent) var(--fill, 0%),
@@ -260,12 +261,12 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 }
 .range::-moz-range-track {
   height: 8px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--text) 14%, transparent);
 }
 .range::-moz-range-progress {
   height: 8px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: var(--accent);
 }
 
@@ -274,16 +275,16 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   width: 22px;
   height: 22px;
   margin-top: -7px;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: var(--accent);
-  border: 3px solid var(--bg-soft);
-  box-shadow: 0 0 0 1px var(--line);
+  border: 2px solid var(--bg-soft);
+  outline: 1px solid var(--line);
   transition: transform 120ms ease;
 }
 .range::-moz-range-thumb {
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: var(--accent);
   border: 3px solid var(--bg-soft);
 }
@@ -296,7 +297,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   height: 30px;
   padding: 3px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--text) 10%, transparent);
   cursor: pointer;
   transition: background 180ms ease;
@@ -305,7 +306,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   display: block;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--muted);
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.3, 1), background 180ms ease;
 }
@@ -318,7 +319,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
 }
 
@@ -337,7 +338,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   flex: none;
   padding: 0.3rem 0.5rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   text-align: right;
 }
@@ -348,7 +349,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .btn {
   padding: 0.45rem 0.95rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   font-weight: 550;
   cursor: pointer;
@@ -485,7 +486,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   gap: 0.75rem;
   padding: 0.65rem 0.85rem;
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   color: var(--warn);
 }
 .notice p { margin: 0; }
@@ -508,7 +509,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   padding: 0.35rem 0.8rem;
   min-height: 38px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font-size: 0.85rem;
@@ -532,7 +533,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   width: 5.5rem;
   padding: 0.3rem 0.5rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   text-align: right;
 }
@@ -570,7 +571,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   height: 48px;
   padding: 2px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   cursor: pointer;
 }
@@ -587,7 +588,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 .slots li.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .slots__id { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -605,8 +606,8 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .meters li { display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center; gap: 0.6rem; }
 .meters__label { font-size: 0.85rem; color: var(--muted); }
-.meters__bar { height: 10px; border-radius: 999px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
-.meters__fill { display: block; height: 100%; border-radius: 999px; transition: width 300ms ease; }
+.meters__bar { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--text) 12%, transparent); overflow: hidden; }
+.meters__fill { display: block; height: 100%; border-radius: 2px; transition: width 300ms ease; }
 .meters__fill--low { background: var(--danger); }
 .meters__fill--mid { background: var(--warn); }
 .meters__fill--high { background: var(--ok); }
@@ -636,7 +637,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   gap: 0.55rem;
   padding: 0.2rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
 }
 
@@ -688,7 +689,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .console__count {
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--text) 12%, transparent);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
@@ -799,14 +800,14 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   gap: 0.75rem;
   align-items: start;
   padding: 0.5rem 0.75rem;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: #0d1017;
 }
 
 .logrow__tag {
   justify-self: start;
   padding: 0.1rem 0.5rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -875,9 +876,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   padding: 0.9rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background:
-    radial-gradient(120% 130% at 50% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 65%),
-    var(--bg);
+  background: var(--bg);
 }
 
 .dial { display: grid; justify-items: center; gap: 0.3rem; }
@@ -887,7 +886,8 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   max-width: 108px;
   touch-action: none;
   cursor: ns-resize;
-  border-radius: 50%;
+  /* Only the focus ring's shape — the gauge itself is drawn in SVG. */
+  border-radius: var(--radius-sm);
 }
 .dial__face:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
@@ -895,13 +895,13 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   fill: none;
   stroke: color-mix(in srgb, var(--text) 14%, transparent);
   stroke-width: 7;
-  stroke-linecap: round;
+  stroke-linecap: butt;
 }
 .dial__value {
   fill: none;
   stroke: var(--accent);
   stroke-width: 7;
-  stroke-linecap: round;
+  stroke-linecap: butt;
   transition: stroke-dasharray 90ms linear;
 }
 .dial__knob {
@@ -998,13 +998,13 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .gauges__track {
   height: 10px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--text) 13%, transparent);
   overflow: hidden;
 }
 .gauges__fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: 2px;
   transition: width 220ms ease, background-color 220ms ease;
 }
 /* Bright, saturated green when tracking is good — the reading you want to see. */
@@ -1019,7 +1019,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 :root {
   --btn-h: 38px;
   --btn-pad: 0.9rem;
-  --btn-radius: 10px;
+  --btn-radius: var(--radius-sm);
 }
 
 .btn, .pill {
@@ -1049,7 +1049,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .btn:active:not(:disabled), .pill:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled, .pill:disabled { opacity: 0.42; cursor: not-allowed; }
 
-.pill { border-radius: 999px; color: var(--muted); font-size: 0.84rem; }
+.pill { border-radius: var(--radius-sm); color: var(--muted); font-size: 0.84rem; }
 .pill.is-active, .pill[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-ink);
@@ -1091,7 +1091,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .surface__raw {
   margin: 0;
   padding: 0.6rem 0.75rem;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--text) 7%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.76rem;
@@ -1137,9 +1137,8 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   height: 30px;
   padding: 0 0.6rem;
   border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(6px);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 600;
@@ -1164,8 +1163,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   padding: 0.75rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-soft) 94%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--bg-soft);
   z-index: 2;
 }
 
@@ -1190,7 +1188,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   min-height: 28px;
   padding: 1px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   cursor: pointer;
 }
@@ -1286,3 +1284,67 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
+
+/* ---------- advanced sub-groups ---------- */
+
+.advgroup + .advgroup { margin-top: 1rem; }
+.advgroup__title {
+  margin: 0 0 0.35rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* ---------- pointer output pad ----------
+   From reference/trackball3d.html: where the pointer would travel for the roll
+   you just made, at your current sensitivity, plus the ball's speed. Desktop
+   only — on a phone the viewport is ~32dvh and the model needs the frame. */
+
+.pad {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 0.55rem;
+  display: grid;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.pad__label,
+.pad__rpm {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pad__rpm b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.pad__box {
+  position: relative;
+  width: 120px;
+  height: 84px;
+  border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  overflow: hidden;
+}
+
+/* Centre origin, so the dot's transform is a plain offset from the middle. */
+.pad__dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+@media (max-width: 620px) {
+  .pad { display: none; }
+}
