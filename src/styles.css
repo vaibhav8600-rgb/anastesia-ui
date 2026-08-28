@@ -1362,3 +1362,16 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .ctl--compact .switch {
   margin-right: calc(var(--unit-slot) + var(--unit-gap));
 }
+
+/* The connection log on the welcome screen: same rows as the Logs tab, but
+   scoped to the copy column and capped so it never pushes the buttons away. */
+.console--welcome {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  max-width: 34rem;
+}
+.console--welcome .logs__body { max-height: 15rem; padding: 0.5rem 0.75rem; }
+.console--welcome summary { padding: 0.5rem 0.75rem; }
+.console--welcome .console__foot { padding: 0 0.75rem 0.6rem; }
+.console--welcome .logrow { grid-template-columns: auto minmax(0, 1fr); }

@@ -237,6 +237,14 @@ this does too — some firmware will not start talking until both subscriptions
 exist. Writes prefer `writeValueWithoutResponse` and fall back to a plain
 `writeValue` if the characteristic does not offer it, remembering which worked.
 
+**The connection log is on the connect screen.** It used to live only in the
+Logs tab, which is behind a successful connect — so the one time you most need
+it, a failure, was the one time you could not reach it. The welcome screen now
+shows the same rows, open by default while idle. The BLE path narrates itself
+into it: which device was selected, GATT connected, the characteristics found,
+what the shell characteristic supports (notify / write / writeWithoutResponse),
+each subscription, and the settle wait. Where the list stops is the fault.
+
 **Handshake failures name their cause.** Probe errors used to be swallowed, so
 a write that threw on every attempt looked identical to a silent device. They
 are logged to the Logs tab now and the final message carries the last real

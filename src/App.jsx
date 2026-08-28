@@ -187,7 +187,16 @@ export default function App() {
   useEffect(() => { if (status === "demo") startDemo(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!state) {
-    return <Welcome status={status} note={note} onConnect={connect} onDemo={startDemo} />;
+    return (
+      <Welcome
+        status={status}
+        note={note}
+        log={log}
+        onConnect={connect}
+        onDemo={startDemo}
+        onClearLog={() => setLog([])}
+      />
+    );
   }
 
   // "is there a device" is not the same question as "is a command in flight".
@@ -371,7 +380,7 @@ function KnobSection({ section, state, values, busy, onChange }) {
   );
 }
 
-function Welcome({ status, note, onConnect, onDemo }) {
+function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
   const none = !supported.usb && !supported.ble;
   return (
     <div className="welcome">
@@ -401,6 +410,28 @@ function Welcome({ status, note, onConnect, onDemo }) {
         )}
         <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
         {note && <p className="toast toast--inline" role="status">{note}</p>}
+
+        {/* A connection that fails is exactly when you need the log, and the
+            Logs tab is behind a successful connect. So it lives here too. */}
+        {log.length > 0 && (
+          <details className="console console--welcome" open={status === "idle"}>
+            <summary>
+              Connection log <span className="console__count">{log.length}</span>
+            </summary>
+            <div className="logs__body">
+              {log.map((l, i) => (
+                <div key={i} className={"logrow logrow--" + l.dir}>
+                  <span className="logrow__tag">{l.dir === "send" ? "SEND" : "RECEIVE"}</span>
+                  <pre className="logrow__text">{l.text || "(no output)"}</pre>
+                </div>
+              ))}
+            </div>
+            <div className="console__foot">
+              <button className="pill" onClick={onClearLog}>Clear</button>
+            </div>
+          </details>
+        )}
+
         <p className="app-byline">Anastesia-UI · by Vaibhav Rajput</p>
       </div>
     </div>

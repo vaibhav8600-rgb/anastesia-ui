@@ -76,15 +76,27 @@ class Device {
     await this.disconnect();
     const dev = await navigator.bluetooth.requestDevice({
       filters: [{ services: [BLE_SERVICE] }],
+      optionalServices: [BLE_SERVICE],
     });
+    this.log("send", `Selected "${dev.name ?? "unnamed device"}"`);
+
     const server = await dev.gatt.connect();
+    this.log("recv", "GATT connected");
     const svc = await server.getPrimaryService(BLE_SERVICE);
 
     // Enumerate rather than fetch by uuid: it gives a clearer failure when the
     // shell characteristic is absent, and we need the data one anyway.
     const chars = new Map((await svc.getCharacteristics()).map((c) => [c.uuid, c]));
+    this.log("recv", `Characteristics: ${[...chars.keys()].join(", ") || "none"}`);
+
     this.shell = chars.get(BLE_SHELL);
     if (!this.shell) throw new Error(`Shell characteristic ${BLE_SHELL} not found on this device.`);
+
+    // Which of these are missing tells you immediately why nothing arrives.
+    const props = Object.entries(this.shell.properties ?? {})
+      .filter(([, on]) => on)
+      .map(([k]) => k);
+    this.log("recv", `Shell supports: ${props.join(", ") || "unknown"}`);
 
     this.decoder = new TextDecoder();
     this.shell.addEventListener("characteristicvaluechanged", (e) => {
@@ -92,14 +104,21 @@ class Device {
       this.lastByteAt = Date.now();
     });
     await this.shell.startNotifications();
+    this.log("recv", "Subscribed to the shell channel");
 
     // The previous UI subscribes to the data channel too, before it says a
     // word to the shell. Some firmware will not start talking until both
     // subscriptions exist, so match it.
     this.data = chars.get(BLE_DATA) ?? null;
     if (this.data) {
-      try { await this.data.startNotifications(); }
-      catch { /* the stream channel is optional */ }
+      try {
+        await this.data.startNotifications();
+        this.log("recv", "Subscribed to the data channel");
+      } catch (err) {
+        this.log("recv", `Data channel not subscribed: ${err.message}`);
+      }
+    } else {
+      this.log("recv", "No data channel on this device");
     }
 
     this.bleDevice = dev;
@@ -160,6 +179,7 @@ class Device {
    * "__init: command not found" — which is the reply we are looking for.
    */
   async handshake() {
+    this.log("send", `Waiting ${SETTLE_MS[this.kind] ?? 1500}ms for the shell…`);
     await sleep(SETTLE_MS[this.kind] ?? 1500);
     const deadline = Date.now() + HANDSHAKE_MS;
     let lastError = null;
@@ -244,6 +264,12 @@ class Device {
    * plain write, and remember which one worked.
    */
   async writeBle(chunk) {
+    if (!this.bleWrite) {
+      const p = this.shell.properties ?? {};
+      // Skip straight to the plain write when the characteristic says it
+      // cannot do the other one, rather than throwing once to find out.
+      if (p.writeWithoutResponse === false && p.write) this.bleWrite = "withResponse";
+    }
     if (this.bleWrite !== "withResponse") {
       try {
         await this.shell.writeValueWithoutResponse(chunk);
