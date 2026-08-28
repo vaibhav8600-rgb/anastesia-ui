@@ -15,6 +15,7 @@ npm run dev       # dev server, with fast refresh
 npm run build     # -> dist/index.html, one self-contained offline file
 npm run preview   # serve the built file
 
+node src/device.js     # self-check reply completion
 node src/protocol.js   # self-check the device-output parsers
 node src/settings.js   # self-check the settings catalogue
 ```
@@ -219,6 +220,21 @@ first read. So `device.js` runs the previous UI's handshake on connect:
 
 Only then does `readAll()` run. A dropped BLE link is caught via
 `gattserverdisconnected` rather than leaving the app believing it is connected.
+
+**A reply ends at a prompt, or at silence.** Not every firmware and transport
+prints a prompt we recognise, and waiting only for one is what made Bluetooth
+fail: `awaitPrompt` threw while the answer was sitting in the buffer. It now
+also accepts "bytes arrived, then stopped for `QUIET_MS`" as a finished reply,
+and returns a partial rather than throwing when the deadline passes with
+something in hand. Only total silence is an error. The handshake is likewise
+satisfied by any reply, not just the exact "command not found" wording.
+
+**A failed connect tears the transport down.** `connectUSB`/`connectBLE` call
+`disconnect()` first and again if the handshake fails. Without that, a failed
+BLE attempt left `this.shell` set, and since `send()` chose its transport by
+that field, subsequent USB commands were written into the dead BLE
+characteristic — USB then worked only after a page refresh. `send()` also
+routes on `this.kind` now rather than on a field that can go stale.
 
 ## Talking to the device
 
