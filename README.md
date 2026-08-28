@@ -53,7 +53,8 @@ Seven tabs, matching the original's shape:
 | `src/Board.jsx` | keymap profiles, import/export, surface quality |
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
-| `src/Trackball.jsx` | the three.js preview |
+| `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
+| `trackball3d.html` | standalone model this was ported from; kept as the reference |
 | `src/styles.css` | all of the styling |
 
 Adding a setting is one line in `src/settings.js`; there is no per-setting
@@ -83,6 +84,24 @@ figure is kept as `reportedMax` and shown in the gauge's tooltip.
 
 Battery is read verbatim from `board status` with no scaling, exactly as the
 previous UI did — whatever percentage appears is the number the board gave.
+
+## The preview
+
+The preview is the device, not a stand-in sphere: rounded-square shell, eight
+radial keys, the ball in its socket, the USB-C port and both corner encoder
+wheels, all built procedurally from `trackball3d.html`'s geometry constants so
+the proportions match the hardware.
+
+It still reacts to your settings — sensitivity changes the ball's weight under
+your finger, the dead zone flares the socket ring when it swallows a movement,
+and twist-scroll turns the encoder wheels. The camera fits the model's real
+bounding-box corners, so it fills a phone strip and a desktop panel equally
+well without cropping.
+
+Two things keep it cheap: the shadow pass runs once and is then frozen (only
+the ball and wheels move, and both are surfaces of revolution turning about
+their own axis, so their shadows never change), and the loop is capped at 30fps
+and pauses when the page is hidden or the canvas is scrolled out of view.
 
 ## Choosing a control's shape
 

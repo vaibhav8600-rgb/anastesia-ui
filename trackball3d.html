@@ -3,59 +3,64 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Trackball — 3D</title>
+<title>Trackball — 3D (v2)</title>
 <style>
-  :root{
-    --ink:#0a0a0c;
-    --paper:#e8e4dc;
-    --hot:#ff2d55;
-    --cool:#2b6bff;
-    --dim:rgba(232,228,220,.55);
-  }
+  :root{ --ink:#0a0a0c; --paper:#eceae4; --hot:#c11a3e; --dim:rgba(236,234,228,.55); }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--ink);overflow:hidden;
-    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    -webkit-tap-highlight-color:transparent}
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;-webkit-tap-highlight-color:transparent}
   #stage{position:fixed;inset:0;touch-action:none;cursor:grab}
   #stage.grabbing{cursor:grabbing}
   canvas{display:block}
-
   .hud{position:fixed;pointer-events:none;color:var(--paper);z-index:5}
 
-  #masthead{top:0;left:0;padding:18px 20px}
+  #masthead{top:0;left:0;padding:16px 18px}
   #masthead h1{margin:0;font-size:12px;letter-spacing:.34em;font-weight:600;text-transform:uppercase}
-  #masthead p{margin:6px 0 0;font-size:11px;letter-spacing:.05em;color:var(--dim);max-width:30ch;line-height:1.5}
+  #masthead p{margin:6px 0 0;font-size:10.5px;letter-spacing:.05em;color:var(--dim);max-width:30ch;line-height:1.5}
 
-  #pad{bottom:20px;left:20px;pointer-events:auto}
-  #padbox{width:132px;height:92px;border:1px solid rgba(232,228,220,.22);
-    border-radius:4px;position:relative;overflow:hidden;background:rgba(255,255,255,.03)}
+  #pad{bottom:18px;left:18px;pointer-events:auto}
+  #padbox{width:120px;height:84px;border:1px solid rgba(236,234,228,.22);border-radius:4px;
+    position:relative;overflow:hidden;background:rgba(255,255,255,.03)}
   #dot{position:absolute;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;
-    background:var(--hot);box-shadow:0 0 12px rgba(255,45,85,.9);left:50%;top:50%}
+    background:var(--hot);box-shadow:0 0 12px rgba(193,26,62,.95);left:50%;top:50%}
   #padlabel{font-size:9.5px;letter-spacing:.22em;color:var(--dim);margin:0 0 7px;text-transform:uppercase}
   #rpm{font-size:9.5px;letter-spacing:.14em;color:var(--dim);margin:7px 0 0}
   #rpm b{color:var(--paper);font-weight:600}
 
-  #controls{bottom:20px;right:20px;display:flex;gap:8px;pointer-events:auto;flex-wrap:wrap;justify-content:flex-end}
-  button{font:inherit;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
-    color:var(--paper);background:rgba(255,255,255,.05);border:1px solid rgba(232,228,220,.22);
-    padding:9px 13px;border-radius:3px;cursor:pointer;transition:background .15s,border-color .15s}
-  button:hover{background:rgba(255,255,255,.11);border-color:rgba(232,228,220,.45)}
+  #controls{bottom:18px;right:18px;display:flex;gap:7px;pointer-events:auto;flex-wrap:wrap;justify-content:flex-end}
+  button{font:inherit;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper);
+    background:rgba(255,255,255,.05);border:1px solid rgba(236,234,228,.22);padding:9px 12px;
+    border-radius:3px;cursor:pointer;transition:background .15s,border-color .15s}
+  button:hover{background:rgba(255,255,255,.11);border-color:rgba(236,234,228,.45)}
   button:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
-  button[aria-pressed="true"]{background:var(--hot);border-color:var(--hot);color:#fff}
+  button[aria-pressed="true"]{background:var(--paper);color:#111;border-color:var(--paper)}
+
+  #colours{position:fixed;top:16px;right:16px;width:212px;max-height:76vh;overflow-y:auto;z-index:6;
+    background:rgba(14,14,17,.94);border:1px solid rgba(236,234,228,.2);border-radius:5px;
+    padding:12px;color:var(--paper);display:none;backdrop-filter:blur(8px)}
+  #colours.open{display:block}
+  #colours h2{margin:0 0 9px;font-size:9.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  #colours h2:not(:first-child){margin-top:14px;padding-top:12px;border-top:1px solid rgba(236,234,228,.14)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0}
+  .row span{font-size:10.5px;letter-spacing:.04em}
+  input[type=color]{width:38px;height:24px;padding:0;border:1px solid rgba(236,234,228,.3);
+    border-radius:3px;background:none;cursor:pointer;flex:0 0 auto}
+  #colours button{width:100%;margin-top:12px;padding:8px}
 
   #loader{position:fixed;inset:0;display:grid;place-content:center;gap:14px;justify-items:center;
-    background:var(--ink);z-index:20;transition:opacity .5s ease;color:var(--dim);font-size:11px;letter-spacing:.28em;text-transform:uppercase}
+    background:var(--ink);z-index:20;transition:opacity .5s ease;color:var(--dim);font-size:11px;
+    letter-spacing:.28em;text-transform:uppercase}
   #loader.gone{opacity:0;pointer-events:none}
-  #spinner{width:34px;height:34px;border:2px solid rgba(232,228,220,.2);border-top-color:var(--hot);
+  #spinner{width:34px;height:34px;border:2px solid rgba(236,234,228,.2);border-top-color:var(--hot);
     border-radius:50%;animation:sp .9s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){#spinner{animation-duration:2.4s}}
 
   @media (max-width:640px){
-    #masthead p{max-width:22ch}
-    #padbox{width:104px;height:74px}
-    #controls{gap:6px}
-    button{padding:8px 10px;font-size:9.5px;letter-spacing:.1em}
+    #masthead p{max-width:20ch}
+    #padbox{width:96px;height:68px}
+    #colours{width:186px;top:auto;bottom:118px;max-height:52vh}
+    button{padding:8px 9px;font-size:9px;letter-spacing:.08em}
   }
 </style>
 </head>
@@ -64,8 +69,8 @@
 <div id="stage"></div>
 
 <div class="hud" id="masthead">
-  <h1>Trackball · 55&nbsp;mm</h1>
-  <p>Drag the ball to roll it. Drag the mat to orbit. Scroll to zoom.</p>
+  <h1>Trackball</h1>
+  <p>Build v2 &middot; colour editor. Drag the ball to roll it, drag elsewhere to orbit.</p>
 </div>
 
 <div class="hud" id="pad">
@@ -74,9 +79,31 @@
   <p id="rpm">Ball speed <b id="spd">0</b> rpm</p>
 </div>
 
+<div id="colours">
+  <h2>Body &amp; ball</h2>
+  <div class="row"><span>Body shell</span><input type="color" id="c-body" value="#eeebe5"></div>
+  <div class="row"><span>Ball</span><input type="color" id="c-ball" value="#a01730"></div>
+  <h2>Keys</h2>
+  <div class="row"><span>Top left</span><input type="color" id="c-k7" value="#ef6b6b"></div>
+  <div class="row"><span>Top right</span><input type="color" id="c-k0" value="#ef6b6b"></div>
+  <div class="row"><span>Upper left</span><input type="color" id="c-k6" value="#eceae4"></div>
+  <div class="row"><span>Upper right</span><input type="color" id="c-k1" value="#eceae4"></div>
+  <div class="row"><span>Lower left</span><input type="color" id="c-k5" value="#ef6b6b"></div>
+  <div class="row"><span>Lower right</span><input type="color" id="c-k2" value="#ef6b6b"></div>
+  <div class="row"><span>Bottom left</span><input type="color" id="c-k4" value="#eceae4"></div>
+  <div class="row"><span>Bottom right</span><input type="color" id="c-k3" value="#eceae4"></div>
+  <h2>Trim</h2>
+  <div class="row"><span>Wheels</span><input type="color" id="c-wheel" value="#26262a"></div>
+  <div class="row"><span>Deskmat</span><input type="color" id="c-mat" value="#5c5c66"></div>
+  <button id="c-reset">Reset colours</button>
+</div>
+
 <div class="hud" id="controls">
+  <button id="palette" aria-pressed="false">Colours</button>
+  <button id="portview">Port edge</button>
+  <button id="wheelview">Wheels</button>
+  <button id="topview">Top view</button>
   <button id="flick">Flick ball</button>
-  <button id="stop">Stop ball</button>
   <button id="reset">Reset view</button>
 </div>
 
@@ -87,550 +114,475 @@
 (function(){
 'use strict';
 
-// ---------------------------------------------------------------- constants
-// 1 unit = 10 mm.  Shell 100 mm square, 25 mm thick.  Ball 55 mm.
-const HALF   = 5.0;    // shell half width
-const CORNER = 1.65;   // shell corner radius
-const TOP    = 2.50;   // shell top surface height
-const BALL_R = 2.75;
-const BALL_Y = 3.05;   // ball centre height
-const RING_R = 2.92;   // socket outer radius
-const BTN_IN = 3.14;   // inner radius of button ring
-const reduceMotion = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+var HALF=5.0, CORNER=1.75, SHELL_H=3.00;
+var BALL_R=3.10, BALL_Y=3.40, SOCKET=3.28;
+var BTN_IN=3.44, GAP=0.13, BTN_REST=2.83;
+var PINK={0:1,2:1,5:1,7:1};
+var reduceMotion = window.matchMedia('(prefers-reduced-motion:reduce)').matches;
 
-// ---------------------------------------------------------------- renderer
-const stage = document.getElementById('stage');
-const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.02;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+var stage=document.getElementById('stage');
+var renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.0;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x07070a);
-scene.fog = new THREE.Fog(0x07070a, 34, 68);
+var scene=new THREE.Scene();
+scene.background=new THREE.Color(0x07070a);
+scene.fog=new THREE.Fog(0x07070a,36,72);
 
-const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 0.1, 200);
-const view = {az: 0.10, el: 0.64, dist: 23};
-const target = new THREE.Vector3(0, 2.4, 0);
+var camera=new THREE.PerspectiveCamera(30,innerWidth/innerHeight,0.1,200);
+var view={az:0.10, el:0.42, dist:22};
+var target=new THREE.Vector3(0,2.5,0);
 function placeCamera(){
   camera.position.set(
-    target.x + view.dist * Math.cos(view.el) * Math.sin(view.az),
-    target.y + view.dist * Math.sin(view.el),
-    target.z + view.dist * Math.cos(view.el) * Math.cos(view.az)
-  );
+    target.x+view.dist*Math.cos(view.el)*Math.sin(view.az),
+    target.y+view.dist*Math.sin(view.el),
+    target.z+view.dist*Math.cos(view.el)*Math.cos(view.az));
   camera.lookAt(target);
 }
 placeCamera();
 
-// ---------------------------------------------------------------- textures
-function cv(size){
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  return c;
-}
-function finish(canvas, repeat){
-  const t = new THREE.CanvasTexture(canvas);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.encoding = THREE.sRGBEncoding;
-  t.anisotropy = 8;
-  if(repeat) t.repeat.set(repeat, repeat);
-  return t;
-}
-
-// speckled recycled-plastic look
-function speckle(base, specks, count, ribs){
-  const S = 512, c = cv(S), g = c.getContext('2d');
-  g.fillStyle = base; g.fillRect(0,0,S,S);
+// ---------------------------------------------------------- neutral textures
+// Bases are white/grey so material.color can tint them to anything at runtime.
+function speckle(specks,count,ribs,ribAlpha){
+  var S=512,c=document.createElement('canvas');c.width=c.height=S;
+  var g=c.getContext('2d');
+  g.fillStyle='#ffffff';g.fillRect(0,0,S,S);
   if(ribs){
-    g.globalAlpha = 0.055;
-    for(let x=0; x<S; x+=4){
-      g.fillStyle = '#000'; g.fillRect(x, 0, 1.6, S);
-      g.fillStyle = '#fff'; g.fillRect(x+2, 0, 1.2, S);
+    g.globalAlpha=ribAlpha||0.06;
+    for(var x=0;x<S;x+=4){
+      g.fillStyle='#000';g.fillRect(x,0,1.5,S);
+      g.fillStyle='#fff';g.fillRect(x+2,0,1.2,S);
     }
-    g.globalAlpha = 1;
+    g.globalAlpha=1;
   }
-  for(let i=0;i<count;i++){
-    g.fillStyle = specks[(Math.random()*specks.length)|0];
-    g.globalAlpha = 0.18 + Math.random()*0.5;
-    const r = 0.5 + Math.random()*1.9;
+  for(var i=0;i<count;i++){
+    g.fillStyle=specks[(Math.random()*specks.length)|0];
+    g.globalAlpha=0.20+Math.random()*0.5;
+    var r=0.5+Math.random()*1.7;
     g.beginPath();
-    g.ellipse(Math.random()*S, Math.random()*S, r, r*(0.6+Math.random()*0.9), Math.random()*3.14, 0, 6.283);
+    g.ellipse(Math.random()*S,Math.random()*S,r,r*(0.6+Math.random()*0.9),Math.random()*3.14,0,6.283);
     g.fill();
   }
-  g.globalAlpha = 1;
-  return c;
+  g.globalAlpha=1;return c;
 }
-
-const shellCanvas = speckle('#e9e5dd', ['#8d8677','#b6ae9d','#ffffff','#6f6a5e'], 3200, false);
-const grayCanvas  = speckle('#e7e3db', ['#8d8677','#b6ae9d','#ffffff','#6f6a5e'], 2400, true);
-const pinkCanvas  = speckle('#f2cbc3', ['#c9847c','#e3a49a','#fff2ef','#a5665f'], 3000, true);
-
-const shellMap = finish(shellCanvas, 1.4);
-const grayMap  = finish(grayCanvas, 2.2);
-const pinkMap  = finish(pinkCanvas, 2.2);
-
-// deep candy-red ball: subtle marbling so rotation is readable
-function ballCanvas(){
-  const W = 1024, H = 512;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  g.fillStyle = '#7d0713'; g.fillRect(0,0,W,H);
-  for(let i=0;i<180;i++){
-    const x = Math.random()*W, y = Math.random()*H, r = 40 + Math.random()*190;
-    const grd = g.createRadialGradient(x,y,0,x,y,r);
-    const dark = Math.random() > 0.45;
-    grd.addColorStop(0, dark ? 'rgba(52,2,10,0.5)' : 'rgba(196,16,40,0.42)');
-    grd.addColorStop(1, 'rgba(125,7,19,0)');
-    g.fillStyle = grd;
-    g.beginPath(); g.arc(x,y,r,0,6.283); g.fill();
-  }
-  // faint swirl streaks
-  g.lineWidth = 2.5;
-  for(let i=0;i<70;i++){
-    g.strokeStyle = 'rgba(30,0,6,0.16)';
-    g.beginPath();
-    let x = Math.random()*W, y = Math.random()*H;
-    g.moveTo(x,y);
-    for(let k=0;k<9;k++){ x += (Math.random()-0.5)*70; y += (Math.random()-0.5)*34; g.lineTo(x,y); }
-    g.stroke();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.encoding = THREE.sRGBEncoding;
-  t.anisotropy = 8;
+function finish(canvas,repeat){
+  var t=new THREE.CanvasTexture(canvas);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.encoding=THREE.sRGBEncoding;t.anisotropy=8;
+  if(repeat)t.repeat.set(repeat,repeat);
   return t;
 }
+var shellMap=finish(speckle(['#6e6a63','#9a958c','#3c3934','#ffffff'],3400,false),1.5);
+var keyMap  =finish(speckle(['#6e6a63','#9a958c','#3c3934','#ffffff'],2800,true,0.09),2.2);
 
-// deskmat: dark cloth with blue / magenta / violet shards, like the photo
+function ballTexture(){
+  var W=1024,H=512,c=document.createElement('canvas');c.width=W;c.height=H;
+  var g=c.getContext('2d');
+  g.fillStyle='#8f8f8f';g.fillRect(0,0,W,H);
+  for(var i=0;i<170;i++){
+    var x=Math.random()*W,y=Math.random()*H,r=50+Math.random()*200;
+    var grd=g.createRadialGradient(x,y,0,x,y,r);
+    var bright=Math.random()>0.5;
+    grd.addColorStop(0,bright?'rgba(215,215,215,0.55)':'rgba(34,34,34,0.55)');
+    grd.addColorStop(1,'rgba(143,143,143,0)');
+    g.fillStyle=grd;g.beginPath();g.arc(x,y,r,0,6.283);g.fill();
+  }
+  for(var j=0;j<5200;j++){
+    g.fillStyle=Math.random()>0.5?'rgba(255,255,255,0.20)':'rgba(255,255,255,0.10)';
+    g.fillRect(Math.random()*W,Math.random()*H,1.2,1.2);
+  }
+  var t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;t.anisotropy=8;return t;
+}
 function matTexture(){
-  const S = 2048, c = cv(S), g = c.getContext('2d');
-  g.fillStyle = '#0b0b12'; g.fillRect(0,0,S,S);
-  const palette = ['#1c3fd8','#0e6ef0','#e5124f','#ff2f6d','#7b21c8','#4a19a8','#c01050'];
-  function shard(){
-    const x = Math.random()*S, y = Math.random()*S;
-    const len = 90 + Math.random()*680, w = 12 + Math.random()*140;
-    const a = Math.random()*Math.PI;
-    g.save(); g.translate(x,y); g.rotate(a);
-    g.fillStyle = palette[(Math.random()*palette.length)|0];
-    g.globalAlpha = 0.30 + Math.random()*0.62;
-    if(Math.random() > 0.42){
-      g.fillRect(-len/2, -w/2, len, w);
-    } else {
-      g.beginPath();
-      g.moveTo(-len/2, -w/2); g.lineTo(len/2, 0); g.lineTo(-len/2, w/2);
-      g.closePath(); g.fill();
-    }
+  var S=2048,c=document.createElement('canvas');c.width=c.height=S;
+  var g=c.getContext('2d');
+  g.fillStyle='#141420';g.fillRect(0,0,S,S);
+  var palette=['#3a5fd8','#2e8ef0','#e5407f','#ff6f9d','#8b51c8','#5a39a8','#c04080'];
+  for(var i=0;i<250;i++){
+    var x=Math.random()*S,y=Math.random()*S,len=90+Math.random()*660,w=12+Math.random()*130;
+    g.save();g.translate(x,y);g.rotate(Math.random()*Math.PI);
+    g.fillStyle=palette[(Math.random()*palette.length)|0];
+    g.globalAlpha=0.28+Math.random()*0.6;
+    if(Math.random()>0.42){g.fillRect(-len/2,-w/2,len,w);}
+    else{g.beginPath();g.moveTo(-len/2,-w/2);g.lineTo(len/2,0);g.lineTo(-len/2,w/2);g.closePath();g.fill();}
     g.restore();
   }
-  for(let i=0;i<260;i++) shard();
-  // scatter of dark blotches to break it up
-  g.globalAlpha = 0.85;
-  for(let i=0;i<300;i++){
-    g.fillStyle = '#07070d';
-    const r = 6 + Math.random()*46;
-    g.beginPath(); g.ellipse(Math.random()*S, Math.random()*S, r, r*(0.5+Math.random()), Math.random()*3, 0, 6.283); g.fill();
+  g.globalAlpha=0.85;
+  for(var k=0;k<300;k++){
+    g.fillStyle='#0d0d16';var r=6+Math.random()*44;
+    g.beginPath();g.ellipse(Math.random()*S,Math.random()*S,r,r*(0.5+Math.random()),Math.random()*3,0,6.283);g.fill();
   }
-  // cloth weave
-  g.globalAlpha = 0.05;
-  for(let i=0;i<S;i+=3){
-    g.fillStyle = '#ffffff'; g.fillRect(i,0,1,S); g.fillRect(0,i,S,1);
-  }
-  g.globalAlpha = 1;
-  const t = new THREE.CanvasTexture(c);
-  t.encoding = THREE.sRGBEncoding;
-  t.anisotropy = 8;
-  return t;
+  g.globalAlpha=0.05;
+  for(var m=0;m<S;m+=3){g.fillStyle='#ffffff';g.fillRect(m,0,1,S);g.fillRect(0,m,S,1);}
+  g.globalAlpha=1;
+  var t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;t.anisotropy=8;return t;
 }
-
-// studio environment (equirect) — gives the ball its long softbox streaks
 function envTexture(){
-  const W = 1024, H = 512;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const sky = g.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,'#3a3a44'); sky.addColorStop(0.5,'#141419'); sky.addColorStop(1,'#08080b');
-  g.fillStyle = sky; g.fillRect(0,0,W,H);
-  function softbox(x,y,w,h,alpha){
-    const grd = g.createRadialGradient(x,y,0,x,y,Math.max(w,h));
-    grd.addColorStop(0, 'rgba(255,255,255,'+alpha+')');
-    grd.addColorStop(0.45,'rgba(255,255,255,'+(alpha*0.5)+')');
-    grd.addColorStop(1, 'rgba(255,255,255,0)');
-    g.save(); g.translate(x,y); g.scale(w/Math.max(w,h), h/Math.max(w,h)); g.translate(-x,-y);
-    g.fillStyle = grd; g.beginPath(); g.arc(x,y,Math.max(w,h),0,6.283); g.fill(); g.restore();
+  var W=1024,H=512,c=document.createElement('canvas');c.width=W;c.height=H;
+  var g=c.getContext('2d');
+  var sky=g.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#3d3d47');sky.addColorStop(0.5,'#15151a');sky.addColorStop(1,'#08080b');
+  g.fillStyle=sky;g.fillRect(0,0,W,H);
+  function box(x,y,w,h,a){
+    var grd=g.createRadialGradient(x,y,0,x,y,Math.max(w,h));
+    grd.addColorStop(0,'rgba(255,255,255,'+a+')');
+    grd.addColorStop(0.45,'rgba(255,255,255,'+(a*0.5)+')');
+    grd.addColorStop(1,'rgba(255,255,255,0)');
+    g.save();g.translate(x,y);g.scale(w/Math.max(w,h),h/Math.max(w,h));g.translate(-x,-y);
+    g.fillStyle=grd;g.beginPath();g.arc(x,y,Math.max(w,h),0,6.283);g.fill();g.restore();
   }
-  softbox(300, 100, 230, 60, 1.0);
-  softbox(650,  70, 150, 44, 0.9);
-  softbox(880, 150, 120, 100, 0.5);
-  softbox(120, 190,  90, 34, 0.55);
-  // coloured bounce from the mat
-  g.globalCompositeOperation = 'lighter';
-  softbox(500, 430, 420, 90, 0.16);
-  g.fillStyle = 'rgba(226,18,79,0.10)'; g.fillRect(0,H*0.72,W,H*0.28);
-  g.globalCompositeOperation = 'source-over';
-  const t = new THREE.CanvasTexture(c);
-  t.mapping = THREE.EquirectangularReflectionMapping;
-  t.encoding = THREE.sRGBEncoding;
-  return t;
+  box(300,100,240,60,1.0);box(650,70,150,44,0.95);box(880,150,120,100,0.5);box(120,190,90,34,0.55);
+  g.globalCompositeOperation='lighter';box(500,430,420,90,0.16);
+  g.globalCompositeOperation='source-over';
+  var t=new THREE.CanvasTexture(c);
+  t.mapping=THREE.EquirectangularReflectionMapping;t.encoding=THREE.sRGBEncoding;return t;
 }
-
-const pmrem = new THREE.PMREMGenerator(renderer);
+var pmrem=new THREE.PMREMGenerator(renderer);
 pmrem.compileEquirectangularShader();
-const envMap = pmrem.fromEquirectangular(envTexture()).texture;
-scene.environment = envMap;
+scene.environment=pmrem.fromEquirectangular(envTexture()).texture;
 
-// ---------------------------------------------------------------- geometry helpers
-// signed distance to a rounded square, used so the buttons fill the corners
-function sdRoundedSquare(x, y, half, r){
-  const qx = Math.abs(x) - (half - r);
-  const qy = Math.abs(y) - (half - r);
-  const mx = Math.max(qx, 0), my = Math.max(qy, 0);
-  return Math.hypot(mx, my) + Math.min(Math.max(qx, qy), 0) - r;
+// ---------------------------------------------------------- shape helpers
+function sdRoundedSquare(x,y,half,r){
+  var qx=Math.abs(x)-(half-r),qy=Math.abs(y)-(half-r);
+  var mx=Math.max(qx,0),my=Math.max(qy,0);
+  return Math.hypot(mx,my)+Math.min(Math.max(qx,qy),0)-r;
 }
-function outerRadius(theta, inset){
-  let lo = 0, hi = HALF * 2;
-  for(let i=0;i<32;i++){
-    const mid = (lo + hi) / 2;
-    const x = Math.sin(theta) * mid, y = Math.cos(theta) * mid;
-    if(sdRoundedSquare(x, y, HALF, CORNER) < -inset) lo = mid; else hi = mid;
+function edgeRadius(theta,inset){
+  var lo=0,hi=HALF*2;
+  for(var i=0;i<30;i++){
+    var mid=(lo+hi)/2;
+    if(sdRoundedSquare(Math.sin(theta)*mid,Math.cos(theta)*mid,HALF,CORNER)<-inset)lo=mid;else hi=mid;
   }
   return lo;
 }
-function roundedSquareShape(half, r){
-  const s = new THREE.Shape();
-  const k = half - r;
-  s.moveTo(-k, half);
-  s.lineTo(k, half);   s.quadraticCurveTo(half, half, half, k);
-  s.lineTo(half, -k);  s.quadraticCurveTo(half, -half, k, -half);
-  s.lineTo(-k, -half); s.quadraticCurveTo(-half, -half, -half, -k);
-  s.lineTo(-half, k);  s.quadraticCurveTo(-half, half, -k, half);
+function outerR(theta){ return edgeRadius(theta,0.30); }
+function roundedSquareShape(half,r){
+  var s=new THREE.Shape(),k=half-r;
+  s.moveTo(-k,half);
+  s.lineTo(k,half);   s.quadraticCurveTo(half,half,half,k);
+  s.lineTo(half,-k);  s.quadraticCurveTo(half,-half,k,-half);
+  s.lineTo(-k,-half); s.quadraticCurveTo(-half,-half,-half,-k);
+  s.lineTo(-half,k);  s.quadraticCurveTo(-half,half,-k,half);
   return s;
 }
-function layFlat(mesh){ mesh.rotation.x = -Math.PI / 2; }
+function flat(m){ m.rotation.x=-Math.PI/2; }
 
-// ---------------------------------------------------------------- shell
-const shellMat = new THREE.MeshStandardMaterial({
-  map: shellMap, bumpMap: shellMap, bumpScale: 0.012,
-  roughness: 0.72, metalness: 0.0, envMapIntensity: 0.55
-});
-
-const shellGeo = new THREE.ExtrudeGeometry(roundedSquareShape(HALF, CORNER), {
-  depth: 1.9, bevelEnabled: true, bevelThickness: 0.30, bevelSize: 0.30,
-  bevelSegments: 8, curveSegments: 36
-});
-const shell = new THREE.Mesh(shellGeo, shellMat);
-layFlat(shell);
-shell.position.y = 0.30;
-shell.castShadow = true; shell.receiveShadow = true;
+// ---------------------------------------------------------- shell
+var shellMat=new THREE.MeshStandardMaterial({color:0xeeebe5,map:shellMap,bumpMap:shellMap,
+  bumpScale:0.014,roughness:0.78,metalness:0.0,envMapIntensity:0.5});
+var shell=new THREE.Mesh(new THREE.ExtrudeGeometry(roundedSquareShape(HALF,CORNER),{
+  depth:2.40,bevelEnabled:true,bevelThickness:0.30,bevelSize:0.30,bevelSegments:8,curveSegments:40}),shellMat);
+flat(shell);shell.position.y=0.30;shell.castShadow=true;shell.receiveShadow=true;
 scene.add(shell);
 
-// dark recessed tray the buttons sit in
-const trayShape = roundedSquareShape(HALF - 0.34, CORNER - 0.28);
-trayShape.holes.push(new THREE.Path().absarc(0, 0, RING_R, 0, Math.PI*2, true));
-const tray = new THREE.Mesh(
-  new THREE.ExtrudeGeometry(trayShape, {depth:0.14, bevelEnabled:false, curveSegments:48}),
-  new THREE.MeshStandardMaterial({color:0x24211e, roughness:0.6, metalness:0.1, envMapIntensity:0.35})
-);
-layFlat(tray);
-tray.position.y = 2.30;   // top lands at 2.44, just under the shell rim at 2.50
-tray.receiveShadow = true;
-scene.add(tray);
+var seam=new THREE.Mesh(new THREE.ExtrudeGeometry(roundedSquareShape(HALF-0.015,CORNER-0.015),
+  {depth:0.05,bevelEnabled:false,curveSegments:40}),
+  new THREE.MeshStandardMaterial({color:0x9d998f,roughness:0.9}));
+flat(seam);seam.position.y=1.32;scene.add(seam);
 
-// ---------------------------------------------------------------- buttons
-const grayMat = new THREE.MeshStandardMaterial({
-  map: grayMap, bumpMap: grayMap, bumpScale: 0.02,
-  roughness: 0.62, metalness: 0.0, envMapIntensity: 0.75
-});
-const pinkMat = new THREE.MeshStandardMaterial({
-  map: pinkMap, bumpMap: pinkMap, bumpScale: 0.03,
-  roughness: 0.74, metalness: 0.0, envMapIntensity: 0.65
-});
+var trayShape=roundedSquareShape(HALF-0.32,CORNER-0.26);
+trayShape.holes.push(new THREE.Path().absarc(0,0,SOCKET,0,Math.PI*2,true));
+var tray=new THREE.Mesh(new THREE.ExtrudeGeometry(trayShape,{depth:0.14,bevelEnabled:false,curveSegments:56}),
+  new THREE.MeshStandardMaterial({color:0x2b2926,roughness:0.62,metalness:0.1,envMapIntensity:0.3}));
+flat(tray);tray.position.y=2.76;tray.receiveShadow=true;scene.add(tray);
 
-const buttons = [];
-const GAP = 0.135;              // world-space gap between keys
-const BTN_REST = 2.42;   // key tops land at 2.82, a clear 0.32 above the shell
-
-for(let i=0;i<8;i++){
-  const a0 = (i * 45) * Math.PI/180;
-  const a1 = ((i + 1) * 45) * Math.PI/180;
-  const shape = new THREE.Shape();
-  const steps = 14;
-  const padIn = GAP / BTN_IN;
-
-  // inner arc, left to right
-  for(let s=0;s<=steps;s++){
-    const t = a0 + padIn + (a1 - a0 - 2*padIn) * (s/steps);
-    const x = Math.sin(t) * BTN_IN, y = Math.cos(t) * BTN_IN;
-    s === 0 ? shape.moveTo(x,y) : shape.lineTo(x,y);
+// ---------------------------------------------------------- keys
+var buttons=[],keyMats=[];
+for(var i=0;i<8;i++){
+  var a0=(i*45)*Math.PI/180,a1=((i+1)*45)*Math.PI/180;
+  var shape=new THREE.Shape(),steps=16,padIn=GAP/BTN_IN,s,t,r;
+  for(s=0;s<=steps;s++){
+    t=a0+padIn+(a1-a0-2*padIn)*(s/steps);
+    var xi=Math.sin(t)*BTN_IN,yi=Math.cos(t)*BTN_IN;
+    if(s===0)shape.moveTo(xi,yi);else shape.lineTo(xi,yi);
   }
-  // outer edge, right back to left, following the shell outline
-  for(let s=steps;s>=0;s--){
-    const t0 = a0 + (a1 - a0) * (s/steps);
-    const r = outerRadius(t0, 0.42);
-    const pad = GAP / r;
-    const t = Math.min(Math.max(t0, a0 + pad), a1 - pad);
-    const r2 = outerRadius(t, 0.42);
-    shape.lineTo(Math.sin(t) * r2, Math.cos(t) * r2);
+  for(s=steps;s>=0;s--){
+    var t0=a0+(a1-a0)*(s/steps);
+    var pad=GAP/outerR(t0);
+    t=Math.min(Math.max(t0,a0+pad),a1-pad);
+    r=outerR(t);
+    shape.lineTo(Math.sin(t)*r,Math.cos(t)*r);
   }
   shape.closePath();
-
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: 0.30, bevelEnabled: true, bevelThickness: 0.10, bevelSize: 0.10,
-    bevelSegments: 5, curveSegments: 24
-  });
-  const mesh = new THREE.Mesh(geo, i % 2 === 0 ? pinkMat : grayMat);
-  layFlat(mesh);
-  mesh.position.y = BTN_REST;
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.userData.press = 0;
-  scene.add(mesh);
-  buttons.push(mesh);
+  var mat=new THREE.MeshStandardMaterial({color:PINK[i]?0xef6b6b:0xeceae4,map:keyMap,bumpMap:keyMap,
+    bumpScale:0.03,roughness:PINK[i]?0.84:0.74,metalness:0.0,envMapIntensity:0.5});
+  keyMats.push(mat);
+  var mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:0.30,bevelEnabled:true,
+    bevelThickness:0.09,bevelSize:0.09,bevelSegments:5,curveSegments:24}),mat);
+  flat(mesh);mesh.position.y=BTN_REST;
+  mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.press=0;
+  scene.add(mesh);buttons.push(mesh);
 }
 
-// ---------------------------------------------------------------- socket + ball
-const socketMat = new THREE.MeshStandardMaterial({color:0x121110, roughness:0.5, metalness:0.25, envMapIntensity:0.5});
-const socket = new THREE.Mesh(new THREE.CylinderGeometry(RING_R, RING_R - 0.1, 1.5, 64, 1, true), socketMat);
-socket.position.y = TOP - 0.55;
-scene.add(socket);
-const socketFloor = new THREE.Mesh(new THREE.CircleGeometry(RING_R, 64), socketMat);
-socketFloor.rotation.x = -Math.PI/2;
-socketFloor.position.y = TOP - 1.3;
-scene.add(socketFloor);
+// ---------------------------------------------------------- socket + ball
+var darkMat=new THREE.MeshStandardMaterial({color:0x131211,roughness:0.55,metalness:0.2,envMapIntensity:0.4});
+var socket=new THREE.Mesh(new THREE.CylinderGeometry(SOCKET,SOCKET-0.1,1.6,72,1,true),darkMat);
+socket.position.y=2.30;scene.add(socket);
+var socketFloor=new THREE.Mesh(new THREE.CircleGeometry(SOCKET,64),darkMat);
+socketFloor.rotation.x=-Math.PI/2;socketFloor.position.y=1.55;scene.add(socketFloor);
 
-const ball = new THREE.Mesh(
-  new THREE.SphereGeometry(BALL_R, 96, 96),
-  new THREE.MeshPhysicalMaterial({
-    map: ballCanvas(),
-    color: 0xd8cfd0,
-    roughness: 0.085,
-    metalness: 0.0,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.02,
-    envMapIntensity: 1.55,
-    reflectivity: 0.85
-  })
-);
-ball.position.y = BALL_Y;
-ball.castShadow = true;
-scene.add(ball);
+var ballMat=new THREE.MeshPhysicalMaterial({map:ballTexture(),color:0xa01730,roughness:0.075,
+  metalness:0.0,clearcoat:1.0,clearcoatRoughness:0.02,envMapIntensity:1.35,reflectivity:0.8});
+var ball=new THREE.Mesh(new THREE.SphereGeometry(BALL_R,112,112),ballMat);
+ball.position.y=BALL_Y;ball.castShadow=true;scene.add(ball);
 
-// ---------------------------------------------------------------- USB-C port
-const portShell = new THREE.Mesh(
-  new THREE.BoxGeometry(0.92, 0.34, 0.36),
-  new THREE.MeshStandardMaterial({color:0x1a1a1c, roughness:0.35, metalness:0.8, envMapIntensity:0.9})
-);
-portShell.position.set(0, TOP - 0.62, -HALF - 0.02);
-scene.add(portShell);
-const portInner = new THREE.Mesh(
-  new THREE.BoxGeometry(0.7, 0.17, 0.1),
-  new THREE.MeshStandardMaterial({color:0x8d8d92, roughness:0.3, metalness:0.95})
-);
-portInner.position.set(0, TOP - 0.62, -HALF - 0.16);
-scene.add(portInner);
+// ---------------------------------------------------------- USB-C socket (front edge, centred)
+var panelMat=new THREE.MeshStandardMaterial({color:0x181717,roughness:0.42,metalness:0.25,envMapIntensity:0.5});
+var panel=new THREE.Mesh(new THREE.BoxGeometry(5.8,1.85,0.10),panelMat);
+panel.position.set(0,1.35,HALF-0.03);scene.add(panel);
 
-// rubber feet
-const footMat = new THREE.MeshStandardMaterial({color:0x141414, roughness:0.9});
-[[-3.4,-3.4],[3.4,-3.4],[-3.4,3.4],[3.4,3.4]].forEach(function(p){
-  const f = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.1,20), footMat);
-  f.position.set(p[0], 0.05, p[1]);
-  scene.add(f);
+function racetrack(w,h,r){
+  var s=new THREE.Shape();
+  s.moveTo(-w+r,h);s.lineTo(w-r,h);s.quadraticCurveTo(w,h,w,0);
+  s.quadraticCurveTo(w,-h,w-r,-h);s.lineTo(-w+r,-h);
+  s.quadraticCurveTo(-w,-h,-w,0);s.quadraticCurveTo(-w,h,-w+r,h);
+  return s;
+}
+var rimShape=racetrack(0.92,0.36,0.36);
+var holePts=racetrack(0.70,0.20,0.20).getPoints(40);
+var hole=new THREE.Path();
+hole.moveTo(holePts[0].x,holePts[0].y);
+for(var hp=holePts.length-1;hp>0;hp--) hole.lineTo(holePts[hp].x,holePts[hp].y);
+rimShape.holes.push(hole);
+
+var portRing=new THREE.Mesh(new THREE.ExtrudeGeometry(rimShape,{depth:0.20,bevelEnabled:true,
+  bevelThickness:0.05,bevelSize:0.05,bevelSegments:3,curveSegments:22}),
+  new THREE.MeshStandardMaterial({color:0xdfe3e8,roughness:0.15,metalness:1.0,envMapIntensity:1.7}));
+portRing.position.set(0,1.35,HALF-0.02);scene.add(portRing);
+
+var portCavity=new THREE.Mesh(new THREE.BoxGeometry(1.44,0.42,0.10),
+  new THREE.MeshStandardMaterial({color:0x040405,roughness:0.75}));
+portCavity.position.set(0,1.35,HALF+0.09);scene.add(portCavity);
+var tongue=new THREE.Mesh(new THREE.BoxGeometry(1.06,0.13,0.05),
+  new THREE.MeshStandardMaterial({color:0xa5a8ad,roughness:0.28,metalness:0.95}));
+tongue.position.set(0,1.35,HALF+0.12);scene.add(tongue);
+
+// ---------------------------------------------------------- scroll wheels, both front corners
+var treadTex=(function(){
+  var S=256,c=document.createElement('canvas');c.width=c.height=S;
+  var g=c.getContext('2d');
+  g.fillStyle='#ffffff';g.fillRect(0,0,S,S);
+  for(var x=0;x<S;x+=6){
+    g.fillStyle='#2a2a2a';g.fillRect(x,0,3,S);
+    g.fillStyle='#e0e0e0';g.fillRect(x+3,0,1.5,S);
+  }
+  var t=new THREE.CanvasTexture(c);
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;t.encoding=THREE.sRGBEncoding;return t;
+})();
+treadTex.repeat.set(6,1);
+var wheelMat=new THREE.MeshStandardMaterial({color:0x26262a,map:treadTex,bumpMap:treadTex,
+  bumpScale:0.09,roughness:0.64,metalness:0.22,envMapIntensity:0.75});
+
+// The shell corner is a quadratic Bezier, not a circular arc: it bulges to ~1.86
+// from the corner centre (3.25,3.25), putting the outer surface 6.456 from the
+// origin along the diagonal. The wheel is sized so a wide band of rim clears that.
+// No housing or bezel: the wheel emerges straight from the shell, so the only
+// thing on screen is the wheel itself.
+var CORNER_SURFACE = 3.25*Math.SQRT2 + 1.86;   // 6.456
+var WHEEL_R = 1.25;
+var PROUD = 0.42;                              // how far the rim clears the shell
+var WHEEL_DIST = CORNER_SURFACE + PROUD - WHEEL_R;
+var WHEEL_Y = 0.85;
+var wheels = [];
+
+[1,-1].forEach(function(sx){
+  var outward = new THREE.Vector3(sx,0,1).normalize();
+  // vertical axis, and 0.85 tall centred at y=0.85 so both flat caps stay buried
+  // inside the shell -- only the curved tread can ever be seen
+  var wheel = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R,WHEEL_R,0.85,48,1,false), wheelMat);
+  wheel.position.copy(outward).multiplyScalar(WHEEL_DIST).setY(WHEEL_Y);
+  wheel.castShadow = true;
+  wheel.userData.spin = 0;
+  scene.add(wheel);
+  wheels.push(wheel);
 });
 
-// ---------------------------------------------------------------- deskmat
-const mat = new THREE.Mesh(
-  new THREE.PlaneGeometry(64, 64),
-  new THREE.MeshStandardMaterial({map: matTexture(), roughness:0.95, metalness:0.0, envMapIntensity:0.35})
-);
-mat.rotation.x = -Math.PI/2;
-mat.position.y = -0.001;
-mat.receiveShadow = true;
-scene.add(mat);
+var footMat=new THREE.MeshStandardMaterial({color:0x151515,roughness:0.92});
+[[-3.3,-3.3],[3.3,-3.3],[-3.3,3.3],[3.3,3.3]].forEach(function(p){
+  var f=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.1,20),footMat);
+  f.position.set(p[0],0.05,p[1]);scene.add(f);
+});
 
-// ---------------------------------------------------------------- lights
-scene.add(new THREE.AmbientLight(0xffffff, 0.30));
+var matMat=new THREE.MeshStandardMaterial({color:0x5c5c66,map:matTexture(),roughness:0.95,envMapIntensity:0.35});
+var deskmat=new THREE.Mesh(new THREE.PlaneGeometry(70,70),matMat);
+deskmat.rotation.x=-Math.PI/2;deskmat.position.y=-0.001;deskmat.receiveShadow=true;
+scene.add(deskmat);
 
-const key = new THREE.DirectionalLight(0xfff4e8, 1.45);
-key.position.set(-7, 15, 9);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.left = -12; key.shadow.camera.right = 12;
-key.shadow.camera.top = 12; key.shadow.camera.bottom = -12;
-key.shadow.camera.near = 1; key.shadow.camera.far = 44;
-key.shadow.bias = -0.0011;
-key.shadow.radius = 3;
+scene.add(new THREE.AmbientLight(0xffffff,0.32));
+var key=new THREE.DirectionalLight(0xfff5ea,1.5);
+key.position.set(-7,16,9);key.castShadow=true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-13;key.shadow.camera.right=13;
+key.shadow.camera.top=13;key.shadow.camera.bottom=-13;
+key.shadow.camera.near=1;key.shadow.camera.far=48;
+key.shadow.bias=-0.0011;key.shadow.radius=3;
 scene.add(key);
+var rim=new THREE.DirectionalLight(0x8fb8ff,0.85);rim.position.set(9,6,-10);scene.add(rim);
+var accent=new THREE.PointLight(0xff2f6d,20,26,2);accent.position.set(6,1.6,7);scene.add(accent);
+var portLight=new THREE.PointLight(0xffffff,6,7,2);portLight.position.set(0,1.9,HALF+2.0);scene.add(portLight);
 
-const rim = new THREE.DirectionalLight(0x7fb0ff, 0.9);
-rim.position.set(9, 6, -10);
-scene.add(rim);
+// ---------------------------------------------------------- colour editor
+function bind(id,apply){
+  var el=document.getElementById(id);
+  el.addEventListener('input',function(){ apply(el.value); });
+  return el;
+}
+bind('c-body',function(v){ shellMat.color.set(v); });
+bind('c-ball',function(v){ ballMat.color.set(v); });
+bind('c-wheel',function(v){ wheelMat.color.set(v); });
+bind('c-mat',function(v){ matMat.color.set(v); });
+for(var ki=0;ki<8;ki++){
+  (function(n){ bind('c-k'+n,function(v){ keyMats[n].color.set(v); }); })(ki);
+}
+document.getElementById('c-reset').addEventListener('click',function(){
+  var d={'c-body':'#eeebe5','c-ball':'#a01730','c-wheel':'#26262a','c-mat':'#5c5c66',
+         'c-k0':'#ef6b6b','c-k7':'#ef6b6b','c-k2':'#ef6b6b','c-k5':'#ef6b6b',
+         'c-k1':'#eceae4','c-k6':'#eceae4','c-k3':'#eceae4','c-k4':'#eceae4'};
+  Object.keys(d).forEach(function(id){
+    var el=document.getElementById(id);
+    el.value=d[id];
+    el.dispatchEvent(new Event('input'));
+  });
+});
+var paletteBtn=document.getElementById('palette');
+paletteBtn.addEventListener('click',function(){
+  var open=document.getElementById('colours').classList.toggle('open');
+  paletteBtn.setAttribute('aria-pressed',open?'true':'false');
+});
 
-const fill = new THREE.PointLight(0xff2f6d, 22, 26, 2);
-fill.position.set(6, 1.4, 7);
-scene.add(fill);
-
-// ---------------------------------------------------------------- interaction
-const raycaster = new THREE.Raycaster();
-const ndc = new THREE.Vector2();
-
-let mode = null;            // 'ball' | 'orbit'
-let lastX = 0, lastY = 0;
-let velX = 0, velY = 0;     // ball angular velocity, screen-space
-const SPIN = 0.0075;
-const DAMP = reduceMotion ? 0.90 : 0.972;
-
-const cursor = {x: 0, y: 0};
-const dot = document.getElementById('dot');
-const spd = document.getElementById('spd');
-const padBox = document.getElementById('padbox');
+// ---------------------------------------------------------- interaction
+var raycaster=new THREE.Raycaster(),ndc=new THREE.Vector2();
+var mode=null,lastX=0,lastY=0,velX=0,velY=0;
+var SPIN=0.0068,DAMP=reduceMotion?0.90:0.972;
+var cursor={x:0,y:0};
+var dot=document.getElementById('dot'),spd=document.getElementById('spd'),padBox=document.getElementById('padbox');
 
 function setNDC(e){
-  const r = renderer.domElement.getBoundingClientRect();
-  ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
-  ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  var r=renderer.domElement.getBoundingClientRect();
+  ndc.x=((e.clientX-r.left)/r.width)*2-1;
+  ndc.y=-((e.clientY-r.top)/r.height)*2+1;
 }
-
-function rollBall(dx, dy){
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-  const q = new THREE.Quaternion();
-  q.setFromAxisAngle(up, dx * SPIN);
-  ball.quaternion.premultiply(q);
-  q.setFromAxisAngle(right, dy * SPIN);
-  ball.quaternion.premultiply(q);
-
-  // trackball output: ball roll drives the pointer
-  cursor.x += dx * 0.55;
-  cursor.y += dy * 0.55;
+function rollBall(dx,dy){
+  var right=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0).normalize();
+  var up=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1).normalize();
+  var q=new THREE.Quaternion();
+  q.setFromAxisAngle(up,dx*SPIN);ball.quaternion.premultiply(q);
+  q.setFromAxisAngle(right,dy*SPIN);ball.quaternion.premultiply(q);
+  cursor.x+=dx*0.55;cursor.y+=dy*0.55;
 }
-
-stage.addEventListener('pointerdown', function(e){
+stage.addEventListener('pointerdown',function(e){
   stage.setPointerCapture(e.pointerId);
   stage.classList.add('grabbing');
-  setNDC(e);
-  raycaster.setFromCamera(ndc, camera);
-
-  const onBall = raycaster.intersectObject(ball).length > 0;
-  if(onBall){
-    mode = 'ball';
-    velX = velY = 0;
-  } else {
-    const hitBtn = raycaster.intersectObjects(buttons)[0];
-    if(hitBtn) hitBtn.object.userData.press = 1;
-    mode = 'orbit';
+  setNDC(e);raycaster.setFromCamera(ndc,camera);
+  if(raycaster.intersectObject(ball).length){ mode='ball';velX=velY=0; }
+  else{
+    var hw=raycaster.intersectObjects(wheels)[0];
+    if(hw) hw.object.userData.spin=7.5;
+    var hb=raycaster.intersectObjects(buttons)[0];
+    if(hb) hb.object.userData.press=1;
+    mode='orbit';
   }
-  lastX = e.clientX; lastY = e.clientY;
+  lastX=e.clientX;lastY=e.clientY;
 });
-
-stage.addEventListener('pointermove', function(e){
-  if(!mode) return;
-  const dx = e.clientX - lastX, dy = e.clientY - lastY;
-  lastX = e.clientX; lastY = e.clientY;
-  if(mode === 'ball'){
-    rollBall(dx, dy);
-    velX = velX * 0.55 + dx * 0.45;
-    velY = velY * 0.55 + dy * 0.45;
-  } else {
-    view.az -= dx * 0.006;
-    view.el = Math.min(1.45, Math.max(0.10, view.el + dy * 0.005));
+stage.addEventListener('pointermove',function(e){
+  if(!mode)return;
+  var dx=e.clientX-lastX,dy=e.clientY-lastY;
+  lastX=e.clientX;lastY=e.clientY;
+  if(mode==='ball'){
+    rollBall(dx,dy);
+    velX=velX*0.55+dx*0.45;velY=velY*0.55+dy*0.45;
+  }else{
+    view.az-=dx*0.006;
+    view.el=Math.min(1.50,Math.max(0.02,view.el+dy*0.005));
     placeCamera();
   }
 });
-
 function release(e){
-  if(mode) stage.classList.remove('grabbing');
-  mode = null;
-  if(e && e.pointerId !== undefined && stage.hasPointerCapture(e.pointerId)){
-    stage.releasePointerCapture(e.pointerId);
-  }
+  if(mode)stage.classList.remove('grabbing');
+  mode=null;
+  if(e&&e.pointerId!==undefined&&stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);
 }
-stage.addEventListener('pointerup', release);
-stage.addEventListener('pointercancel', release);
-
-stage.addEventListener('wheel', function(e){
+stage.addEventListener('pointerup',release);
+stage.addEventListener('pointercancel',release);
+stage.addEventListener('wheel',function(e){
   e.preventDefault();
-  view.dist = Math.min(42, Math.max(12, view.dist + e.deltaY * 0.02));
+  view.dist=Math.min(46,Math.max(11,view.dist+e.deltaY*0.02));
   placeCamera();
-}, {passive:false});
+},{passive:false});
+var pinch=0;
+stage.addEventListener('touchmove',function(e){
+  if(e.touches.length!==2)return;
+  var d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  if(pinch){view.dist=Math.min(46,Math.max(11,view.dist+(pinch-d)*0.05));placeCamera();}
+  pinch=d;
+},{passive:true});
+stage.addEventListener('touchend',function(){pinch=0;});
 
-// pinch to zoom
-let pinch = 0;
-stage.addEventListener('touchmove', function(e){
-  if(e.touches.length !== 2) return;
-  const d = Math.hypot(
-    e.touches[0].clientX - e.touches[1].clientX,
-    e.touches[0].clientY - e.touches[1].clientY
-  );
-  if(pinch) {
-    view.dist = Math.min(42, Math.max(12, view.dist + (pinch - d) * 0.05));
-    placeCamera();
-  }
-  pinch = d;
-}, {passive:true});
-stage.addEventListener('touchend', function(){ pinch = 0; });
-
-document.getElementById('flick').addEventListener('click', function(){
-  velX = 26 + Math.random() * 16;
-  velY = -9 + Math.random() * 18;
+document.getElementById('flick').addEventListener('click',function(){
+  velX=26+Math.random()*16;velY=-9+Math.random()*18;
 });
-document.getElementById('stop').addEventListener('click', function(){
-  velX = velY = 0;
+document.getElementById('portview').addEventListener('click',function(){
+  view.az=0;view.el=0.10;view.dist=15;placeCamera();
 });
-document.getElementById('reset').addEventListener('click', function(){
-  view.az = 0.10; view.el = 0.64; view.dist = 23;
-  placeCamera();
-  cursor.x = cursor.y = 0;
+document.getElementById('wheelview').addEventListener('click',function(){
+  view.az=0.72;view.el=0.20;view.dist=13.5;placeCamera();
+});
+document.getElementById('topview').addEventListener('click',function(){
+  view.az=0;view.el=1.47;view.dist=26;placeCamera();
+});
+document.getElementById('reset').addEventListener('click',function(){
+  view.az=0.10;view.el=0.42;view.dist=22;placeCamera();
+  cursor.x=cursor.y=0;
 });
 
-// ---------------------------------------------------------------- loop
-let last = performance.now();
+var last=performance.now();
 function animate(now){
   requestAnimationFrame(animate);
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-
-  if(mode !== 'ball' && (Math.abs(velX) > 0.02 || Math.abs(velY) > 0.02)){
-    rollBall(velX * dt * 60 / 60, velY * dt * 60 / 60);
-    velX *= DAMP; velY *= DAMP;
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(mode!=='ball'&&(Math.abs(velX)>0.02||Math.abs(velY)>0.02)){
+    rollBall(velX,velY);velX*=DAMP;velY*=DAMP;
   }
-
-  // button press animation
-  for(let i=0;i<buttons.length;i++){
-    const b = buttons[i];
-    if(b.userData.press > 0){
-      b.userData.press = Math.max(0, b.userData.press - dt * 3.6);
-      b.position.y = BTN_REST - Math.sin(b.userData.press * Math.PI) * 0.11;
+  for(var i=0;i<buttons.length;i++){
+    var b=buttons[i];
+    if(b.userData.press>0){
+      b.userData.press=Math.max(0,b.userData.press-dt*3.6);
+      b.position.y=BTN_REST-Math.sin(b.userData.press*Math.PI)*0.11;
     }
   }
-
-  // pointer readout
-  const w = padBox.clientWidth, h = padBox.clientHeight;
-  cursor.x = Math.max(-w/2 + 6, Math.min(w/2 - 6, cursor.x));
-  cursor.y = Math.max(-h/2 + 6, Math.min(h/2 - 6, cursor.y));
-  dot.style.transform = 'translate(' + cursor.x.toFixed(1) + 'px,' + cursor.y.toFixed(1) + 'px)';
-
-  const rpm = Math.hypot(velX, velY) * SPIN * 60 * 60 / (2 * Math.PI);
-  spd.textContent = rpm < 1 ? '0' : rpm.toFixed(0);
-
-  renderer.render(scene, camera);
+  for(var k=0;k<wheels.length;k++){
+    var wh=wheels[k];
+    if(Math.abs(wh.userData.spin)>0.01){
+      wh.rotateOnAxis(new THREE.Vector3(0,1,0),wh.userData.spin*dt);
+      cursor.y-=wh.userData.spin*dt*5;
+      wh.userData.spin*=0.94;
+    }
+  }
+  var w=padBox.clientWidth,h=padBox.clientHeight;
+  cursor.x=Math.max(-w/2+6,Math.min(w/2-6,cursor.x));
+  cursor.y=Math.max(-h/2+6,Math.min(h/2-6,cursor.y));
+  dot.style.transform='translate('+cursor.x.toFixed(1)+'px,'+cursor.y.toFixed(1)+'px)';
+  var rpm=Math.hypot(velX,velY)*SPIN*3600/(2*Math.PI);
+  spd.textContent=rpm<1?'0':rpm.toFixed(0);
+  renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
 
-// ---------------------------------------------------------------- resize
-addEventListener('resize', function(){
-  camera.aspect = innerWidth / innerHeight;
+addEventListener('resize',function(){
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(innerWidth,innerHeight);
   placeCamera();
 });
-
-// gentle intro roll, then hand over
 setTimeout(function(){
   document.getElementById('loader').classList.add('gone');
-  if(!reduceMotion){ velX = 13; velY = 4; }
-}, 260);
+  if(!reduceMotion){velX=12;velY=4;}
+},260);
 
 })();
 </script>
