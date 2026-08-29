@@ -31,7 +31,7 @@ Seven tabs, matching the original's shape:
 | --- | --- |
 | Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
 | Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
-| Sensor(s) | Surface quality, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, live sensor image |
+| Sensor(s) | Surface quality with a trend strip, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, live sensor image |
 | Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
 | Import/Export | Settings as .json, plus full device backup, restore and erase |
 | Raw settings | Every runtime parameter, with its description, range and default |
@@ -171,6 +171,15 @@ easy to get wrong:
 Sensor surface quality is the first card on the Sensor(s) tab. It reads
 continuously while that tab is open, so you can roll the ball and watch it
 move; between reads the last value stays on screen.
+
+Under each gauge is a **trend of the last 60 readings**. SQUAL is a single
+scalar — a count of trackable features — so it cannot make an image no matter
+what is done to it; what it can show is its own shape over time, and a dropout
+while you roll is exactly what one live number hides. The strip is scaled to
+its own window rather than to 0-max, because a good surface sits around 700±40
+and against a 1000 axis that is a flat line. That makes the vertical scale
+data-dependent, so the window's range is printed beside it; below a 2% spread
+it reads "steady" and draws flat rather than amplifying noise into a mountain.
 
 ## Layout and alignment
 
@@ -394,6 +403,7 @@ original that is missing here.
 | Layer names on RGB events | By array position | By the number the board reports |
 | Storage backup / restore | Yes | Yes — see below |
 | Factory erase | One click | Behind typing `ERASE`, and names what it destroys |
+| Surface quality (SQUAL) | Live number and bar | Same, plus a 60-reading trend strip per sensor |
 | Live sensor image | One panel per sensor, 4 ramps, auto gain, blur; hidden if unsupported | Same, plus per-sensor seq/range/size/fps, Esc or Space to stop, and when unsupported it says so and names the subcommands the board *does* have |
 | Settings as `.json` | — | Export, import, edit or paste |
 | Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |

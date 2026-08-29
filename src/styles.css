@@ -1139,6 +1139,34 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .gauges__fill--mid { background: var(--warn); }
 .gauges__fill--low { background: var(--danger); }
 
+/* The trend under each gauge. Stretched to fit, so the stroke must opt out of
+   scaling or it is drawn as a smear. */
+.spark {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: 0.4rem;
+}
+.spark polyline {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke: var(--muted);
+}
+.spark--high polyline { stroke: #22e06a; }
+.spark--mid polyline { stroke: var(--warn); }
+.spark--low polyline { stroke: var(--danger); }
+
+.spark__range {
+  display: block;
+  margin-top: 0.1rem;
+  text-align: right;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- buttons: one scale everywhere ----------
    Buttons and pills previously disagreed on height (44 vs 38) and on padding,
    so any row mixing them looked ragged. One set of tokens fixes the lot. */

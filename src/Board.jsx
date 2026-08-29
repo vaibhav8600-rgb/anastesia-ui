@@ -19,6 +19,55 @@ export const OUTPUTS = [
  * Surface quality is out of whatever the sensor reports — 361 on one part,
  * 1000 on another — so the good/warn/bad bands differ per scale.
  */
+/** Readings kept per sensor. At one poll a second that is about a minute. */
+const SPARK_POINTS = 60;
+
+/**
+ * A plain polyline of the last readings — no library, no axes, no gridlines.
+ *
+ * The line always spans the full width and compresses as the window fills.
+ * Right-aligning a partial window instead was defensible — the time scale then
+ * never changes — but it draws a stub against the right edge for the first
+ * minute, which reads as a broken chart rather than a young one.
+ */
+function Spark({ values, max, band }) {
+  if (!values || values.length < 2 || !max) return null;
+  const W = 100;
+  const H = 20;
+  const PAD = 2;                       // so peaks are not clipped by the stroke
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo;
+
+  // Scaled to the window, not to 0-max. A good surface sits around 700±40, and
+  // against a 1000 axis that is a flat line that tells you nothing. Below a 2%
+  // spread there is no trend to show, only noise, so it is drawn flat rather
+  // than amplified into a mountain range.
+  const moving = span >= max * 0.02;
+  const step = W / (values.length - 1);
+  const y = (v) => (moving ? H - PAD - ((v - lo) / span) * (H - PAD * 2) : H / 2);
+  const points = values.map((v, i) => `${(i * step).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+
+  return (
+    <>
+      <svg
+        className={"spark spark--" + band}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Trend of the last ${values.length} readings, ${lo} to ${hi}`}
+      >
+        <polyline points={points} />
+      </svg>
+      {/* The vertical scale changes with the data, so it has to be printed or
+          the amplitude is unreadable. */}
+      <span className="spark__range">
+        {moving ? `${lo}–${hi}` : "steady"} over {values.length}
+      </span>
+    </>
+  );
+}
+
 export function qualityBand(quality, max) {
   const ratio = quality / max;
   const [warn, good] = max === 1000 ? [0.25, 0.5] : max === 361 ? [0.3, 0.6] : [0.34, 0.67];
@@ -30,6 +79,22 @@ export function Surface({ live, onNote, active = true }) {
   const [error, setError] = useState(null);
   const [raw, setRaw] = useState(null);
 
+  // A rolling window per sensor. SQUAL is one scalar, so it cannot make an
+  // image — but its shape over time is real, and a dropout while you roll the
+  // ball is exactly what a single live number hides.
+  const history = useRef(new Map());
+
+  /** Record then publish, so every path that reports a value also trends it. */
+  const publish = useCallback((list) => {
+    for (const s of list) {
+      const arr = history.current.get(s.sensor) ?? [];
+      arr.push(s.quality);
+      if (arr.length > SPARK_POINTS) arr.shift();
+      history.current.set(s.sensor, arr);
+    }
+    setSensors(list);
+  }, []);
+
   // Reads continuously while the tab is open so you can watch the numbers move
   // as you roll the ball. Between reads the last value simply stays on screen.
   useEffect(() => {
@@ -37,7 +102,7 @@ export function Surface({ live, onNote, active = true }) {
     if (!live) {
       let t;
       const wobble = () => {
-        setSensors([
+        publish([
           { sensor: 0, quality: 690 + Math.round(Math.random() * 90), max: 1000 },
           { sensor: 1, quality: 180 + Math.round(Math.random() * 70), max: 1000 },
         ]);
@@ -62,21 +127,23 @@ export function Surface({ live, onNote, active = true }) {
         // Show what the board actually said rather than an empty card when the
         // wording is not one we recognise.
         setRaw(parsed.length ? null : out.trim());
-        setSensors(parsed);
+        publish(parsed);
         setError(null);
       } catch { /* a missed sample just leaves the last one showing */ }
       if (!stop) timer = setTimeout(tick, 1000);
     };
     tick();
     return () => { stop = true; clearTimeout(timer); };
-  }, [live, active]);
+  }, [live, active, publish]);
 
   if (error) return <p className="empty">{error}</p>;
 
   return (
     <div className="surface">
       <h3 className="surface__title">Surface quality</h3>
-      <p className="surface__sub">Live sensor surface tracking quality</p>
+      <p className="surface__sub">
+        Live tracking quality, and its trend over the last {SPARK_POINTS} readings
+      </p>
       {sensors.length > 0 ? (
         <ul className="gauges">
           {sensors.map((s) => (
@@ -93,12 +160,19 @@ export function Surface({ live, onNote, active = true }) {
                 <span className="gauges__val">{s.max ? `${s.quality}/${s.max}` : s.quality}</span>
               </div>
               {s.max != null && (
-                <div className="gauges__track">
-                  <div
-                    className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
-                    style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                <>
+                  <div className="gauges__track">
+                    <div
+                      className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
+                      style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                    />
+                  </div>
+                  <Spark
+                    values={history.current.get(s.sensor)}
+                    max={s.max}
+                    band={qualityBand(s.quality, s.max)}
                   />
-                </div>
+                </>
               )}
             </li>
           ))}
