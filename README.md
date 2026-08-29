@@ -174,9 +174,14 @@ move; between reads the last value stays on screen.
 
 ## Layout and alignment
 
-The panel takes a straight 33% share of the stage (`minmax(360px, 33%)`). It
-was capped at 27rem, which read as 65/35 at 1280 but degraded to 77/23 by 1920
-and worse on anything wider; a share holds at 31-32% from 1280 through 2560.
+The panel takes a straight 40% share of the stage (`minmax(360px, 40%)`), which
+measures 59/41 at 1024 and 60/40 by 2560 — the small drift is the gap between
+the two, which belongs to neither.
+
+It was once capped at 27rem, which read as 65/35 at 1280 but degraded to 77/23
+by 1920 and worse on anything wider. A percentage holds its ratio at any width;
+a fixed cap cannot. The 360px floor keeps the panel usable at the 900px
+breakpoint, where 40% would be too narrow for a label and a field side by side.
 
 Two rules keep controls on a grid rather than merely near one:
 

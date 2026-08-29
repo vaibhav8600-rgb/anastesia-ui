@@ -127,7 +127,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
     grid-template-rows: minmax(0, 1fr);
     /* A share of the stage rather than a fixed cap: capping the panel at
        27rem made the split 77/23 on a 1920 screen and worse beyond that. */
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 33%);
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
     align-items: stretch;
   }
 }
