@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
-import { frameReader, unsupported } from "./protocol.js";
+import { frameReader, parseSubcommands, unsupported } from "./protocol.js";
 
 // The live sensor image. `sensor stream --on` pushes one frame per capture as
 // hex rows; we colour them and paint them to a canvas.
@@ -69,6 +69,8 @@ export default function Heatmap({ live, onNote }) {
   const [map, setMap] = useState("ironbow");
   const [auto, setAuto] = useState(true);
   const [error, setError] = useState(null);
+  // null while unknown, then { ok } or { ok: false, subs } from the board.
+  const [support, setSupport] = useState(null);
 
   const canvas = useRef(null);
   const meta = useRef(null);              // caption, written per frame, never state
@@ -150,6 +152,28 @@ export default function Heatmap({ live, onNote }) {
 
   // Demo has no device, so synthesise a moving blob rather than an empty box.
   /**
+   * Ask once, on mount, whether this firmware has the subcommand at all.
+   * `--off` is harmless and also clears a stream a previous session left
+   * running. A board without it answers with the parent command's help rather
+   * than an error, so the reply has to be read, not just received.
+   */
+  useEffect(() => {
+    if (!live) { setSupport({ ok: true }); return undefined; }
+    let dead = false;
+    (async () => {
+      try {
+        const out = await device.send("sensor stream --off", { timeout: 4000 });
+        if (dead) return;
+        setSupport(streamAccepted(out) ? { ok: true } : { ok: false, subs: parseSubcommands(out) });
+      } catch {
+        // No reply is not proof of absence; let the button be tried.
+        if (!dead) setSupport({ ok: true });
+      }
+    })();
+    return () => { dead = true; };
+  }, [live]);
+
+  /**
    * One path for both modes. Demo used to call draw() directly with a
    * ready-made frame, which meant it exercised none of the plumbing that
    * matters — the subscription, the reader, the chunk reassembly — and a
@@ -222,6 +246,25 @@ export default function Heatmap({ live, onNote }) {
       }
     };
   }, [on, live, draw, onNote]);
+
+  // A board without the subcommand cannot be talked into having it, so say so
+  // once and name what it does have, rather than offering a button that fails.
+  if (support && !support.ok) {
+    return (
+      <div className="knobs">
+        <h3 className="sec">Sensor image</h3>
+        <p className="panel__blurb">
+          This firmware has no <code>sensor stream</code>, so there is no live
+          image to show. Surface quality above is what it does report.
+        </p>
+        {support.subs.length > 0 && (
+          <p className="ctl__hint">
+            Its <code>sensor</code> command offers: {support.subs.join(", ")}.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="knobs">

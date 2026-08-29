@@ -379,6 +379,27 @@ export function parseBackup(text) {
   };
 }
 
+/**
+ * A Zephyr shell prints the parent command's help when a subcommand is wrong:
+ *
+ *     sensor - Sensor Diagnostics
+ *     Subcommands:
+ *       surface   :Report surface quality
+ *       stream    :Stream sensor frames
+ *
+ * Pulling the names out turns "it refused" into "here is what it has", which
+ * is the difference between a dead end and a diagnosis.
+ */
+export function parseSubcommands(text) {
+  const s = String(text ?? "");
+  const at = s.search(/subcommands\s*:/i);
+  const body = at === -1 ? s : s.slice(at);
+  const out = [];
+  const re = /^[ \t]+([a-z0-9_][a-z0-9_-]*)\s*:/gim;
+  for (let m; (m = re.exec(body)) !== null; ) out.push(m[1]);
+  return [...new Set(out)];
+}
+
 // ------------------------------------------------------------ sensor stream
 
 const FRAME_HEAD = /(?:^|\s)F\s+(\d+)\s+([0-9A-Fa-f]+)$/;
@@ -652,6 +673,17 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   // Past the original's fixed 32768 buffer, which drops these bytes silently.
   eq(parseBackup(["BACKUP START 0 10000", chunk(0x8000, [7, 7]), "BACKUP END"].join(NL)).bytes.length,
      0x10000, "buffer sized from the declared size, not capped at 32K");
+
+  // Zephyr help, exactly the shape a board answered a bad subcommand with.
+  const subHelp = [
+    "sensor - Sensor Diagnostics",
+    "Subcommands:",
+    "  surface   :Report surface quality",
+    "  selftest  :Run the sensor self test",
+  ].join(NL);
+  eq(parseSubcommands(subHelp), ["surface", "selftest"], "subcommand names from help");
+  console.assert(!parseSubcommands(subHelp).includes("stream"), "and stream is plainly absent");
+  eq(parseSubcommands("ok"), [], "a normal reply lists nothing");
 
   // sensor stream: a whole frame, then the same bytes split mid-line
   const frameText = ["F 0 1A", "00ff", "8040", "END"].join(NL) + NL;
