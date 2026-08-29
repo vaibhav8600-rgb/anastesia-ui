@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
+import Loading from "./Loading.jsx";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const DEMO_LATENCY_MS = 450;
+
 import {
   unsupported, EASINGS, parseEventList as parseList, parseEvent, validateEvent,
   parseLayers,
@@ -72,8 +77,14 @@ export default function Effects({ live, onNote }) {
 
   const loadList = useCallback(async () => {
     if (!live) {
+      // Demo answers instantly, which a device never does: a real read is a
+      // handshake plus commands behind a 200ms floor. Pretending otherwise
+      // meant demo never rendered a loading state, so nothing exercised one.
+      setBusy(true);
+      await sleep(DEMO_LATENCY_MS);
       cache.current = new Map(DEMO_NAMES.map(([n], i) => [n, demoEvent(n, i)]));
       setList(DEMO_NAMES.map(([name, label]) => ({ name, label })));
+      setBusy(false);
       return;
     }
     setBusy(true);
@@ -187,7 +198,9 @@ export default function Effects({ live, onNote }) {
     return (
       <>
         <p className="panel__blurb">Colour and vibration for each device event.</p>
-        <p className="empty">{busy ? "Reading effects…" : "No effects reported by this board."}</p>
+        {busy
+          ? <Loading label="Reading effects…" />
+          : <p className="empty">No effects reported by this board.</p>}
         <button className="btn" onClick={loadList} disabled={busy}>Refresh</button>
       </>
     );
@@ -235,7 +248,7 @@ export default function Effects({ live, onNote }) {
         </select>
       </div>
 
-      {loadingEvent && <p className="empty">Reading this event…</p>}
+      {loadingEvent && <Loading label="Reading this event…" />}
 
       {draft && !loadingEvent && (
         <>

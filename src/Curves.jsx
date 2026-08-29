@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device } from "./device.js";
+import Loading from "./Loading.jsx";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const DEMO_LATENCY_MS = 450;
+
 import {
   unsupported, toSegments, toFlat, validateCurve as validate, parseCurveStatus as parseStatus,
 } from "./protocol.js";
@@ -25,11 +30,17 @@ export default function Curves({ live, onNote }) {
 
   const load = useCallback(async () => {
     if (!live) {
+      // Demo answers instantly, which a device never does: a real read is a
+      // handshake plus commands behind a 200ms floor. Pretending otherwise
+      // meant demo never rendered a loading state, so nothing exercised one.
+      setBusy(true);
+      await sleep(DEMO_LATENCY_MS);
       const seeded = Object.fromEntries(
         Object.entries(DEFAULTS).map(([k, v]) => [k, toSegments(v)]),
       );
       setDevices(Object.keys(DEFAULTS).map((n) => ({ name: n, maxCurves: 1, maxPoints: 8 })));
       setCurves(seeded);
+      setBusy(false);
       setName((n) => n ?? "pointer");
       return;
     }
@@ -117,7 +128,9 @@ export default function Curves({ live, onNote }) {
     return (
       <>
         <p className="panel__blurb">Acceleration curves map how fast you move the ball to how far the pointer travels.</p>
-        <p className="empty">{busy ? "Reading curves…" : "No curve-capable device reported."}</p>
+        {busy
+          ? <Loading label="Reading curves…" />
+          : <p className="empty">No curve-capable device reported.</p>}
         <button className="btn" onClick={load} disabled={busy}>Refresh</button>
       </>
     );

@@ -54,6 +54,7 @@ Seven tabs, matching the original's shape:
 | `src/Board.jsx` | keymap profiles, import/export, storage backup, surface quality |
 | `src/Heatmap.jsx` | the live sensor image |
 | `src/RollMap.jsx` | tracking quality by roll direction and speed |
+| `src/Loading.jsx` | the one spinner, shared by every panel that waits |
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
@@ -243,6 +244,23 @@ Readings are auditable rather than asserted: the battery gauge's tooltip
 carries the raw `board status` reply it was parsed from, and if
 `sensor surface` answers in a wording the parser does not recognise, the card
 prints the raw text instead of rendering an empty gauge.
+
+## Waiting is a normal state
+
+Every tab talks to the shell when it mounts, behind a 200 ms floor between
+commands, so "waiting" happens constantly rather than exceptionally. A panel
+that renders its headings over empty lists while it waits looks like a panel
+whose board reported nothing, which is why `src/Loading.jsx` exists and why
+Keymap, Acceleration, Effects, surface quality, the stream probe and the
+connect screen all use it instead of bare text or nothing at all.
+
+**Demo mode waits too, on purpose.** It used to answer instantly, which no
+device does, and the effect was that nothing ever rendered a loading state —
+so nothing exercised one, and a broken indicator could not have been noticed
+without hardware. Demo now takes `DEMO_LATENCY_MS` (450 ms, conservative
+against a real multi-command read) before answering. This is the same lesson as
+the sensor stream, where a demo path that skipped the real plumbing hid a
+missing method until it reached a device.
 
 ## Live vs demo
 

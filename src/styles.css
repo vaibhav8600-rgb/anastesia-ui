@@ -483,6 +483,36 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 .empty { margin: 0; color: var(--muted); font-size: 0.88rem; }
 
+/* ---------- loading ---------- */
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* The one round thing in a flat UI, because a spinner is a circle rather than
+   a rounded rectangle. */
+.loading__spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Still turning, so it still reads as "working", just not as a strobe. */
+@media (prefers-reduced-motion: reduce) {
+  .loading__spinner { animation-duration: 2.4s; }
+}
+
 .notice {
   display: flex;
   flex-wrap: wrap;

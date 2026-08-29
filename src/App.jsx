@@ -13,6 +13,7 @@ import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Heatmap from "./Heatmap.jsx";
 import RollMap from "./RollMap.jsx";
 import Status from "./Status.jsx";
+import Loading from "./Loading.jsx";
 
 // The seven tabs mirror the original's shape, so anyone coming from it knows
 // where to look.
@@ -475,7 +476,12 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
           </div>
         )}
         <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
-        {note && <p className="toast toast--inline" role="status">{note}</p>}
+        {/* Connecting is the longest wait in the app — settle, probe, then a
+            full settings read — so it gets the spinner rather than a line of
+            text that could be mistaken for a finished result. */}
+        {status === "busy"
+          ? <Loading label={note ?? "Connecting…"} />
+          : note && <p className="toast toast--inline" role="status">{note}</p>}
 
         {/* A connection that fails is exactly when you need the log, and the
             Logs tab is behind a successful connect. So it lives here too. */}

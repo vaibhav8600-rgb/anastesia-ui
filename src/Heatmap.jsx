@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
 import { frameReader, parseSubcommands, unsupported } from "./protocol.js";
+import Loading from "./Loading.jsx";
 
 // The live sensor image. `sensor stream --on` pushes one frame per capture as
 // hex rows; we colour them and paint them to a canvas.
 //
-// Needs firmware built with the frame-grab pmw3610 driver. A board without it
-// answers with the `sensor` command's own help, which is detected on mount.
+// Needs firmware whose sensor driver was built with frame capture. Which
+// driver that is depends on the sensor the board carries, and some expose no
+// frame capture at all — so nothing here names one. A board without the
+// subcommand answers with the `sensor` command's own help, which is what the
+// probe on mount looks for.
 //
 // Frames land through device.onRaw rather than device.send, because this is the
 // one exchange that is not request/response. While it runs, device.streaming
@@ -285,6 +289,17 @@ export default function Heatmap({ live, onNote }) {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [on]);
+
+  // Until the probe answers we do not know whether this board can stream at
+  // all, and offering Start before then means offering a button that may fail.
+  if (live && support === null) {
+    return (
+      <div className="knobs">
+        <h3 className="sec">Sensor image</h3>
+        <Loading label="Checking whether this board can stream…" />
+      </div>
+    );
+  }
 
   // A board without the subcommand cannot be talked into having it, so say so
   // once and name what it does have, rather than offering a button that fails.

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
+import Loading from "./Loading.jsx";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const DEMO_LATENCY_MS = 450;
+
 import {
   unsupported, parseRtcfg, parseKeymap, parseAssignments, parseSurface,
   parseBistableSlot, parseBackup, studioLocked as locked,
@@ -204,7 +209,7 @@ export function Surface({ live, onNote, active = true }) {
       ) : raw ? (
         <pre className="surface__raw">{raw}</pre>
       ) : (
-        <p className="empty">Reading…</p>
+        <Loading label="Reading surface quality…" />
       )}
     </div>
   );
@@ -221,6 +226,11 @@ export function Keymap({ live, onNote }) {
 
   const load = useCallback(async () => {
     if (!live) {
+      // Demo answers instantly, which a device never does: a real read is a
+      // handshake plus commands behind a 200ms floor. Pretending otherwise
+      // meant demo never rendered a loading state, so nothing exercised one.
+      setBusy(true);
+      await sleep(DEMO_LATENCY_MS);
       setSlots([
         { id: 0, occupied: true, active: true, name: "default", bytes: 812 },
         { id: 1, occupied: true, active: false, name: "mac", bytes: 804 },
@@ -229,6 +239,7 @@ export function Keymap({ live, onNote }) {
       setAssign({ usb: "default", "wireless-1": "mac", "wireless-2": null });
       setAutoswitch(1);
       setBistable(0);
+      setBusy(false);
       return;
     }
     setBusy(true);
@@ -269,12 +280,14 @@ export function Keymap({ live, onNote }) {
     }
   };
 
-  if (!slots.length && !busy) {
+  if (!slots.length) {
     return (
       <>
         <p className="panel__blurb">Keymap profiles stored on the device.</p>
-        <p className="empty">No profile support reported.</p>
-        <button className="btn" onClick={load}>Refresh</button>
+        {busy
+          ? <Loading label="Reading profiles…" />
+          : <p className="empty">No profile support reported.</p>}
+        <button className="btn" onClick={load} disabled={busy}>Refresh</button>
       </>
     );
   }
