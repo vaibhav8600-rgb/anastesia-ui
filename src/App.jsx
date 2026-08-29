@@ -14,6 +14,7 @@ import Heatmap from "./Heatmap.jsx";
 import RollMap from "./RollMap.jsx";
 import Status from "./Status.jsx";
 import Loading from "./Loading.jsx";
+import ThemeToggle, { useTheme } from "./Theme.jsx";
 
 // The seven tabs mirror the original's shape, so anyone coming from it knows
 // where to look.
@@ -100,6 +101,7 @@ export default function App() {
   const [log, setLog] = useState([]);
   const [firmware, setFirmware] = useState(null);
   const scrollHint = useRef(null);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => device.onLog((e) => setLog((l) => [...l.slice(-400), e])), []);
 
@@ -223,6 +225,8 @@ export default function App() {
         onConnect={connect}
         onDemo={startDemo}
         onClearLog={() => setLog([])}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -245,6 +249,7 @@ export default function App() {
         {!live && <span className="chip">Demo</span>}
         <div className="bar__spacer" />
         <Status live={live} onFirmware={setFirmware} />
+        <ThemeToggle theme={theme} onToggle={toggleTheme} />
         {dirty.size > 0 && <button className="btn btn--ghost" onClick={revert}>Revert</button>}
         <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || busy}>
           {dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
@@ -440,7 +445,7 @@ function KnobSection({ section, state, values, busy, onChange }) {
   );
 }
 
-function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
+function Welcome({ status, note, log, onConnect, onDemo, onClearLog, theme, onToggleTheme }) {
   const none = !supported.usb && !supported.ble;
   return (
     <div className="welcome">
@@ -475,7 +480,10 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
             )}
           </div>
         )}
-        <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
+        <div className="row row--wrap">
+          <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
         {/* Connecting is the longest wait in the app — settle, probe, then a
             full settings read — so it gets the spinner rather than a line of
             text that could be mistaken for a finished result. */}

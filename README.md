@@ -55,6 +55,7 @@ Seven tabs, matching the original's shape:
 | `src/Heatmap.jsx` | the live sensor image |
 | `src/RollMap.jsx` | tracking quality by roll direction and speed |
 | `src/Loading.jsx` | the one spinner, shared by every panel that waits |
+| `src/Theme.jsx` | the glass/flat switch and where the choice is kept |
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
@@ -241,6 +242,24 @@ Light mode is not the dark palette with swapped text. It gets its own wash on a
 near-white base, and the two neumorphic shadows change meaning: the highlight
 becomes near-white and the shadow a soft violet-grey, which is what stops the
 style turning into grey mud on a pale ground.
+
+### Both themes are switchable
+
+The flat design this wore before the glass pass is still here, on a **Glass /
+Flat** button in the header and on the connect screen. The choice is kept in
+`localStorage`.
+
+The switch sets one attribute, `data-theme` on `<html>`. It works because every
+glass and neumorphic trait goes through a token, so `:root[data-theme="flat"]`
+only has to redefine variables — no component knows which theme is on, and no
+rule is duplicated. The four shadow tokens resolving to `none` is what actually
+flattens it: every rule still asks for them.
+
+Adding a theme is therefore a token block, not a second stylesheet. The traits
+worth knowing are the non-obvious ones: `--glass-filter` (the `backdrop-filter`
+value, `none` when flat), `--knob-radius` (round knobs are a neumorphic trait),
+`--dial-cap` and `--dial-glow`, and `--bar-rule` / `--tabs-rule`, since the flat
+build separated regions with hairlines where the glass one uses depth.
 
 ## Layout and alignment
 

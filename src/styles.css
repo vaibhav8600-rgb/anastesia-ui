@@ -31,7 +31,17 @@
   --line: rgba(255, 255, 255, 0.15);
   --line-soft: rgba(255, 255, 255, 0.08);
   --blur: 22px;
+  --glass-filter: blur(var(--blur)) saturate(1.5);
   --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.11);
+  /* The model panel is mostly empty, so it wears thinner smoke than the
+     settings panel and lets more of the wash through. */
+  --glass-view: rgba(21, 16, 43, 0.27);
+  --knob-radius: 50%;
+  --dial-cap: round;
+  --dial-glow: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 70%, transparent));
+  --tabs-rule: none;
+  --bar-fill: transparent;
+  --bar-rule: none;
 
   --nm-up: -4px -4px 12px rgba(255, 255, 255, 0.04), 6px 6px 18px rgba(6, 3, 18, 0.45);
   --nm-up-sm: -2px -2px 6px rgba(255, 255, 255, 0.035), 3px 3px 9px rgba(6, 3, 18, 0.36);
@@ -143,7 +153,8 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   flex-wrap: wrap;
   padding: 0.6rem var(--pad);
   padding-top: max(0.6rem, env(safe-area-inset-top));
-  background: transparent;
+  background: var(--bar-fill);
+  border-bottom: var(--bar-rule);
 }
 
 .bar__title {
@@ -201,11 +212,9 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  /* Thinner smoke than the settings panel: this one is mostly empty, and the
-     wash behind it is the only thing that makes the model look lit. */
-  background: color-mix(in srgb, var(--glass) 62%, transparent);
-  backdrop-filter: blur(var(--blur)) saturate(1.5);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+  background: var(--glass-view);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   box-shadow: var(--nm-up), var(--sheen);
   overflow: hidden;
 }
@@ -248,8 +257,8 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--glass);
-  backdrop-filter: blur(var(--blur)) saturate(1.5);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   box-shadow: var(--nm-up), var(--sheen);
   overflow: hidden;
 }
@@ -259,6 +268,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   flex-wrap: wrap;   /* nine tabs; wrapping beats a scroll strip nobody notices */
   gap: 0.25rem;
   padding: 0.5rem 0.5rem 0.25rem;
+  border-bottom: var(--tabs-rule);
 }
 
 .tab {
@@ -356,7 +366,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   width: 22px;
   height: 22px;
   margin-top: -6px;
-  border-radius: 50%;
+  border-radius: var(--knob-radius);
   background: var(--accent);
   border: 2px solid color-mix(in srgb, #fff 34%, transparent);
   box-shadow: var(--glow), var(--nm-up-sm);
@@ -365,7 +375,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .range::-moz-range-thumb {
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--knob-radius);
   background: var(--accent);
   border: 2px solid color-mix(in srgb, #fff 34%, transparent);
   box-shadow: var(--glow);
@@ -389,7 +399,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   display: block;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--knob-radius);
   background: var(--muted);
   box-shadow: var(--nm-up-sm);
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.3, 1), background 180ms ease;
@@ -1050,22 +1060,22 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   fill: none;
   stroke: color-mix(in srgb, var(--text) 12%, transparent);
   stroke-width: 7;
-  stroke-linecap: round;
+  stroke-linecap: var(--dial-cap);
 }
 .dial__value {
   fill: none;
   stroke: var(--accent);
   stroke-width: 7;
-  stroke-linecap: round;
+  stroke-linecap: var(--dial-cap);
   /* The glow is the whole reason a dial reads as lit rather than drawn. */
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 70%, transparent));
+  filter: var(--dial-glow);
   transition: stroke-dasharray 90ms linear;
 }
 .dial__knob {
   fill: #fff;
   stroke: var(--accent);
   stroke-width: 2;
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 80%, transparent));
+  filter: var(--dial-glow);
   transition: cx 90ms linear, cy 90ms linear;
 }
 .dial__num {
@@ -1739,3 +1749,98 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text) 40%, transparent);
   background-clip: content-box;
 }
+
+
+/* ---------- theme: flat ----------
+
+   The design this project wore before the glass pass, kept switchable rather
+   than deleted. It is entirely token work plus five structural lines, which is
+   the payoff for having routed every glass and neumorphic trait through a
+   variable: nothing here reaches into a component.
+
+   `none` on the four shadow tokens is what actually flattens it — every rule
+   still asks for them, they just resolve to nothing. */
+
+:root[data-theme="flat"] {
+  --bg: #0c0e16;
+  --text: #e8ebf7;
+  --muted: #99a0bd;
+  --accent: #7cd4ff;
+  --accent-ink: #06121b;
+  --warn: #ffa06a;
+  --danger: #ff6b8a;
+  --ok: #63e6a0;
+
+  --glass: #141828;
+  --glass-view: #141828;
+  --glass-2: #0c0e16;
+  --well: #0c0e16;
+  --line: #262c44;
+  --line-soft: #262c44;
+
+  --glass-filter: none;
+  --sheen: none;
+  --nm-up: none;
+  --nm-up-sm: none;
+  --nm-in: none;
+  --glow: none;
+
+  --radius: 8px;
+  --radius-sm: 4px;
+  --pill: 4px;
+  --knob-radius: 2px;
+  --dial-cap: butt;
+  --dial-glow: none;
+
+  /* The flat build separated regions with hairlines rather than depth. */
+  --bar-fill: var(--glass);
+  --bar-rule: 1px solid var(--line);
+  --tabs-rule: 1px solid var(--line);
+}
+
+:root[data-theme="flat"] body {
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="flat"] {
+    --bg: #f4f6fc;
+    --text: #141828;
+    --muted: #5b6280;
+    --accent: #0f7fb8;
+    --accent-ink: #ffffff;
+    --warn: #a4551d;
+    --danger: #c0344f;
+    --ok: #1d7a4c;
+
+    --glass: #ffffff;
+    --glass-view: #ffffff;
+    --glass-2: #ffffff;
+    --well: #ffffff;
+    --line: #dfe3f2;
+    --line-soft: #dfe3f2;
+  }
+
+  :root[data-theme="flat"] body { background: var(--bg); }
+}
+
+/* The switcher itself. Small, and out of the way of the save controls. */
+.theme-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: var(--btn-h);
+  padding: 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  background: var(--glass-2);
+  box-shadow: var(--nm-up-sm), var(--sheen);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+.theme-btn:hover { color: var(--text); }
+.theme-btn svg { flex: none; }
