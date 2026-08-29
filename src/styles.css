@@ -957,9 +957,15 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 }
 .dial.is-disabled { opacity: 0.5; }
 
-/* A lone dial in its own run would stretch to the full card width. Cap it so
-   it reads as one control rather than a stray graphic. */
-.dials:has(> .dial:only-child) { justify-content: start; grid-template-columns: minmax(96px, 32%); }
+/* A lone dial has no row-mates to line up against, and pinned to the left edge
+   with dead space beside it it reads as a stray. Centre it and let it take the
+   room it has: alone on the row, it is the card's focal control. */
+.dials:has(> .dial:only-child) {
+  grid-template-columns: minmax(96px, 128px);
+  justify-content: center;
+  padding: 0.45rem 0 0.15rem;
+}
+.dials:has(> .dial:only-child) .dial__face { max-width: 128px; }
 
 /* ---------- compact rows for the long tail ---------- */
 
