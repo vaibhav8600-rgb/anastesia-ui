@@ -379,6 +379,64 @@ export function parseBackup(text) {
   };
 }
 
+// ------------------------------------------------------------ sensor stream
+
+const FRAME_HEAD = /(?:^|\s)F\s+(\d+)\s+([0-9A-Fa-f]+)$/;
+const FRAME_END = /(?:^|\s)END$/;
+const HEX_ROW = /^[0-9A-Fa-f]+$/;
+const noAnsi = (s) => s.replace(/\x1b\[[\d;]*[A-Za-z]/g, "");
+
+/**
+ * `sensor stream --on` emits one frame as:
+ *
+ *     F <id> <seqHex>
+ *     <row of hex, one byte per pixel>
+ *     ...
+ *     END
+ *
+ * Bytes arrive in arbitrary chunks that split lines anywhere, so the reader
+ * holds the partial line between pushes. A row of a different width to the
+ * first abandons the frame rather than rendering a skewed image.
+ */
+export function frameReader() {
+  let tail = "";
+  let cur = null;
+  return {
+    push(chunk) {
+      const frames = [];
+      tail += String(chunk ?? "").replace(/\r/g, "");
+      const lines = tail.split("\n");
+      tail = lines.pop() ?? "";
+      for (const raw of lines) {
+        const line = noAnsi(raw).trim();
+        if (!line) continue;
+        const head = FRAME_HEAD.exec(line);
+        if (head) { cur = { id: Number(head[1]), seq: parseInt(head[2], 16), rows: [] }; continue; }
+        if (!cur) continue;
+        if (FRAME_END.test(line)) {
+          const { id, seq, rows } = cur;
+          cur = null;
+          if (!rows.length) continue;
+          const width = rows[0].length;
+          const data = new Uint8Array(width * rows.length);
+          rows.forEach((r, y) => data.set(r, y * width));
+          frames.push({ id, seq, width, height: rows.length, data });
+          continue;
+        }
+        if (HEX_ROW.test(line) && line.length % 2 === 0) {
+          const row = hexBytes(line);
+          if (rowsMismatch(cur, row)) { cur = null; continue; }
+          cur.rows.push(row);
+        }
+      }
+      return frames;
+    },
+    reset() { tail = ""; cur = null; },
+  };
+}
+
+const rowsMismatch = (cur, row) => cur.rows.length > 0 && row.length !== cur.rows[0].length;
+
 // ------------------------------------------------------------ board status
 
 /** `board status` -> firmware + battery, falling back to `board version`. */
@@ -594,6 +652,27 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   // Past the original's fixed 32768 buffer, which drops these bytes silently.
   eq(parseBackup(["BACKUP START 0 10000", chunk(0x8000, [7, 7]), "BACKUP END"].join(NL)).bytes.length,
      0x10000, "buffer sized from the declared size, not capped at 32K");
+
+  // sensor stream: a whole frame, then the same bytes split mid-line
+  const frameText = ["F 0 1A", "00ff", "8040", "END"].join(NL) + NL;
+  const whole = frameReader().push(frameText);
+  eq(whole.length, 1, "one frame");
+  eq([whole[0].id, whole[0].seq, whole[0].width, whole[0].height], [0, 26, 2, 2], "frame header and shape");
+  eq([...whole[0].data], [0, 255, 128, 64], "pixels row by row");
+
+  // The wire splits wherever it likes; a reader that only handles whole lines
+  // drops every frame that straddles a chunk boundary.
+  const reader = frameReader();
+  let got = [];
+  for (const piece of ["F 0 1", "A" + NL + "00f", "f" + NL + "8040" + NL + "EN", "D" + NL]) {
+    got = got.concat(reader.push(piece));
+  }
+  eq(got.length, 1, "frame reassembled across chunk splits");
+  eq([...got[0].data], [0, 255, 128, 64], "same pixels after splitting");
+
+  // A ragged row is a corrupt frame, not a skewed picture.
+  eq(frameReader().push(["F 1 2", "00ff", "8040aa", "END"].join(NL) + NL).length, 0, "ragged frame dropped");
+  eq(frameReader().push("some log line" + NL).length, 0, "noise outside a frame is ignored");
 
   console.assert(unsupported("plane: command not found"), "unsupported detected");
   console.assert(studioLocked("Unlock ZMK Studio first"), "studio lock detected");

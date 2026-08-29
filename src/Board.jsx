@@ -51,7 +51,9 @@ export function Surface({ live, onNote, active = true }) {
     let timer;
     const tick = async () => {
       if (stop) return;
-      if (device.pending) { timer = setTimeout(tick, 200); return; }
+      // Yield to the pixel stream as well as to typed commands: a surface
+      // reply landing mid-frame corrupts the image.
+      if (device.pending || device.streaming) { timer = setTimeout(tick, 200); return; }
       try {
         const out = await device.send("sensor surface");
         if (stop) return;

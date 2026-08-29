@@ -125,6 +125,7 @@ class Device {
         return;
       }
       this.buffer += text;
+      if (this.rawListeners.size) this.emitRaw(text);
       if (this.shellDumps === undefined) this.shellDumps = 0;
       if (this.shellDumps < 3) {
         this.shellDumps++;

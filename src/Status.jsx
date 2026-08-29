@@ -33,7 +33,7 @@ export default function Status({ live, onFirmware }) {
     const poll = (fn, every) => {
       const run = async () => {
         if (stop) return;
-        if (device.pending) {
+        if (device.pending || device.streaming) {
           timers.push(setTimeout(run, 300));
           return;
         }
