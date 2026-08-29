@@ -208,6 +208,40 @@ and against a 1000 axis that is a flat line. That makes the vertical scale
 data-dependent, so the window's range is printed beside it; below a 2% spread
 it reads "steady" and draws flat rather than amplifying noise into a mountain.
 
+## The design system: glass over a wash, lit from the top-left
+
+Two systems, kept separate in `src/styles.css` so they cannot fight:
+
+**Glass** is for anything that *floats* — the two stage panels, the header
+chips, the popovers. A translucent fill, a bright hairline edge, and a blur of
+what is behind it. The page itself is a fixed four-blob radial wash, which is
+the thing the glass has to be glass *of*; the 3D canvas is `alpha: true`, so the
+wash shows through behind the model too.
+
+Panels **smoke** rather than lighten: a dark translucent fill over a lit ground.
+Lightening them on a dark ground was tried first and produced grey slabs — the
+sense of glass comes from the ground being brighter than the pane.
+
+**Neumorphism** is for anything you *touch* — buttons, switches, sliders,
+fields. One light source, top-left, for all of them: raised things take a pale
+highlight up-left and a soft shadow down-right, sunken things take exactly the
+reverse, and pressing a button swaps its raise for the matching well. Mixing
+the direction per element is what makes this style look cheap.
+
+Two costs are deliberately not paid:
+
+- **Only the two large panels carry `backdrop-filter`.** Nesting it inside them
+  buys nothing — there is nothing between an inner card and its parent to blur —
+  and costs a second full-screen blur pass.
+- **The viewport buttons do not blur either.** Six of them sit on top of a
+  canvas that redraws at 30fps, so each would force a re-composite every frame.
+  A plain translucent fill is indistinguishable at that size.
+
+Light mode is not the dark palette with swapped text. It gets its own wash on a
+near-white base, and the two neumorphic shadows change meaning: the highlight
+becomes near-white and the shadow a soft violet-grey, which is what stops the
+style turning into grey mud on a pale ground.
+
 ## Layout and alignment
 
 The panel takes a straight 40% share of the stage (`minmax(360px, 40%)`), which

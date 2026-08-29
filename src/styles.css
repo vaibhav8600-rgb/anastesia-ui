@@ -1,19 +1,51 @@
 /* Anastesia — one small stylesheet. Fluid by default, so there is no phone
    layout and desktop layout to keep in sync, just one that bends. */
 
+/* ---------- design tokens: glass over a wash, lit from the top-left ----------
+
+   Two systems, kept separate so they cannot fight:
+
+   GLASS is for anything that floats — the two stage panels, the header chips,
+   the popovers. Translucent fill, a bright hairline edge, and a blur of what
+   is behind it. Only the large surfaces carry `backdrop-filter`; nesting it
+   inside them costs a second full-screen blur pass and looks identical,
+   because there is nothing between an inner card and its parent to blur.
+
+   NEUMORPHISM is for anything you touch — buttons, switches, sliders, fields.
+   One light source, top-left, for every one of them: raised things take a pale
+   highlight up-left and a soft shadow down-right, sunken things take exactly
+   the reverse. Mixing the direction is what makes this style look cheap.        */
+
 :root {
-  --bg: #0c0e16;
-  --bg-soft: #141828;
-  --line: #262c44;
-  --text: #e8ebf7;
-  --muted: #99a0bd;
-  --accent: #7cd4ff;
-  --accent-ink: #06121b;
-  --warn: #ffa06a;
-  --danger: #ff6b8a;
-  --ok: #63e6a0;
-  --radius: 8px;
-  --radius-sm: 4px;
+  --bg: #17142b;
+  --text: #ece9fb;
+  --muted: #a8a2c8;
+  --accent: #b9a4ff;
+  --accent-ink: #1a1030;
+  --warn: #ffb37a;
+  --danger: #ff7d9c;
+  --ok: #6ff0b0;
+
+  --glass: rgba(21, 16, 43, 0.44);
+  --glass-2: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.15);
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --blur: 22px;
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.11);
+
+  --nm-up: -4px -4px 12px rgba(255, 255, 255, 0.04), 6px 6px 18px rgba(6, 3, 18, 0.45);
+  --nm-up-sm: -2px -2px 6px rgba(255, 255, 255, 0.035), 3px 3px 9px rgba(6, 3, 18, 0.36);
+  --nm-in: inset 3px 3px 8px rgba(6, 3, 18, 0.5), inset -2px -2px 6px rgba(255, 255, 255, 0.045);
+  --well: rgba(10, 6, 24, 0.3);
+  --glow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+
+  /* Kept because existing rules read it; it is now the glass fill. */
+  --bg-soft: var(--glass);
+
+  --radius: 18px;
+  --radius-sm: 12px;
+  --pill: 999px;
+
   /* Reserved slot after a number field, so a unit never shifts the box. */
   --unit-slot: 1.6rem;
   --unit-gap: 0.35rem;
@@ -24,19 +56,42 @@
   font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Light inverts what the two shadows mean: the highlight becomes near-white
+   and the shadow a soft violet-grey, which is what keeps neumorphism from
+   turning into grey mud on a pale ground. */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f4f6fc;
-    --bg-soft: #ffffff;
-    --line: #dfe3f2;
-    --text: #141828;
-    --muted: #5b6280;
-    --accent: #0f7fb8;
+    --bg: #e9e6f6;
+    --text: #241f3d;
+    --muted: #4b4478;
+    --accent: #6d4df0;
     --accent-ink: #ffffff;
     --warn: #a4551d;
     --danger: #c0344f;
     --ok: #1d7a4c;
+
+    --glass: rgba(255, 255, 255, 0.5);
+    --glass-2: rgba(255, 255, 255, 0.6);
+    --line: rgba(255, 255, 255, 0.85);
+    --line-soft: rgba(120, 110, 165, 0.16);
+    --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+    --nm-up: -4px -4px 12px rgba(255, 255, 255, 0.95), 6px 6px 18px rgba(120, 110, 165, 0.25);
+    --nm-up-sm: -2px -2px 6px rgba(255, 255, 255, 0.9), 3px 3px 9px rgba(120, 110, 165, 0.2);
+    --nm-in: inset 3px 3px 8px rgba(120, 110, 165, 0.26), inset -2px -2px 6px rgba(255, 255, 255, 0.95);
+    --well: rgba(255, 255, 255, 0.42);
+
     color-scheme: light;
+  }
+
+  body {
+    background:
+      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
+      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
+      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
+      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
+      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
+    background-attachment: fixed;
   }
 }
 
@@ -46,7 +101,13 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 850px at 8% 14%, rgba(198, 166, 255, 0.55), transparent 62%),
+    radial-gradient(950px 760px at 88% 8%, rgba(150, 200, 255, 0.42), transparent 64%),
+    radial-gradient(1050px 900px at 76% 92%, rgba(255, 158, 200, 0.40), transparent 62%),
+    radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
+    linear-gradient(160deg, #3d3766, #241f3d 58%, #1a1730);
+  background-attachment: fixed;
   color: var(--text);
   font-size: clamp(0.95rem, 0.9rem + 0.2vw, 1.05rem);
   line-height: 1.5;
@@ -82,8 +143,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   flex-wrap: wrap;
   padding: 0.6rem var(--pad);
   padding-top: max(0.6rem, env(safe-area-inset-top));
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-soft);
+  background: transparent;
 }
 
 .bar__title {
@@ -96,13 +156,15 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .bar__spacer { flex: 1 1 auto; }
 
 .chip {
-  padding: 0.15rem 0.55rem;
-  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--pill);
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   border: 1px solid var(--line);
+  background: var(--glass);
+  box-shadow: var(--sheen);
   color: var(--muted);
 }
 
@@ -139,7 +201,12 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--bg-soft);
+  /* Thinner smoke than the settings panel: this one is mostly empty, and the
+     wash behind it is the only thing that makes the model look lit. */
+  background: color-mix(in srgb, var(--glass) 62%, transparent);
+  backdrop-filter: blur(var(--blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+  box-shadow: var(--nm-up), var(--sheen);
   overflow: hidden;
 }
 
@@ -161,7 +228,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
   color: var(--muted);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
 }
 
 .ticker {
@@ -180,7 +247,10 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--bg-soft);
+  background: var(--glass);
+  backdrop-filter: blur(var(--blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(1.5);
+  box-shadow: var(--nm-up), var(--sheen);
   overflow: hidden;
 }
 
@@ -188,24 +258,28 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   display: flex;
   flex-wrap: wrap;   /* nine tabs; wrapping beats a scroll strip nobody notices */
   gap: 0.25rem;
-  padding: 0.4rem;
-  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0.5rem 0.25rem;
 }
 
 .tab {
   flex: 0 1 auto;
   padding: 0.4rem clamp(0.6rem, 2.4vw, 0.9rem);
   font-size: clamp(0.85rem, 0.8rem + 0.2vw, 1rem);
-  border: 0;
-  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  border-radius: var(--pill);
   background: transparent;
   color: var(--muted);
   font-weight: 550;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
-.tab:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
-.tab.is-active { background: var(--accent); color: var(--accent-ink); }
+.tab:hover { background: var(--glass); color: var(--text); }
+.tab.is-active {
+  background: color-mix(in srgb, var(--accent) 88%, transparent);
+  border-color: color-mix(in srgb, #fff 30%, transparent);
+  color: var(--accent-ink);
+  box-shadow: var(--glow), var(--sheen);
+}
 
 .panel {
   container: panel / inline-size;
@@ -256,22 +330,24 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 /* The fill is painted on the track via --fill, set inline from the value. */
 .range::-webkit-slider-runnable-track {
-  height: 8px;
-  border-radius: 2px;
+  height: 10px;
+  border-radius: var(--pill);
   background: linear-gradient(
     to right,
     var(--accent) var(--fill, 0%),
-    color-mix(in srgb, var(--text) 14%, transparent) var(--fill, 0%)
+    var(--well) var(--fill, 0%)
   );
+  box-shadow: var(--nm-in);
 }
 .range::-moz-range-track {
-  height: 8px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--text) 14%, transparent);
+  height: 10px;
+  border-radius: var(--pill);
+  background: var(--well);
+  box-shadow: var(--nm-in);
 }
 .range::-moz-range-progress {
-  height: 8px;
-  border-radius: 2px;
+  height: 10px;
+  border-radius: var(--pill);
   background: var(--accent);
 }
 
@@ -279,19 +355,20 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   -webkit-appearance: none;
   width: 22px;
   height: 22px;
-  margin-top: -7px;
-  border-radius: var(--radius-sm);
+  margin-top: -6px;
+  border-radius: 50%;
   background: var(--accent);
-  border: 2px solid var(--bg-soft);
-  outline: 1px solid var(--line);
+  border: 2px solid color-mix(in srgb, #fff 34%, transparent);
+  box-shadow: var(--glow), var(--nm-up-sm);
   transition: transform 120ms ease;
 }
 .range::-moz-range-thumb {
   width: 22px;
   height: 22px;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   background: var(--accent);
-  border: 3px solid var(--bg-soft);
+  border: 2px solid color-mix(in srgb, #fff 34%, transparent);
+  box-shadow: var(--glow);
 }
 .range:active::-webkit-slider-thumb { transform: scale(1.15); }
 .range:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -301,31 +378,40 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 30px;
   height: 30px;
   padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--text) 10%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--pill);
+  background: var(--well);
+  box-shadow: var(--nm-in);
   cursor: pointer;
-  transition: background 180ms ease;
+  transition: background 180ms ease, box-shadow 180ms ease;
 }
 .switch__dot {
   display: block;
   width: 22px;
   height: 22px;
-  border-radius: 2px;
+  border-radius: 50%;
   background: var(--muted);
+  box-shadow: var(--nm-up-sm);
   transition: transform 180ms cubic-bezier(0.2, 0.8, 0.3, 1), background 180ms ease;
 }
-.switch[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 35%, transparent); }
-.switch[aria-checked="true"] .switch__dot { transform: translateX(22px); background: var(--accent); }
+.switch[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: var(--nm-in), var(--glow);
+}
+.switch[aria-checked="true"] .switch__dot {
+  transform: translateX(22px);
+  background: #fff;
+}
 
 /* ---------- expert ---------- */
 
 .search {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--well);
+  box-shadow: var(--nm-in);
 }
 
 .raw { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
@@ -366,7 +452,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 .btn--primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .btn--primary:hover:not(:disabled) { filter: brightness(1.08); }
-.btn--ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn--ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--muted); }
 .btn--ghost:hover { color: var(--text); }
 
 /* ---------- welcome ---------- */
@@ -522,6 +608,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   padding: 0.65rem 0.85rem;
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
   color: var(--warn);
 }
 .notice p { margin: 0; }
@@ -573,9 +660,10 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .numwrap input {
   width: 5.5rem;
   padding: 0.3rem 0.5rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--well);
+  box-shadow: var(--nm-in);
   text-align: right;
 }
 .unit { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
@@ -897,9 +985,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   display: grid;
   gap: 1.25rem;
   padding: 1.15rem 1.25rem 1.35rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--glass-2);
+  box-shadow: var(--nm-up-sm), var(--sheen);
 }
 
 /* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
@@ -948,6 +1037,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   max-width: 96px;
   touch-action: none;
   cursor: ns-resize;
+  /* Round only so the focus ring follows the gauge. No raise: the arc's own
+     glow is what lights this control, and a halo behind an SVG just smudges
+     the card under it. */
+  border-radius: 50%;
   /* Only the focus ring's shape — the gauge itself is drawn in SVG. */
   border-radius: var(--radius-sm);
 }
@@ -955,21 +1048,24 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .dial__track {
   fill: none;
-  stroke: color-mix(in srgb, var(--text) 14%, transparent);
+  stroke: color-mix(in srgb, var(--text) 12%, transparent);
   stroke-width: 7;
-  stroke-linecap: butt;
+  stroke-linecap: round;
 }
 .dial__value {
   fill: none;
   stroke: var(--accent);
   stroke-width: 7;
-  stroke-linecap: butt;
+  stroke-linecap: round;
+  /* The glow is the whole reason a dial reads as lit rather than drawn. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 70%, transparent));
   transition: stroke-dasharray 90ms linear;
 }
 .dial__knob {
-  fill: var(--accent);
-  stroke: var(--bg);
-  stroke-width: 2.5;
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 80%, transparent));
   transition: cx 90ms linear, cy 90ms linear;
 }
 .dial__num {
@@ -1042,11 +1138,11 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .rose { display: block; width: 100%; aspect-ratio: 1 / 1; max-height: 260px; }
 
 .rose__cell {
-  stroke: var(--bg-soft);
+  stroke: color-mix(in srgb, var(--bg) 55%, transparent);
   stroke-width: 0.6;
   transition: fill 220ms ease;
 }
-.rose__cell.is-empty { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+.rose__cell.is-empty { fill: color-mix(in srgb, var(--text) 7%, transparent); }
 .rose__cell--high { fill: #22e06a; }
 .rose__cell--mid { fill: var(--warn); }
 .rose__cell--low { fill: var(--danger); }
@@ -1086,9 +1182,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .heat {
   position: relative;
   aspect-ratio: 1 / 1;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg-soft);
+  background: var(--well);
+  box-shadow: var(--nm-in);
   overflow: hidden;
 }
 .heat__view { display: block; width: 100%; height: 100%; }
@@ -1126,16 +1223,20 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   display: grid;
   gap: 0.25rem;
   padding: 0.3rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--glass);
   color: var(--muted);
   font-size: 0.72rem;
   min-height: 0;
   cursor: pointer;
 }
 .heat__map:hover { color: var(--text); }
-.heat__map.is-active { border-color: var(--accent); color: var(--text); }
+.heat__map.is-active {
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: var(--glow);
+}
 
 .heat__swatch {
   display: block;
@@ -1150,9 +1251,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   display: grid;
   gap: 0.15rem;
   padding: 1.15rem 1.25rem 1.35rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--glass-2);
+  box-shadow: var(--nm-up-sm), var(--sheen);
 }
 
 .surface__title { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; }
@@ -1177,13 +1279,14 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .gauges__track {
   height: 10px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--text) 13%, transparent);
+  border-radius: var(--pill);
+  background: var(--well);
+  box-shadow: var(--nm-in);
   overflow: hidden;
 }
 .gauges__fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--pill);
   transition: width 220ms ease, background-color 220ms ease;
 }
 /* Bright, saturated green when tracking is good — the reading you want to see. */
@@ -1226,7 +1329,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 :root {
   --btn-h: 38px;
   --btn-pad: 0.9rem;
-  --btn-radius: var(--radius-sm);
+  --btn-radius: var(--pill);
 }
 
 .btn, .pill {
@@ -1239,35 +1342,47 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   padding: 0 var(--btn-pad);
   border: 1px solid var(--line);
   border-radius: var(--btn-radius);
-  background: var(--bg);
+  background: var(--glass-2);
+  box-shadow: var(--nm-up-sm), var(--sheen);
   color: var(--text);
   font-size: 0.88rem;
   font-weight: 550;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 100ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease,
+              box-shadow 150ms ease, transform 100ms ease;
 }
 
 .btn:hover:not(:disabled), .pill:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  border-color: color-mix(in srgb, var(--text) 22%, transparent);
+  background: color-mix(in srgb, var(--text) 10%, var(--glass-2));
+  border-color: color-mix(in srgb, #fff 24%, transparent);
 }
-.btn:active:not(:disabled), .pill:active:not(:disabled) { transform: translateY(1px); }
+/* Pressed reads as pressed *in*: the raise becomes the well, same light. */
+.btn:active:not(:disabled), .pill:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--nm-in);
+}
 .btn:disabled, .pill:disabled { opacity: 0.42; cursor: not-allowed; }
 
-.pill { border-radius: var(--radius-sm); color: var(--muted); font-size: 0.84rem; }
+.pill { border-radius: var(--pill); color: var(--muted); font-size: 0.84rem; }
 .pill.is-active, .pill[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-ink);
-  border-color: transparent;
+  border-color: color-mix(in srgb, #fff 30%, transparent);
+  box-shadow: var(--glow), var(--sheen);
 }
 .pill.is-active:hover, .pill[aria-pressed="true"]:hover { background: var(--accent); filter: brightness(1.06); }
 
-.btn--primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: color-mix(in srgb, #fff 30%, transparent);
+  box-shadow: var(--glow), var(--sheen);
+}
 .btn--primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); border-color: transparent; }
 
-.btn--ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn--ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--muted); }
 .btn--ghost:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 
 .btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
@@ -1344,10 +1459,11 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .vbtn {
   height: 30px;
   padding: 0 0.6rem;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  box-shadow: var(--nm-up-sm), var(--sheen);
+  color: color-mix(in srgb, var(--text) 90%, transparent);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1355,7 +1471,12 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
 }
 .vbtn:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 34%, transparent); }
-.vbtn.is-on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.vbtn.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: color-mix(in srgb, #fff 30%, transparent);
+  box-shadow: var(--glow), var(--sheen);
+}
 
 @media (pointer: coarse) { .vbtn { height: 36px; padding: 0 0.75rem; } }
 
@@ -1581,3 +1702,40 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .console--welcome summary { padding: 0.5rem 0.75rem; }
 .console--welcome .console__foot { padding: 0 0.75rem 0.6rem; }
 .console--welcome .logrow { grid-template-columns: auto minmax(0, 1fr); }
+
+
+/* ---------- scrollbars ----------
+   The panel scrolls constantly, and a platform scrollbar on smoked glass is
+   the one element that refuses to belong to the rest of it. */
+
+.panel, .logs__body, .raw, textarea.search {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 26%, transparent) transparent;
+}
+
+.panel::-webkit-scrollbar,
+.logs__body::-webkit-scrollbar,
+.raw::-webkit-scrollbar,
+textarea.search::-webkit-scrollbar { width: 10px; height: 10px; }
+
+.panel::-webkit-scrollbar-track,
+.logs__body::-webkit-scrollbar-track,
+.raw::-webkit-scrollbar-track,
+textarea.search::-webkit-scrollbar-track { background: transparent; }
+
+.panel::-webkit-scrollbar-thumb,
+.logs__body::-webkit-scrollbar-thumb,
+.raw::-webkit-scrollbar-thumb,
+textarea.search::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--pill);
+  background: color-mix(in srgb, var(--text) 24%, transparent);
+  background-clip: content-box;
+}
+.panel::-webkit-scrollbar-thumb:hover,
+.logs__body::-webkit-scrollbar-thumb:hover,
+.raw::-webkit-scrollbar-thumb:hover,
+textarea.search::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text) 40%, transparent);
+  background-clip: content-box;
+}
