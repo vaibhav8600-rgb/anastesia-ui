@@ -1,11 +1,12 @@
 import { useEffect, useId, useState } from "react";
+import Dial from "./Dial.jsx";
 
-// Two shapes, chosen by what the setting is actually like:
+// Three shapes, chosen by what the setting is actually like:
+//   hero    -> a dial you turn, for the handful of settings people reach for
 //   compact -> a number field, for the long tail behind "Advanced", where an
 //              exact value matters more than sweeping
 //   default -> a typed number box over a slider, with the range spelled out
-//              underneath. A dial looked the part but hid both the exact value
-//              and what the bounds were, which is most of what you want to know.
+//              underneath, for the middle ground
 // Toggles are always a switch. All of them are native inputs underneath.
 
 export default function Control({ spec, value, onChange, disabled, compact }) {
@@ -34,6 +35,10 @@ export default function Control({ spec, value, onChange, disabled, compact }) {
         {spec.hint && <p className="ctl__hint" id={hintId}>{spec.hint}</p>}
       </div>
     );
+  }
+
+  if (spec.hero) {
+    return <Dial spec={spec} value={value} onChange={onChange} disabled={disabled} />;
   }
 
   if (compact) {

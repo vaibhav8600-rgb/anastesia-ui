@@ -47,7 +47,8 @@ Seven tabs, matching the original's shape:
 | `src/device.js` | USB-serial + BLE transport and the shell protocol |
 | `src/protocol.js` | parsers for the device's text output, with a runnable self-check |
 | `src/settings.js` | the settings catalogue — one table drives every knob |
-| `src/Control.jsx` | picks the shape for one setting: slider, field or switch |
+| `src/Control.jsx` | picks the shape for one setting: dial, slider, field or switch |
+| `src/Dial.jsx` | the radial knob |
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles, import/export, surface quality |
@@ -125,15 +126,21 @@ and pauses when the page is hidden or the canvas is scrolled out of view.
 
 ## Choosing a control's shape
 
-`src/Control.jsx` picks by what the setting is like:
+A page of forty sliders reads as a spreadsheet and a page of forty dials reads
+as a cockpit, so `src/Control.jsx` picks by what the setting is like:
 
-- A setting you can see gets a **typed number box over a slider**, with its two
-  bounds printed underneath. Dials were tried here and dropped: they looked the
-  part but hid both the exact value and the range, which is most of what you
-  want to know before you touch something.
+- `hero: true` gets a **dial** — the five settings you reach for to change how
+  the device feels (sensitivity, rotation, smoothing, scroll speed, brightness).
+  Deliberately a short list; a dial earns its space by being rare.
+- Everything else visible gets a **typed number box over a slider**, with its
+  two bounds printed underneath, so the range is readable without dragging.
 - Anything under Advanced gets a **number field** in a two-column grid, because
   there an exact value matters more than a sweep.
 - Anything with a 0-1 range is a **switch**, decided from the device's own range.
+
+Dials are gathered into a row, but only when they are *adjacent* in the
+catalogue. Floating every dial to the top of its card put the scroll-speed dial
+above the switch that enables twist scrolling at all.
 
 Word units carry a leading space in the catalogue (`" frames"`, `" ms"`) and
 symbols do not (`"x"`, `"°"`). The scale under a slider uses that to print
@@ -146,8 +153,9 @@ ones rather than one flat list. Both halves of that matter: the original app
 shows three pointer settings and hides thirteen, and the wall of knobs is what
 made this tab hard to read.
 
-Sensor surface quality reads continuously while the Sensor(s) tab is open, so
-you can roll the ball and watch it move; between reads the last value stays.
+Sensor surface quality is the first card on the Sensor(s) tab. It reads
+continuously while that tab is open, so you can roll the ball and watch it
+move; between reads the last value stays on screen.
 
 ## Layout and alignment
 

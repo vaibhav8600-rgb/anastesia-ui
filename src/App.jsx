@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device, supported } from "./device.js";
 import {
   sensorSections, lightControls, LIGHT_PREFIXES, allControls, readAll,
@@ -260,9 +260,8 @@ export default function App() {
               <Curves live={live} onNote={setNote} />
             </Pane>
 
-            {/* Settings first, the live readout after: leading with a diagnostic
-                meant scrolling past it to reach anything you can change. */}
             <Pane active={tab === "sensors"} visited={visited.has("sensors")}>
+              <Surface live={live} onNote={setNote} active={tab === "sensors"} />
               {sensorSections
                 .filter((sec) => !sec.optional || sec.controls.some((c) => !state.missing.has(c.id)))
                 .map((sec) => (
@@ -275,7 +274,6 @@ export default function App() {
                     onChange={change}
                   />
                 ))}
-              <Surface live={live} onNote={setNote} active={tab === "sensors"} />
             </Pane>
 
             <Pane active={tab === "effects"} visited={visited.has("effects")}>
@@ -321,6 +319,22 @@ export default function App() {
  * Each control names the sub-group it belongs to, and they are gathered here
  * in first-seen order so the grouping stays predictable.
  */
+/**
+ * Dials read best side by side, but they must not jump ahead of the rows they
+ * were declared after — the twist master switch belongs above the scroll-speed
+ * dial, not below it. So gather only *adjacent* dials into a row and leave
+ * everything else exactly where the catalogue put it.
+ */
+function runs(controls) {
+  const out = [];
+  for (const c of controls) {
+    const last = out[out.length - 1];
+    if (c.hero && last?.hero) last.items.push(c);
+    else out.push({ hero: !!c.hero, items: [c] });
+  }
+  return out;
+}
+
 function groupByAdv(controls) {
   const out = new Map();
   for (const c of controls) {
@@ -364,7 +378,11 @@ function KnobSection({ section, state, values, busy, onChange }) {
     <section className="knobs">
       <h3 className="sec">{section.label}</h3>
       {section.blurb && <p className="panel__blurb">{section.blurb}</p>}
-      {main.map((c) => render(c, false))}
+      {runs(main).map((run, i) => (run.hero ? (
+        <div className="dials" key={i}>{run.items.map((c) => render(c, false))}</div>
+      ) : (
+        <Fragment key={i}>{run.items.map((c) => render(c, false))}</Fragment>
+      )))}
       {advanced.length > 0 && (
         <details className="sub">
           <summary>Advanced ({advanced.length})</summary>

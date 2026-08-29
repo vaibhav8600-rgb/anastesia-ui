@@ -115,6 +115,7 @@ export const sensorSections = [
       {
         id: "sens", label: "Sensitivity", kind: "range",
         min: 0.1, max: 10, step: 0.1, unit: "x", drives: "spin",
+        hero: true,
         hint: "Pointer travel per turn of the ball.",
         read: (s) => s.sens,
         write: (v) => device.send(`p2sm sens pointer set ${Math.floor(v * 10)}`),
@@ -122,6 +123,7 @@ export const sensorSections = [
       {
         id: "plane", label: "Rotation", kind: "range",
         min: -180, max: 180, step: 1, unit: "°", drives: "tilt",
+        hero: true,
         hint: "Rotate the tracking plane if the ball sits at an angle.",
         read: (s) => s.plane,
         write: (v) => device.send(`plane set pointer ${Math.round(v)}`),
@@ -129,6 +131,7 @@ export const sensorSections = [
       {
         id: "sma", label: "Smoothing", kind: "range",
         min: 1, max: 16, step: 1, unit: " frames", drives: "smooth",
+        hero: true,
         hint: "Steadier aim, slightly more latency.",
         read: (s) => s.sma,
         write: (v) => device.send(`p2sm sma window set ${Math.round(v)}`),
@@ -173,6 +176,7 @@ export const sensorSections = [
       {
         id: "twistSens", label: "Scroll speed", kind: "range",
         min: 0.1, max: 10, step: 0.1, unit: "x", drives: "twist",
+        hero: true,
         hint: "Scroll distance per twist of the ball.",
         read: (s) => s.twistSens,
         write: (v) => device.send(`p2sm sens twist set ${Math.floor(v * 10)}`),
@@ -232,7 +236,7 @@ export const lightControls = [
     read: (s) => s.argb,
     write: (v) => device.send(`argb ${v ? "on" : "off"}`),
   },
-  cfg("argb/brt", "Brightness", { unit: "%", drives: "glow" }),
+  cfg("argb/brt", "Brightness", { unit: "%", drives: "glow", hero: true }),
   cfg("argb/tick", "Animation tick", { unit: " ms" }),
   cfg("argb/bw1", "Battery warning 1", { unit: "%" }),
   cfg("argb/bw2", "Battery warning 2", { adv: "Battery warnings", unit: "%", advanced: true }),

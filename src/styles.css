@@ -892,6 +892,75 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   .logrow__text { grid-column: 1 / -1; }
 }
 
+/* ---------- dials ----------
+   Only for the settings people actually reach for. The rest are sliders and
+   fields; a page of dials is as unreadable as a page of sliders. */
+
+.dials {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 0.5rem 0.4rem;
+  /* These sit inside a .knobs card now, so no frame of its own — a card within
+     a card read as a nesting level that is not really there. */
+  padding: 0.2rem 0;
+}
+
+.dial { display: grid; justify-items: center; gap: 0.3rem; }
+
+.dial__face {
+  width: 100%;
+  max-width: 96px;
+  touch-action: none;
+  cursor: ns-resize;
+  /* Only the focus ring's shape — the gauge itself is drawn in SVG. */
+  border-radius: var(--radius-sm);
+}
+.dial__face:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.dial__track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 14%, transparent);
+  stroke-width: 7;
+  stroke-linecap: butt;
+}
+.dial__value {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 7;
+  stroke-linecap: butt;
+  transition: stroke-dasharray 90ms linear;
+}
+.dial__knob {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2.5;
+  transition: cx 90ms linear, cy 90ms linear;
+}
+.dial__num {
+  fill: var(--text);
+  font-size: 21px;
+  font-weight: 650;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+.dial__unit {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: middle;
+}
+.dial__label {
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.25;
+}
+.dial.is-disabled { opacity: 0.5; }
+
+/* A lone dial in its own run would stretch to the full card width. Cap it so
+   it reads as one control rather than a stray graphic. */
+.dials:has(> .dial:only-child) { justify-content: start; grid-template-columns: minmax(96px, 32%); }
+
 /* ---------- compact rows for the long tail ---------- */
 
 .grid2 { display: grid; gap: 0.1rem 1.6rem; }
