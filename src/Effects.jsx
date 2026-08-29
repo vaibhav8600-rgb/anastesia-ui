@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
 import {
   unsupported, EASINGS, parseEventList as parseList, parseEvent, validateEvent,
+  parseLayers,
 } from "./protocol.js";
 
 // Per-event RGB and vibration. Events cover idle, USB connect/disconnect,
@@ -84,7 +85,14 @@ export default function Effects({ live, onNote }) {
         return;
       }
       cache.current = new Map();
-      setList(parseList(listing));
+      // `argb list` gives layer events no label at all, so they read as
+      // "layer 3". The board knows the real name; ask it, and fall back to the
+      // bare number when the firmware has no `board layers`.
+      const names = parseLayers(await device.send("board layers"));
+      setList(parseList(listing).map((e) => {
+        const n = e.label ? null : e.name.match(/^layer\s+(\d+)$/)?.[1];
+        return n != null && names[n] ? { ...e, label: names[n] } : e;
+      }));
       const support = await device.send("board rgb");
       setSupportsRgb(support.toLowerCase().includes("yes"));
     } catch (e) {

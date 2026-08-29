@@ -496,6 +496,12 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 }
 .notice p { margin: 0; }
 
+/* A verified backup is good news, and amber reads as a warning. */
+.notice--ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
+}
+
 .warn--inline { padding: 0.5rem 0.75rem; font-size: 0.85rem; }
 
 .sub { border-top: 1px solid var(--line); padding-top: 0.6rem; }

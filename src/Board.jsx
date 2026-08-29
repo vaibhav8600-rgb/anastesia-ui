@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
 import {
   unsupported, parseRtcfg, parseKeymap, parseAssignments, parseSurface,
-  parseBistableSlot, studioLocked as locked,
+  parseBistableSlot, parseBackup, studioLocked as locked,
 } from "./protocol.js";
 
 export const OUTPUTS = [
@@ -424,10 +424,189 @@ export function ImportExport({ live, onNote, rtcfg, firmware }) {
         aria-label="Settings JSON"
       />
 
+      <StorageBackup live={live} onNote={onNote} />
+    </>
+  );
+}
+
+/** Trigger a real download. Appending without clicking saves nothing. */
+function saveFile(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const stamp = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * The whole storage partition, not just the runtime parameters: keymaps,
+ * profiles and effects included. Every line carries a CRC-8, and both
+ * directions verify them — a file that will not verify is never written to
+ * flash.
+ */
+function StorageBackup({ live, onNote }) {
+  const [busy, setBusy] = useState(null);      // 'backup' | 'restore' | 'erase'
+  const [progress, setProgress] = useState(0);
+  const [file, setFile] = useState(null);      // { name, text, check }
+  const [confirm, setConfirm] = useState("");
+  const cancelled = useRef(false);
+
+  const backup = async () => {
+    if (!live) { onNote("Demo mode — connect a device to back it up."); return; }
+    setBusy("backup");
+    try {
+      onNote("Reading the storage partition…");
+      // Tens of kilobytes of hex arrive a line at a time, far past a normal
+      // command's patience.
+      const out = await device.send("board backup", { timeout: 120000 });
+      if (locked(out)) { onNote("ZMK Studio is locked. Unlock it, then back up."); return; }
+      const b = parseBackup(out);
+      if (!b.ok) {
+        for (const e of b.errors.slice(0, 3)) onNote(e);
+        throw new Error(b.errors[0] ?? "The board did not return a usable backup.");
+      }
+      // The .bak is the restorable artefact; the .dat is the raw image, for
+      // anyone who wants to look inside it.
+      const between = out.slice(out.indexOf("BACKUP START"), out.indexOf("BACKUP END") + 10);
+      saveFile(`anastesia-backup-${stamp()}.bak`, new Blob([between], { type: "text/plain" }));
+      saveFile(`anastesia-backup-${stamp()}.dat`, new Blob([b.bytes], { type: "application/octet-stream" }));
+      onNote(`Backed up ${b.bytes.length} bytes in ${b.lines} chunks — every checksum verified.`);
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openBackup = async (f) => {
+    if (!f) return;
+    const text = await f.text();
+    const check = parseBackup(text);
+    setFile({ name: f.name, text, check });
+    onNote(check.ok
+      ? `${f.name}: ${check.lines} chunks, ${check.bytes.length} bytes, all checksums good.`
+      : `${f.name}: ${check.errors[0]}`);
+  };
+
+  const restore = async () => {
+    if (!file?.check.ok) return;
+    if (!live) { onNote(`Demo mode — would restore ${file.check.lines} chunks.`); return; }
+    setBusy("restore");
+    setProgress(0);
+    cancelled.current = false;
+    const { startLine, dataLines } = file.check;
+    try {
+      const first = await device.send(`board restore ${startLine}`);
+      if (locked(first)) { onNote("ZMK Studio is locked. Unlock it, then restore."); return; }
+      if (/invalid|not in progress/i.test(first)) throw new Error(`The board refused the header: ${first}`);
+
+      for (let i = 0; i < dataLines.length; i++) {
+        if (cancelled.current) throw new Error(`Stopped after ${i} of ${dataLines.length} chunks. The partition is half-written — restore again before using the device.`);
+        const res = await device.send(`board restore ${dataLines[i]}`);
+        if (locked(res)) throw new Error("ZMK Studio locked partway through. Unlock it and restore again.");
+        if (/invalid|mismatch|unsuccessful/i.test(res)) throw new Error(`Chunk ${i + 1} rejected: ${res}`);
+        if (!res.trim()) throw new Error(`Chunk ${i + 1}: the board said nothing back.`);
+        setProgress(Math.round(((i + 1) / dataLines.length) * 100));
+      }
+      await device.send("board restore BACKUP END");
+      setProgress(100);
+      onNote("Restored. The device reboots now.");
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const erase = async () => {
+    if (!live) { onNote("Demo mode — nothing was erased."); return; }
+    setBusy("erase");
+    try {
+      const out = await device.send("board erase", { timeout: 30000 });
+      if (locked(out)) { onNote("ZMK Studio is locked. Unlock it first."); return; }
+      onNote("Storage erased. The device reboots to defaults.");
+      setConfirm("");
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const check = file?.check;
+
+  return (
+    <>
+      <h3 className="sec">Full device backup</h3>
       <p className="ctl__hint">
-        This covers the runtime parameters. Keymap profiles and full
-        storage-partition backup over USB are not included.
+        The whole storage partition — keymaps, profiles and effects, not just the
+        parameters above. Needs USB and an unlocked ZMK Studio.
       </p>
+      <div className="row row--wrap">
+        <button className="btn" onClick={backup} disabled={!!busy}>
+          {busy === "backup" ? "Reading…" : "Download backup"}
+        </button>
+        <label className="btn btn--file">
+          Choose .bak file
+          <input
+            type="file"
+            accept=".bak,text/plain"
+            onChange={(e) => { openBackup(e.target.files?.[0]); e.target.value = ""; }}
+          />
+        </label>
+      </div>
+
+      {check && (
+        <div className={check.ok ? "notice notice--ok" : "notice"}>
+          <p>
+            <strong>{file.name}</strong>{" "}
+            {check.ok
+              ? `verified: ${check.lines} chunks, ${check.bytes.length} bytes.`
+              : check.errors[0]}
+          </p>
+          {check.ok && (
+            <button className="btn btn--danger" onClick={restore} disabled={!!busy}>
+              {busy === "restore" ? `Restoring ${progress}%` : "Write it to the device"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {busy === "restore" && (
+        <>
+          <div className="gauges__track">
+            <div className="gauges__fill gauges__fill--high" style={{ width: progress + "%" }} />
+          </div>
+          <button className="pill" onClick={() => { cancelled.current = true; }}>Stop</button>
+        </>
+      )}
+
+      <h3 className="sec">Erase everything</h3>
+      <p className="ctl__hint">
+        Wipes the storage partition and reboots to firmware defaults. Keymaps,
+        profiles and effects go with it. Back up first.
+      </p>
+      <div className="row row--wrap">
+        <input
+          className="search search--slim"
+          value={confirm}
+          placeholder="type ERASE"
+          aria-label="Type ERASE to confirm"
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+        <button
+          className="btn btn--danger"
+          disabled={confirm.trim().toUpperCase() !== "ERASE" || !!busy}
+          onClick={erase}
+        >
+          {busy === "erase" ? "Erasing…" : "Erase device"}
+        </button>
+      </div>
     </>
   );
 }

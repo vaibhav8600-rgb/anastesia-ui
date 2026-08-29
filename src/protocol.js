@@ -288,6 +288,97 @@ export function parseBistableSlot(text) {
   return m ? Number(m[1]) : null;
 }
 
+// ------------------------------------------------------------ layers
+
+/**
+ * `board layers` -> { 0: "Base", 1: "Nav" }.
+ *
+ * Keyed by the number the board reports, not by position. The original pushes
+ * names into an array in encounter order, so a board that skips a layer number
+ * shifts every name after it onto the wrong layer.
+ */
+export function parseLayers(text) {
+  const out = {};
+  const re = /^\s*(\d+)\s*:\s*(.+?)\s*$/gm;
+  for (let m; (m = re.exec(String(text ?? ""))) !== null; ) out[Number(m[1])] = m[2];
+  return out;
+}
+
+// ------------------------------------------------------------ storage backup
+
+/** CRC-8, polynomial 0x07, MSB-first, no init or final XOR. */
+export function crc8(bytes) {
+  let crc = 0;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let i = 0; i < 8; i++) crc = crc & 0x80 ? ((crc << 1) ^ 0x07) & 0xff : (crc << 1) & 0xff;
+  }
+  return crc;
+}
+
+const BACKUP_LINE = /^([0-9A-Fa-f]+):([0-9A-Fa-f]+)#([0-9A-Fa-f]{2})$/;
+const hexBytes = (hex) => {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+};
+const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, "0");
+
+/**
+ * `board backup`, or the text of a saved .bak, -> the storage partition.
+ *
+ * Wire format is `BACKUP START <startHex> <sizeHex>`, then lines of
+ * `<offsetHex>:<dataHex>#<crc8Hex>`, then `BACKUP END`. Every line's checksum
+ * is verified here, on the way in and again before any restore — the original
+ * only checks the shape of a file it is about to write to flash.
+ *
+ * The buffer is sized from the declared size and the largest offset seen. The
+ * original allocates a fixed 32768 and drops anything past it without a word.
+ */
+export function parseBackup(text) {
+  const errors = [];
+  const chunks = [];
+  const dataLines = [];
+  let started = false, ended = false, startLine = null, start = null, size = null;
+
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.includes("BACKUP START")) {
+      started = true;
+      startLine = line.slice(line.indexOf("BACKUP START"));
+      const m = startLine.match(/BACKUP START\s+([0-9A-Fa-f]+)\s+([0-9A-Fa-f]+)/);
+      if (m) { start = parseInt(m[1], 16); size = parseInt(m[2], 16); }
+      continue;
+    }
+    if (line.includes("BACKUP END")) { ended = true; break; }
+    const m = BACKUP_LINE.exec(line);
+    if (!m) continue;
+    const data = hexBytes(m[2]);
+    const want = parseInt(m[3], 16);
+    const got = crc8(data);
+    if (got !== want) {
+      errors.push(`Checksum mismatch at 0x${m[1].toUpperCase()}: line says #${hex2(want)}, data is #${hex2(got)}`);
+    }
+    chunks.push({ offset: parseInt(m[1], 16), data });
+    dataLines.push(line);
+  }
+
+  const reach = chunks.reduce((n, c) => Math.max(n, c.offset + c.data.length), 0);
+  const bytes = new Uint8Array(Math.max(size ?? 0, reach));
+  for (const c of chunks) bytes.set(c.data, c.offset);
+
+  if (!started) errors.unshift("No BACKUP START marker.");
+  else if (!ended) errors.unshift("No BACKUP END marker — the transfer was cut short.");
+  else if (!chunks.length) errors.unshift("The markers are there but carry no data.");
+
+  return {
+    ok: started && ended && chunks.length > 0 && errors.length === 0,
+    start, size, bytes, errors, startLine, dataLines,
+    lines: chunks.length,
+  };
+}
+
 // ------------------------------------------------------------ board status
 
 /** `board status` -> firmware + battery, falling back to `board version`. */
@@ -310,7 +401,12 @@ export function parseOutput(text) {
   return text?.match(/Output:\s*(USB|BLE|ESB)/i)?.[1]?.toUpperCase() ?? null;
 }
 
-export const studioLocked = (t) => /Unlock ZMK Studio first/i.test(String(t));
+/**
+ * The firmware says "Unlock ZMK Studio first" for keymap writes but "Unlock ZMK
+ * Studio to allow backup" / "...to allow restoration" for storage ones, so
+ * matching the first wording alone misses every backup refusal.
+ */
+export const studioLocked = (t) => /Unlock ZMK Studio/i.test(String(t));
 
 // ------------------------------------------------------------ self-check
 // node src/protocol.js
@@ -461,8 +557,48 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   eq(parseBistableSlot("slot: 0 (Windows/Linux)"), 0, "short spelling");
   eq(parseBistableSlot("bistable: command not found"), null, "no slot reported");
 
+  // layers: keyed by the reported number, so a gap cannot shift later names
+  eq(parseLayers("0: Base" + NL + "1: Nav" + NL + "3: Fn"), { 0: "Base", 1: "Nav", 3: "Fn" }, "layer names by number");
+  eq(parseLayers("board: command not found"), {}, "no layers reported");
+
+  // CRC-8/0x07 against known vectors
+  eq(crc8(new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39])), 0xF4, "crc8 of \"123456789\"");
+  eq(crc8(new Uint8Array([])), 0, "crc8 of nothing");
+
+  // backup round trip: build lines the way the board does, then read them back
+  const chunk = (off, arr) => {
+    const hex = [...arr].map((n) => n.toString(16).padStart(2, "0")).join("");
+    return `${off.toString(16)}:${hex}#${crc8(new Uint8Array(arr)).toString(16).padStart(2, "0")}`;
+  };
+  const good = [
+    "BACKUP START 0 8",
+    chunk(0, [0xDE, 0xAD, 0xBE, 0xEF]),
+    chunk(4, [1, 2, 3, 4]),
+    "BACKUP END",
+  ].join(NL);
+  const bk = parseBackup(good);
+  eq(bk.ok, true, "clean backup verifies");
+  eq(bk.lines, 2, "two data lines");
+  eq(bk.size, 8, "declared size read");
+  eq([...bk.bytes], [0xDE, 0xAD, 0xBE, 0xEF, 1, 2, 3, 4], "chunks land at their offsets");
+  eq(bk.dataLines.length, 2, "raw lines kept for restore");
+
+  // A single flipped checksum must fail the whole file, not pass quietly.
+  const bad = good.replace(/#[0-9a-f]{2}$/m, "#00");
+  const bkBad = parseBackup(bad);
+  eq(bkBad.ok, false, "bad checksum rejected");
+  console.assert(/Checksum mismatch/.test(bkBad.errors[0]), "mismatch is named");
+
+  eq(parseBackup("BACKUP START 0 4" + NL + chunk(0, [1, 2])).ok, false, "truncated transfer rejected");
+  eq(parseBackup("nothing here").ok, false, "not a backup at all");
+  // Past the original's fixed 32768 buffer, which drops these bytes silently.
+  eq(parseBackup(["BACKUP START 0 10000", chunk(0x8000, [7, 7]), "BACKUP END"].join(NL)).bytes.length,
+     0x10000, "buffer sized from the declared size, not capped at 32K");
+
   console.assert(unsupported("plane: command not found"), "unsupported detected");
   console.assert(studioLocked("Unlock ZMK Studio first"), "studio lock detected");
+  console.assert(studioLocked("Unlock ZMK Studio to allow backup"), "backup lock wording detected");
+  console.assert(studioLocked("Unlock ZMK Studio to allow restoration"), "restore lock wording detected");
 
   console.log("protocol.js self-check OK");
 }
