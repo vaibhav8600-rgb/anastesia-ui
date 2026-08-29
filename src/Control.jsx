@@ -1,11 +1,11 @@
 import { useEffect, useId, useState } from "react";
-import Dial from "./Dial.jsx";
 
-// Three shapes, chosen by what the setting is actually like:
-//   hero    -> a dial you turn, for the few settings people reach for
-//   compact -> a number field, for the long tail where an exact value matters
-//              more than sweeping (and where a stack of sliders is just noise)
-//   default -> a slider, for the middle ground
+// Two shapes, chosen by what the setting is actually like:
+//   compact -> a number field, for the long tail behind "Advanced", where an
+//              exact value matters more than sweeping
+//   default -> a typed number box over a slider, with the range spelled out
+//              underneath. A dial looked the part but hid both the exact value
+//              and what the bounds were, which is most of what you want to know.
 // Toggles are always a switch. All of them are native inputs underneath.
 
 export default function Control({ spec, value, onChange, disabled, compact }) {
@@ -36,10 +36,6 @@ export default function Control({ spec, value, onChange, disabled, compact }) {
     );
   }
 
-  if (spec.hero) {
-    return <Dial spec={spec} value={value} onChange={onChange} disabled={disabled} />;
-  }
-
   if (compact) {
     return (
       <div className="ctl ctl--compact">
@@ -54,12 +50,15 @@ export default function Control({ spec, value, onChange, disabled, compact }) {
 
   return (
     <div className="ctl">
+      {/* The box is the labelled control; the slider is a second way to drive
+          the same value, so it carries its own label rather than stealing this
+          one. */}
       <div className="ctl__head">
-        <label className="ctl__label" htmlFor={id}>{spec.label}</label>
-        <span className="ctl__value">{format(v, spec)}</span>
+        <label className="ctl__label" htmlFor={`${id}-num`}>{spec.label}</label>
+        <NumberField id={`${id}-num`} spec={spec} value={value} onChange={onChange} disabled={disabled} />
       </div>
+      {spec.hint && <p className="ctl__hint" id={hintId}>{spec.hint}</p>}
       <input
-        id={id}
         className="range"
         type="range"
         min={spec.min}
@@ -67,11 +66,16 @@ export default function Control({ spec, value, onChange, disabled, compact }) {
         step={spec.step}
         value={v}
         disabled={disabled}
+        aria-label={spec.label}
         aria-describedby={hintId}
         style={{ "--fill": pct + "%" }}
         onChange={(e) => onChange(Number(e.target.value))}
       />
-      {spec.hint && <p className="ctl__hint" id={hintId}>{spec.hint}</p>}
+      {/* What you are allowed to set, without having to drag to find out. */}
+      <div className="ctl__scale" aria-hidden="true">
+        <span>{format(spec.min, wordUnit(spec) ? { ...spec, unit: "" } : spec)}</span>
+        <span>{format(spec.max, spec)}</span>
+      </div>
     </div>
   );
 }
@@ -115,5 +119,14 @@ function NumberField({ id, spec, value, onChange, disabled }) {
 }
 
 function format(v, spec) {
+  if (typeof v !== "number") return "";
   return v.toFixed(spec.step < 1 ? 1 : 0) + (spec.unit ?? "");
 }
+
+/**
+ * Units are written two ways in the catalogue: symbols butt up against the
+ * number ("10x", "180°") and words carry a leading space ("16 frames"). Only
+ * the words read badly at the low end of a scale — "1 frames" — so the low
+ * label drops them and the high label still says what the numbers mean.
+ */
+const wordUnit = (spec) => spec.unit?.startsWith(" ");

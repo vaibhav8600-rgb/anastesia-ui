@@ -260,8 +260,9 @@ export default function App() {
               <Curves live={live} onNote={setNote} />
             </Pane>
 
+            {/* Settings first, the live readout after: leading with a diagnostic
+                meant scrolling past it to reach anything you can change. */}
             <Pane active={tab === "sensors"} visited={visited.has("sensors")}>
-              <Surface live={live} onNote={setNote} active={tab === "sensors"} />
               {sensorSections
                 .filter((sec) => !sec.optional || sec.controls.some((c) => !state.missing.has(c.id)))
                 .map((sec) => (
@@ -274,6 +275,7 @@ export default function App() {
                     onChange={change}
                   />
                 ))}
+              <Surface live={live} onNote={setNote} active={tab === "sensors"} />
             </Pane>
 
             <Pane active={tab === "effects"} visited={visited.has("effects")}>
@@ -344,8 +346,7 @@ function KnobSection({ section, state, values, busy, onChange }) {
 
   if (!shown.length) return null;
 
-  const heroes = shown.filter((c) => c.hero && !c.advanced);
-  const main = shown.filter((c) => !c.hero && !c.advanced);
+  const main = shown.filter((c) => !c.advanced);
   const advanced = shown.filter((c) => c.advanced);
 
   const render = (c, compact) => (
@@ -363,7 +364,6 @@ function KnobSection({ section, state, values, busy, onChange }) {
     <section className="knobs">
       <h3 className="sec">{section.label}</h3>
       {section.blurb && <p className="panel__blurb">{section.blurb}</p>}
-      {heroes.length > 0 && <div className="dials">{heroes.map((c) => render(c, false))}</div>}
       {main.map((c) => render(c, false))}
       {advanced.length > 0 && (
         <details className="sub">

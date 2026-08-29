@@ -47,8 +47,7 @@ Seven tabs, matching the original's shape:
 | `src/device.js` | USB-serial + BLE transport and the shell protocol |
 | `src/protocol.js` | parsers for the device's text output, with a runnable self-check |
 | `src/settings.js` | the settings catalogue — one table drives every knob |
-| `src/Control.jsx` | picks the shape for one setting: dial, slider, field or switch |
-| `src/Dial.jsx` | the radial knob |
+| `src/Control.jsx` | picks the shape for one setting: slider, field or switch |
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles, import/export, surface quality |
@@ -126,18 +125,26 @@ and pauses when the page is hidden or the canvas is scrolled out of view.
 
 ## Choosing a control's shape
 
-A page of forty sliders reads as a spreadsheet, so `src/Control.jsx` picks by
-what the setting is like:
+`src/Control.jsx` picks by what the setting is like:
 
-- `hero: true` in the catalogue gets a **dial** — the few settings people
-  actually reach for (sensitivity, rotation, smoothing, scroll speed).
-- Everyday settings get a **slider**, where sweeping is the point.
+- A setting you can see gets a **typed number box over a slider**, with its two
+  bounds printed underneath. Dials were tried here and dropped: they looked the
+  part but hid both the exact value and the range, which is most of what you
+  want to know before you touch something.
 - Anything under Advanced gets a **number field** in a two-column grid, because
   there an exact value matters more than a sweep.
 - Anything with a 0-1 range is a **switch**, decided from the device's own range.
 
-Advanced controls additionally name a sub-group (`adv:`), so a run of twenty
-rows renders as a handful of short titled ones rather than one flat list.
+Word units carry a leading space in the catalogue (`" frames"`, `" ms"`) and
+symbols do not (`"x"`, `"°"`). The scale under a slider uses that to print
+`1 … 16 frames` rather than `1 frames … 16 frames`.
+
+Each group is a card, and only what people actually reach for is on it — three
+or four rows. The rest sits behind **Advanced**, where every control names a
+sub-group (`adv:`), so a run of twenty rows renders as a handful of short titled
+ones rather than one flat list. Both halves of that matter: the original app
+shows three pointer settings and hides thirteen, and the wall of knobs is what
+made this tab hard to read.
 
 Sensor surface quality reads continuously while the Sensor(s) tab is open, so
 you can roll the ball and watch it move; between reads the last value stays.
