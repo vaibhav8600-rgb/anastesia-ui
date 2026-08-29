@@ -341,10 +341,14 @@ Details worth keeping, all covered by `node src/protocol.js`:
   the same lines back, one per `board restore` command.
 - `sensor stream --on` emits `F <id> <seqHex>`, then hex rows one byte per
   pixel, then `END`. Lines split across chunk boundaries, so the reader has to
-  hold a partial line between them. **Not every firmware has it** — v101.4.4
-  does not. A board without a subcommand answers with the *parent* command's
-  help (`sensor - Sensor Diagnostics`, then `Subcommands:`), never an error, so
-  "a reply arrived" is not "the command worked".
+  hold a partial line between them. **The `id` is the sensor**, and a trackball
+  has two: painting every frame onto one canvas makes them fight over it, so
+  there is a canvas per id, created when that id first appears.
+- **Not every firmware has the command** — v101.4.4 does not. It needs a build
+  with the frame-grab pmw3610 driver (`z4.1/feat/frame-grab`) and a shell
+  prompt of `zmk$`, `zmk:~$` or `uart:~$`. A board without the subcommand
+  answers with the *parent* command's help (`sensor - Sensor Diagnostics`, then
+  `Subcommands:`), never an error, so "a reply arrived" is not "it worked".
 - While the stream runs, its bytes must **bypass** the command buffer rather
   than being copied into it as well. `awaitPrompt` re-scans that buffer every
   20 ms and nothing clears it mid-stream, so duplicating left it scanning
@@ -358,6 +362,11 @@ Details worth keeping, all covered by `node src/protocol.js`:
 
 Requires a Chromium-based browser for Web Serial / Web Bluetooth. Without
 either, the app still opens in demo mode.
+
+The USB chooser filters on vendor `0x11`, which hides a board flashed with a
+driver branch that enumerates under another id. **Not listed? Show every serial
+port** on the connect screen drops the filter — the original calls the same
+thing "show only supported devices".
 
 ## Original vs this app
 
@@ -379,7 +388,7 @@ original that is missing here.
 | Layer names on RGB events | By array position | By the number the board reports |
 | Storage backup / restore | Yes | Yes — see below |
 | Factory erase | One click | Behind typing `ERASE`, and names what it destroys |
-| Live sensor image | Fixed auto-contrast; hidden if unsupported | Auto contrast is a switch; caption reports size, fps and range; when unsupported, says so and names the subcommands the board *does* have |
+| Live sensor image | One panel per sensor, 4 ramps, auto gain, blur; hidden if unsupported | Same, plus per-sensor seq/range/size/fps, Esc or Space to stop, and when unsupported it says so and names the subcommands the board *does* have |
 | Settings as `.json` | — | Export, import, edit or paste |
 | Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |
 | 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |

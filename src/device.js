@@ -92,15 +92,22 @@ class Device {
   }
   log(dir, text) { for (const fn of this.listeners) fn({ dir, text, at: Date.now() }); }
 
-  async connectUSB() {
+  /**
+   * `all` drops the vendor filter from the chooser. The filter hides anything
+   * that is not 0x11, which is right most of the time and wrong exactly when
+   * it matters: a board flashed with a different driver branch — the frame-grab
+   * pmw3610, say — can enumerate under another id and then never appears in
+   * the list at all. The original calls this "show only supported devices".
+   */
+  async connectUSB({ all = false } = {}) {
     // A previous failed attempt must not leave a transport behind: send()
     // would then write USB commands into a dead BLE characteristic, which is
     // why USB only worked again after a page refresh.
     await this.disconnect();
     this.closing = false;   // after disconnect, which sets it
-    const port = await navigator.serial.requestPort({
-      filters: [{ usbVendorId: USB.usbVendorId }],
-    });
+    const port = await navigator.serial.requestPort(
+      all ? {} : { filters: [{ usbVendorId: USB.usbVendorId }] },
+    );
     await port.open({ baudRate: USB.baudRate });
     this.port = port;
     this.kind = "usb";

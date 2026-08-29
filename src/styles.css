@@ -1009,10 +1009,31 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 /* ---------- live sensor image ---------- */
 
+/* One cell per sensor. A trackball has two, and they only sit side by side
+   when the panel is genuinely wide enough for both. */
+.heat__grid { display: grid; gap: 0.75rem; }
+@container panel (min-width: 460px) {
+  .heat__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.heat__cell { display: grid; gap: 0.3rem; }
+
+/* Stacked by default: side by side, the stats squeeze "Sensor #0" onto two
+   lines in a half-width cell. They sit on one row once there is room. */
+.heat__head { display: grid; gap: 0.05rem; }
+
+@container panel (min-width: 720px) {
+  .heat__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+}
+
 .heat {
   position: relative;
   aspect-ratio: 1 / 1;
-  max-height: 260px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg-soft);
@@ -1027,17 +1048,48 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   place-items: center;
   margin: 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
-/* Reserved with a non-breaking space when empty, so starting the stream does
-   not shove the buttons down a line. */
 .heat__meta {
-  margin: 0;
-  min-height: 1.2em;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.heat__live {
+  margin-left: 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--danger);
+  vertical-align: middle;
+}
+
+/* Each button carries its own ramp, so the choice is visible not verbal. */
+.heat__maps { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.heat__map {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  min-height: 0;
+  cursor: pointer;
+}
+.heat__map:hover { color: var(--text); }
+.heat__map.is-active { border-color: var(--accent); color: var(--text); }
+
+.heat__swatch {
+  display: block;
+  width: 72px;
+  height: 12px;
+  border-radius: 2px;
 }
 
 /* ---------- live surface quality ---------- */

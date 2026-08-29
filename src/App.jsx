@@ -120,7 +120,7 @@ export default function App() {
     setStatus("busy");
     setNote(kind === "usb" ? "Pick your device, then wait for its shell…" : "Scanning, then waiting for the shell…");
     try {
-      await (kind === "usb" ? device.connectUSB() : device.connectBLE());
+      await (kind === "ble" ? device.connectBLE() : device.connectUSB({ all: kind === "usb-all" }));
       setNote("Reading settings…");
       seed(await readAll());
       setStatus("ready");
@@ -456,6 +456,13 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
             {supported.usb && (
               <button className="btn btn--primary" onClick={() => onConnect("usb")} disabled={status === "busy"}>
                 Connect over USB
+              </button>
+            )}
+            {/* The filtered chooser hides any board that does not enumerate as
+                0x11, which is exactly the case for some driver branches. */}
+            {supported.usb && (
+              <button className="btn btn--ghost" onClick={() => onConnect("usb-all")} disabled={status === "busy"}>
+                Not listed? Show every serial port
               </button>
             )}
             {supported.ble && (
