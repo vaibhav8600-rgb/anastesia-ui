@@ -31,9 +31,9 @@ Seven tabs, matching the original's shape:
 | --- | --- |
 | Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
 | Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
-| Sensor(s) | Surface quality, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder |
+| Sensor(s) | Surface quality, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, live sensor image |
 | Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
-| Import/Export | Download and upload settings as .json, or paste them |
+| Import/Export | Settings as .json, plus full device backup, restore and erase |
 | Raw settings | Every runtime parameter, with its description, range and default |
 | Logs | Console with SEND/RECEIVE, millisecond timestamps, download, and a command prompt |
 
@@ -51,7 +51,8 @@ Seven tabs, matching the original's shape:
 | `src/Dial.jsx` | the radial knob |
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
-| `src/Board.jsx` | keymap profiles, import/export, surface quality |
+| `src/Board.jsx` | keymap profiles, import/export, storage backup, surface quality |
+| `src/Heatmap.jsx` | the live sensor image |
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
@@ -309,6 +310,12 @@ product `0x07`, 460800 baud) or BLE (service `c901c4e9-...`). Commands are lines
 like `rtcfg set p2sm/twist_thres 40`; responses end at the shell prompt
 (`endgame$`, `uart:~$`, `zmk$`, `zmk:~$`).
 
+The one exchange that is not request/response is the sensor image:
+`sensor stream --on` pushes frames until you stop it. Those arrive through
+`device.onRaw` rather than `device.send`, and `device.streaming` tells the
+background pollers to stand down while it runs — a `board output` reply landing
+in the middle of a frame corrupts it.
+
 Details worth keeping, all covered by `node src/protocol.js`:
 
 - `rtcfg list` prints `<key>  <value>  (default: <n>)` and keys may have three
@@ -328,6 +335,13 @@ Details worth keeping, all covered by `node src/protocol.js`:
   as 0.2x.
 - Curve segments are eight integers scaled by 100 in the order
   **start, end, cp1, cp2** — the end point comes before the control points.
+- `board backup` frames the partition as `BACKUP START <startHex> <sizeHex>`,
+  lines of `<offsetHex>:<dataHex>#<crc8>`, then `BACKUP END`. The checksum is
+  **CRC-8, polynomial 0x07, MSB-first**, no init or final XOR. Restore replays
+  the same lines back, one per `board restore` command.
+- `sensor stream --on` emits `F <id> <seqHex>`, then hex rows one byte per
+  pixel, then `END`. Lines split across chunk boundaries, so the reader has to
+  hold a partial line between them.
 - Only `layer` events support solid/blink/breathe; every other RGB event is
   flash-only.
 - Commands go to USB one word at a time, because the device's line editor drops
@@ -337,27 +351,59 @@ Details worth keeping, all covered by `node src/protocol.js`:
 Requires a Chromium-based browser for Web Serial / Web Bluetooth. Without
 either, the app still opens in demo mode.
 
-## Measured against the original
+## Original vs this app
 
 `reference/marshmellow-ui.html` is the app this replaces, kept in the tree as
-the protocol reference. Every shell command it sends, we send, with the same
-spelling and the same argument units — that equivalence is what the notes above
-are for, and three of them exist because we had it wrong.
+the protocol reference. **Every shell command it sends, this app sends**, with
+the same spelling and the same argument units. There is no feature of the
+original that is missing here.
 
-Still not built, with the commands they would need:
+### Feature by feature
 
-| Missing | Command |
-|---|---|
-| Storage-partition backup and restore over USB | `board backup`, `board restore` |
-| Factory erase | `board erase` |
-| Live sensor surface heat-map | `sensor stream --on` / `--off` |
-| Real layer names on RGB layer events | `board layers` |
-| Per-encoder-ID behaviours (step, min/max step, wrap, feedback pattern) | `rtcfg`, per encoder |
+| Capability | Original | Here |
+| --- | --- | --- |
+| Runtime parameters (`rtcfg`) | Curated screens only | Curated **plus** every key the board reports, and a searchable Raw tab |
+| Unknown or renamed keys | Vanish | Still shown, filled in from `rtcfg list` under the owning section |
+| Acceleration curves | Bezier editor | Same |
+| Keymap profiles, assignment, autoswitch | Yes | Same |
+| Per-OS scaling (`bst/…`) | 3 fixed cards: Snipe, Twist, Dragscroll | Grouped from the device's own listing, so *whatever* profiles a firmware defines appear |
+| Per-event RGB / vibration | Yes | Same, plus a colour swatch per Bluetooth profile |
+| Layer names on RGB events | By array position | By the number the board reports |
+| Storage backup / restore | Yes | Yes — see below |
+| Factory erase | One click | Behind typing `ERASE`, and names what it destroys |
+| Live sensor image | Fixed auto-contrast | Auto contrast is a switch; caption reports size, fps and range |
+| Settings as `.json` | — | Export, import, edit or paste |
+| Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |
+| 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |
+| Demo mode without hardware | — | Every tab, including a synthetic sensor image |
+| Offline | Yes | Single self-contained HTML file |
 
-Import/Export covers the runtime parameters only, and says so on the panel;
-the original's backup is a checksummed dump of the whole storage partition and
-is gated on unlocking ZMK Studio.
+### Where we are deliberately stricter
 
-Everything else the firmware reports through `rtcfg` is reachable — curated
-where we have a name for it, and filled in from the device's own listing where
-we do not, so a renamed or unknown key still appears rather than vanishing.
+These are behaviour differences, not extra features, and each one is a bug in
+the original that we do not reproduce:
+
+- **The backup `.dat` image actually downloads.** The original builds the
+  anchor, appends it, and removes it again *without ever clicking it*, so only
+  the `.bak` is ever saved.
+- **The image is sized from the declared size and the furthest offset seen.**
+  The original allocates a fixed 32768 bytes and drops anything past it with no
+  error.
+- **A restore file is checksum-verified before a single byte reaches flash**,
+  and the write button does not appear until it passes. The original checks
+  only that each line *looks* like a line, then starts writing to flash.
+- **A stopped restore says the partition is half-written.** The original just
+  stops.
+- **`Unlock ZMK Studio` is detected in all three wordings.** The firmware says
+  "…first" for keymap writes but "…to allow backup" and "…to allow restoration"
+  for storage ones, so matching only the first reads a refusal as a normal
+  reply.
+- **Layer names are keyed by the reported number.** The original pushes them
+  into an array in encounter order, so a board that skips a layer number shifts
+  every later name onto the wrong layer.
+
+### Not built
+
+Nothing from the original. The one thing neither app has is per-encoder-ID
+behaviour screens (step, min/max step, wrap, feedback pattern); those keys are
+editable under Raw settings, just without a dedicated editor.
