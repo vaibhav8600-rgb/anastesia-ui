@@ -19,23 +19,66 @@
 :root {
   --bg: #17142b;
   --text: #ece9fb;
-  --muted: #a8a2c8;
+  --muted: #b9b3d6;
   --accent: #b9a4ff;
   --accent-ink: #1a1030;
   --warn: #ffb37a;
   --danger: #ff7d9c;
   --ok: #6ff0b0;
 
-  --glass: rgba(21, 16, 43, 0.44);
-  --glass-2: rgba(255, 255, 255, 0.06);
+  /* --- glass, in three elevation tiers ---------------------------------
+     Stacking identical glass on identical glass turns to mud, so a tier is
+     distinguished by how much of the ground it lets through, how hard its
+     edge catches light, and how far it sits off the surface below.
+
+     Tier 2 carries NO blur, deliberately. It sits inside a tier-1 panel whose
+     backdrop is already blurred and near-flat, so blurring it again changes
+     almost nothing while costing a second full-screen pass. Its separation
+     comes from alpha, edge and shadow instead — which is what the eye reads
+     as "closer" anyway. */
+  --glass-saturate: 1.6;
+
+  --glass-blur-1: 24px;
+  --glass-bg-1: rgba(20, 15, 42, 0.30);
+  --glass-scrim-1: rgba(14, 10, 30, 0.28);
+  --glass-highlight-1: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+  --glass-border-1: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.16) 38%, rgba(255, 255, 255, 0.05));
+  --glass-shadow-1: 0 18px 40px -18px rgba(4, 2, 14, 0.7), 0 2px 6px -2px rgba(4, 2, 14, 0.55);
+
+  --glass-blur-2: none;
+  --glass-bg-2: rgba(44, 35, 78, 0.42);
+  --glass-scrim-2: rgba(16, 11, 34, 0.34);
+  --glass-highlight-2: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.11) 40%, rgba(255, 255, 255, 0.04));
+  --glass-shadow-2: 0 10px 22px -12px rgba(4, 2, 14, 0.55), 0 1px 3px -1px rgba(4, 2, 14, 0.5);
+
+  --glass-blur-3: 12px;
+  --glass-bg-3: rgba(30, 23, 58, 0.62);
+  --glass-scrim-3: rgba(16, 11, 34, 0.34);
+  --glass-highlight-3: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.26);
+  --glass-border-3: linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.18) 38%, rgba(255, 255, 255, 0.06));
+  --glass-shadow-3: 0 26px 56px -20px rgba(3, 1, 12, 0.82), 0 3px 10px -3px rgba(3, 1, 12, 0.7);
+
+  /* A moving highlight for glass you can touch. Opacity and transform only. */
+  --glass-sheen: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, 0.16) 50%, transparent 68%);
+
   --line: rgba(255, 255, 255, 0.15);
   --line-soft: rgba(255, 255, 255, 0.08);
-  --blur: 22px;
-  --glass-filter: blur(var(--blur)) saturate(1.5);
-  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.11);
-  /* The model panel is mostly empty, so it wears thinner smoke than the
-     settings panel and lets more of the wash through. */
-  --glass-view: rgba(21, 16, 43, 0.27);
+  --blur: var(--glass-blur-1);
+  --glass-filter: blur(var(--glass-blur-1)) saturate(var(--glass-saturate));
+  --glass-filter-3: blur(var(--glass-blur-3)) saturate(var(--glass-saturate));
+  /* Opaque stand-ins, used by the @supports and reduced-transparency
+     branches. Sat between the composite over the lightest and the darkest
+     wash, so they read the same and test better than the glass worst case. */
+  --opaque-1: #2a2447;
+  --opaque-2: #322b52;
+  --opaque-3: #3a325e;
+
+  /* Names the rest of the sheet already uses, now pointing at a tier. */
+  --glass: var(--glass-bg-1);
+  --glass-2: var(--glass-bg-2);
+  --glass-view: var(--glass-bg-1);
+  --sheen: var(--glass-highlight-1);
   --knob-radius: 50%;
   --dial-cap: round;
   --dial-glow: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 70%, transparent));
@@ -80,11 +123,29 @@
     --danger: #c0344f;
     --ok: #1d7a4c;
 
-    --glass: rgba(255, 255, 255, 0.5);
-    --glass-2: rgba(255, 255, 255, 0.6);
+    --glass-bg-1: rgba(255, 255, 255, 0.42);
+    --glass-scrim-1: rgba(255, 255, 255, 0.22);
+    --glass-highlight-1: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(120, 110, 165, 0.12);
+    --glass-border-1: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.7) 40%, rgba(120, 110, 165, 0.18));
+    --glass-shadow-1: 0 18px 40px -18px rgba(120, 110, 165, 0.4), 0 2px 6px -2px rgba(120, 110, 165, 0.3);
+
+    --glass-bg-2: rgba(255, 255, 255, 0.58);
+    --glass-scrim-2: rgba(255, 255, 255, 0.2);
+    --glass-highlight-2: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(120, 110, 165, 0.1);
+    --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6) 40%, rgba(120, 110, 165, 0.14));
+    --glass-shadow-2: 0 10px 22px -12px rgba(120, 110, 165, 0.32), 0 1px 3px -1px rgba(120, 110, 165, 0.26);
+
+    --glass-bg-3: rgba(255, 255, 255, 0.74);
+    --glass-scrim-3: rgba(255, 255, 255, 0.22);
+    --glass-highlight-3: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(120, 110, 165, 0.14);
+    --glass-border-3: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.75) 38%, rgba(120, 110, 165, 0.2));
+    --glass-shadow-3: 0 26px 56px -20px rgba(120, 110, 165, 0.45), 0 3px 10px -3px rgba(120, 110, 165, 0.35);
+
+    --glass-sheen: linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, 0.55) 50%, transparent 68%);
+
     --line: rgba(255, 255, 255, 0.85);
     --line-soft: rgba(120, 110, 165, 0.16);
-    --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --sheen: var(--glass-highlight-1);
 
     --nm-up: -4px -4px 12px rgba(255, 255, 255, 0.95), 6px 6px 18px rgba(120, 110, 165, 0.25);
     --nm-up-sm: -2px -2px 6px rgba(255, 255, 255, 0.9), 3px 3px 9px rgba(120, 110, 165, 0.2);
@@ -112,11 +173,17 @@ html, body, #root { height: 100%; }
 body {
   margin: 0;
   background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
     radial-gradient(1200px 850px at 8% 14%, rgba(198, 166, 255, 0.55), transparent 62%),
     radial-gradient(950px 760px at 88% 8%, rgba(150, 200, 255, 0.42), transparent 64%),
     radial-gradient(1050px 900px at 76% 92%, rgba(255, 158, 200, 0.40), transparent 62%),
     radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
     linear-gradient(160deg, #3d3766, #241f3d 58%, #1a1730);
+  /* Grain tiles; every gradient below it covers once. Without this the wash
+     bands visibly across a wide panel. */
+  background-size: 140px 140px, auto, auto, auto, auto, auto;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: overlay, normal, normal, normal, normal, normal;
   background-attachment: fixed;
   color: var(--text);
   font-size: clamp(0.95rem, 0.9rem + 0.2vw, 1.05rem);
@@ -210,12 +277,15 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--glass-view);
+  background:
+    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
+    linear-gradient(var(--glass-bg-1), var(--glass-bg-1)) padding-box,
+    var(--glass-border-1) border-box;
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
-  box-shadow: var(--nm-up), var(--sheen);
+  box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
   overflow: hidden;
 }
 
@@ -254,12 +324,15 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--glass);
+  background:
+    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
+    linear-gradient(var(--glass-bg-1), var(--glass-bg-1)) padding-box,
+    var(--glass-border-1) border-box;
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
-  box-shadow: var(--nm-up), var(--sheen);
+  box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
   overflow: hidden;
 }
 
@@ -995,10 +1068,13 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   display: grid;
   gap: 1.25rem;
   padding: 1.15rem 1.25rem 1.35rem;
-  border: 1px solid var(--line-soft);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--glass-2);
-  box-shadow: var(--nm-up-sm), var(--sheen);
+  background:
+    linear-gradient(var(--glass-scrim-2), var(--glass-scrim-2)) padding-box,
+    linear-gradient(var(--glass-bg-2), var(--glass-bg-2)) padding-box,
+    var(--glass-border-2) border-box;
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
 }
 
 /* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
@@ -1261,10 +1337,13 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   display: grid;
   gap: 0.15rem;
   padding: 1.15rem 1.25rem 1.35rem;
-  border: 1px solid var(--line-soft);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--glass-2);
-  box-shadow: var(--nm-up-sm), var(--sheen);
+  background:
+    linear-gradient(var(--glass-scrim-2), var(--glass-scrim-2)) padding-box,
+    linear-gradient(var(--glass-bg-2), var(--glass-bg-2)) padding-box,
+    var(--glass-border-2) border-box;
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
 }
 
 .surface__title { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; }
@@ -1500,9 +1579,15 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   display: grid;
   gap: 0.45rem;
   padding: 0.75rem;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--bg-soft);
+  background:
+    linear-gradient(var(--glass-scrim-3), var(--glass-scrim-3)) padding-box,
+    linear-gradient(var(--glass-bg-3), var(--glass-bg-3)) padding-box,
+    var(--glass-border-3) border-box;
+  backdrop-filter: var(--glass-filter-3);
+  -webkit-backdrop-filter: var(--glass-filter-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
   z-index: 2;
 }
 
@@ -1779,7 +1864,26 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   --line-soft: #262c44;
 
   --glass-filter: none;
+  --glass-filter-3: none;
   --sheen: none;
+
+  /* Flat had no depth and no scrim: one solid fill, one hairline border. */
+  --glass-bg-1: #141828;
+  --glass-bg-2: #0c0e16;
+  --glass-bg-3: #141828;
+  --glass-scrim-1: transparent;
+  --glass-scrim-2: transparent;
+  --glass-scrim-3: transparent;
+  --glass-border-1: linear-gradient(var(--line), var(--line));
+  --glass-border-2: linear-gradient(var(--line-soft), var(--line-soft));
+  --glass-border-3: linear-gradient(var(--line), var(--line));
+  --glass-highlight-1: none;
+  --glass-highlight-2: none;
+  --glass-highlight-3: none;
+  --glass-shadow-1: none;
+  --glass-shadow-2: none;
+  --glass-shadow-3: none;
+  --glass-sheen: none;
   --nm-up: none;
   --nm-up-sm: none;
   --nm-in: none;
@@ -1817,6 +1921,9 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --glass-view: #ffffff;
     --glass-2: #ffffff;
     --well: #ffffff;
+    --glass-bg-1: #ffffff;
+    --glass-bg-2: #ffffff;
+    --glass-bg-3: #ffffff;
     --line: #dfe3f2;
     --line-soft: #dfe3f2;
   }
@@ -1844,3 +1951,119 @@ textarea.search::-webkit-scrollbar-thumb:hover {
 }
 .theme-btn:hover { color: var(--text); }
 .theme-btn svg { flex: none; }
+
+
+/* ---------- specular sheen on interactive glass ----------
+   A highlight that slides across on hover. Only opacity and transform are
+   transitioned — never the blur radius, which cannot be animated cheaply. */
+
+.btn, .pill, .theme-btn, .vbtn, .tab {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.btn::after,
+.pill::after,
+.theme-btn::after,
+.vbtn::after,
+.tab::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-sheen);
+  opacity: 0;
+  transform: translateX(-35%);
+  transition: opacity 200ms ease, transform 420ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  pointer-events: none;
+}
+
+.btn:hover:not(:disabled)::after,
+.pill:hover:not(:disabled)::after,
+.theme-btn:hover::after,
+.vbtn:hover::after,
+.tab:hover::after {
+  opacity: 1;
+  transform: translateX(35%);
+}
+
+
+/* ---------- fallbacks and preferences ----------
+   All four branches reassign the same tokens rather than restating rules, so
+   a surface never has two definitions to keep in step. */
+
+/* No backdrop-filter at all: go opaque rather than leaving text over a
+   raw gradient. This, not prefers-reduced-transparency, is the branch that
+   catches most browsers that cannot do the effect. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:not([data-theme="flat"]) {
+    --glass-bg-1: var(--opaque-1);
+    --glass-bg-2: var(--opaque-2);
+    --glass-bg-3: var(--opaque-3);
+    --glass-scrim-1: transparent;
+    --glass-scrim-2: transparent;
+    --glass-scrim-3: transparent;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-theme="flat"]) {
+    --glass-bg-1: var(--opaque-1);
+    --glass-bg-2: var(--opaque-2);
+    --glass-bg-3: var(--opaque-3);
+    --glass-scrim-1: transparent;
+    --glass-scrim-2: transparent;
+    --glass-scrim-3: transparent;
+    --glass-filter: none;
+    --glass-filter-3: none;
+  }
+}
+
+/* The sheen is decoration; the surfaces it sits on are unaffected. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --glass-sheen: none; }
+  .btn::after, .pill::after, .theme-btn::after, .vbtn::after, .tab::after {
+    transition: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root:not([data-theme="flat"]) {
+    --text: #ffffff;
+    --muted: #d9d5ee;
+    --line: rgba(255, 255, 255, 0.4);
+    --line-soft: rgba(255, 255, 255, 0.26);
+    --glass-scrim-1: rgba(10, 7, 24, 0.5);
+    --glass-scrim-2: rgba(10, 7, 24, 0.52);
+    --glass-scrim-3: rgba(10, 7, 24, 0.54);
+    --glass-border-1: linear-gradient(145deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.34));
+    --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.28));
+    --glass-border-3: linear-gradient(145deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.38));
+  }
+}
+
+
+/* ---------- flat: keep the native border ----------
+   The padding-box/border-box gradient technique antialiases a rounded corner
+   differently from a real border — 96 pixels across the two panels, max
+   channel delta 21. Invisible in isolation, but the flat theme has to match
+   its previous rendering exactly, so it keeps the native border and drops the
+   border-box layer. Three rules, not a parallel stylesheet, but it is a seam:
+   the two themes draw their edge by different means. */
+
+:root[data-theme="flat"] .stage__view,
+:root[data-theme="flat"] .stage__panel {
+  border-color: var(--line);
+  background: var(--glass-bg-1);
+}
+:root[data-theme="flat"] .knobs,
+:root[data-theme="flat"] .surface {
+  border-color: var(--line-soft);
+  background: var(--glass-bg-2);
+}
+:root[data-theme="flat"] .palette {
+  border-color: var(--line);
+  background: var(--glass-bg-3);
+}
