@@ -1007,6 +1007,28 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .grid2 .ctl--toggle .ctl__hint { display: none; }
 .grid2 .ctl--toggle .ctl__label { font-weight: 400; font-size: 0.87rem; }
 
+/* ---------- roll quality rose ---------- */
+
+.rose { display: block; width: 100%; aspect-ratio: 1 / 1; max-height: 260px; }
+
+.rose__cell {
+  stroke: var(--bg-soft);
+  stroke-width: 0.6;
+  transition: fill 220ms ease;
+}
+.rose__cell.is-empty { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+.rose__cell--high { fill: #22e06a; }
+.rose__cell--mid { fill: var(--warn); }
+.rose__cell--low { fill: var(--danger); }
+
+.rose__tick {
+  fill: var(--muted);
+  font-size: 7px;
+  text-anchor: middle;
+}
+.rose__tick--left { text-anchor: start; }
+.rose__tick--right { text-anchor: end; }
+
 /* ---------- live sensor image ---------- */
 
 /* One cell per sensor. A trackball has two, and they only sit side by side

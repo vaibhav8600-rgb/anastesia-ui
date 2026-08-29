@@ -11,6 +11,7 @@ import Effects from "./Effects.jsx";
 import Logs from "./Logs.jsx";
 import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Heatmap from "./Heatmap.jsx";
+import RollMap from "./RollMap.jsx";
 import Status from "./Status.jsx";
 
 // The seven tabs mirror the original's shape, so anyone coming from it knows
@@ -300,6 +301,7 @@ export default function App() {
                     onChange={change}
                   />
                 ))}
+              <RollMap live={live} />
               <Heatmap live={live} onNote={setNote} />
             </Pane>
 

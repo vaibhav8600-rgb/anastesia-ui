@@ -292,10 +292,14 @@ export default function Heatmap({ live, onNote }) {
     return (
       <div className="knobs">
         <h3 className="sec">Sensor image</h3>
+        {/* Deliberately does not name a driver. Which sensor a board carries
+            (pmw3610, paw3395, …) decides which driver and which branch, and
+            some of them have no frame capture to expose at all. */}
         <p className="panel__blurb">
           This firmware has no <code>sensor stream</code>, so there is no live
-          image. It needs the frame-grab pmw3610 driver; surface quality above
-          is what this build does report.
+          image. It needs a driver built with frame capture, which depends on
+          the sensor your board uses. Surface quality above is what this build
+          reports.
         </p>
         {support.subs.length > 0 && (
           <p className="ctl__hint">

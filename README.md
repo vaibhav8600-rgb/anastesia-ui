@@ -31,7 +31,7 @@ Seven tabs, matching the original's shape:
 | --- | --- |
 | Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
 | Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
-| Sensor(s) | Surface quality with a trend strip, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, live sensor image |
+| Sensor(s) | Surface quality with a trend strip, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, roll-quality map, live sensor image |
 | Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
 | Import/Export | Settings as .json, plus full device backup, restore and erase |
 | Raw settings | Every runtime parameter, with its description, range and default |
@@ -53,6 +53,7 @@ Seven tabs, matching the original's shape:
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles, import/export, storage backup, surface quality |
 | `src/Heatmap.jsx` | the live sensor image |
+| `src/RollMap.jsx` | tracking quality by roll direction and speed |
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
@@ -171,6 +172,31 @@ easy to get wrong:
 Sensor surface quality is the first card on the Sensor(s) tab. It reads
 continuously while that tab is open, so you can roll the ball and watch it
 move; between reads the last value stays on screen.
+
+### Roll quality
+
+`src/RollMap.jsx` bins SQUAL by **how the ball is moving** — direction around a
+polar chart, speed outward — one chart per sensor.
+
+It is deliberately *not* a map of the ball's surface, and the distinction is
+the whole design. Colouring a patch of the ball means knowing which patch is
+under the sensor, which needs rotation integrated from a known origin and
+wrapped at the ball's circumference. Neither is observable: the only motion we
+can see is the pointer the ball drives, and that has been through the
+firmware's sensitivity, its acceleration curve and then the OS's own pointer
+acceleration — nonlinear — while the circumference in pointer counts is
+unknown. Wrap at the wrong modulus and the same physical patch lands in a
+different cell every revolution: the map smears into noise *while still looking
+like a map*, which is worse than not drawing one.
+
+Direction and speed do survive that chain, and they answer the questions people
+actually have — does tracking fall off when I roll fast, is one direction worse
+than the others. Readings taken while the ball is still are dropped, since a
+resting value would drag every cell toward it.
+
+It reads the same `sensor surface` replies the gauge already asks for rather
+than polling a second time, and asks for a faster cadence only while it is
+collecting.
 
 Under each gauge is a **trend of the last 60 readings**. SQUAL is a single
 scalar — a count of trackable features — so it cannot make an image no matter
@@ -359,11 +385,15 @@ Details worth keeping, all covered by `node src/protocol.js`:
   hold a partial line between them. **The `id` is the sensor**, and a trackball
   has two: painting every frame onto one canvas makes them fight over it, so
   there is a canvas per id, created when that id first appears.
-- **Not every firmware has the command** — v101.4.4 does not. It needs a build
-  with the frame-grab pmw3610 driver (`z4.1/feat/frame-grab`) and a shell
-  prompt of `zmk$`, `zmk:~$` or `uart:~$`. A board without the subcommand
-  answers with the *parent* command's help (`sensor - Sensor Diagnostics`, then
-  `Subcommands:`), never an error, so "a reply arrived" is not "it worked".
+- **Not every firmware has the command** — v101.4.4 does not. It needs a driver
+  built with frame capture, and *which* driver depends on the sensor the board
+  carries: for a pmw3610 that is the `z4.1/feat/frame-grab` branch, a paw3395
+  is a different driver again, and some expose no frame capture at all. The
+  shell prompt must also be one of `zmk$`, `zmk:~$` or `uart:~$`. A board
+  without the subcommand answers with the *parent* command's help
+  (`sensor - Sensor Diagnostics`, then `Subcommands:`), never an error, so
+  "a reply arrived" is not "it worked". The panel therefore names no driver;
+  it prints the subcommands the board itself listed.
 - While the stream runs, its bytes must **bypass** the command buffer rather
   than being copied into it as well. `awaitPrompt` re-scans that buffer every
   20 ms and nothing clears it mid-stream, so duplicating left it scanning
@@ -404,6 +434,7 @@ original that is missing here.
 | Storage backup / restore | Yes | Yes — see below |
 | Factory erase | One click | Behind typing `ERASE`, and names what it destroys |
 | Surface quality (SQUAL) | Live number and bar | Same, plus a 60-reading trend strip per sensor |
+| Roll-quality map | — | Quality binned by roll direction and speed, per sensor |
 | Live sensor image | One panel per sensor, 4 ramps, auto gain, blur; hidden if unsupported | Same, plus per-sensor seq/range/size/fps, Esc or Space to stop, and when unsupported it says so and names the subcommands the board *does* have |
 | Settings as `.json` | — | Export, import, edit or paste |
 | Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |

@@ -68,6 +68,29 @@ function Spark({ values, max, band }) {
   );
 }
 
+/**
+ * Surface readings, shared. The roll map wants the same `sensor surface`
+ * replies the gauge already asks for, and polling twice for one command would
+ * just make both slower — the shell has a 200ms floor between commands.
+ *
+ * `wantFast` lets a consumer ask for a quicker cadence while it is collecting;
+ * one reading a second is fine to watch, but slow to fill a map with.
+ */
+const feed = new Set();
+let fastWanted = 0;
+
+export function onSurface(fn) {
+  feed.add(fn);
+  return () => feed.delete(fn);
+}
+export function wantFastSurface() {
+  fastWanted++;
+  return () => { fastWanted--; };
+}
+
+const SURFACE_MS = 1000;
+const SURFACE_FAST_MS = 300;
+
 export function qualityBand(quality, max) {
   const ratio = quality / max;
   const [warn, good] = max === 1000 ? [0.25, 0.5] : max === 361 ? [0.3, 0.6] : [0.34, 0.67];
@@ -93,6 +116,7 @@ export function Surface({ live, onNote, active = true }) {
       history.current.set(s.sensor, arr);
     }
     setSensors(list);
+    for (const fn of feed) fn(list);
   }, []);
 
   // Reads continuously while the tab is open so you can watch the numbers move
@@ -130,7 +154,7 @@ export function Surface({ live, onNote, active = true }) {
         publish(parsed);
         setError(null);
       } catch { /* a missed sample just leaves the last one showing */ }
-      if (!stop) timer = setTimeout(tick, 1000);
+      if (!stop) timer = setTimeout(tick, fastWanted > 0 ? SURFACE_FAST_MS : SURFACE_MS);
     };
     tick();
     return () => { stop = true; clearTimeout(timer); };
