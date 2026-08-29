@@ -104,7 +104,8 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCFSoftShadowMap is deprecated and three substitutes this anyway.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     // Only the ball and the wheels move, and both are surfaces of revolution
     // turning about their own axis — their shadows never change. So the shadow
     // pass runs once and is then frozen, which is most of the per-frame cost.
@@ -711,7 +712,7 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     };
 
     // ---------------------------------------------------------- loop
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();   // Clock is deprecated
     let raf;
     let visible = true;
     let acc = 0;
@@ -723,7 +724,8 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
-      const dt = Math.min(clock.getDelta(), 0.05);
+      timer.update();
+      const dt = Math.min(timer.getDelta(), 0.05);
       if (!visible || document.hidden) return;
       acc += dt;
       if (acc < FRAME) return;
