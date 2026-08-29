@@ -31,7 +31,7 @@ Seven tabs, matching the original's shape:
 | --- | --- |
 | Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
 | Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
-| Sensor(s) | Pointer feel, twist scroll, rotary encoder, sensor surface quality |
+| Sensor(s) | Surface quality, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder |
 | Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
 | Import/Export | Download and upload settings as .json, or paste them |
 | Raw settings | Every runtime parameter, with its description, range and default |
@@ -152,6 +152,20 @@ sub-group (`adv:`), so a run of twenty rows renders as a handful of short titled
 ones rather than one flat list. Both halves of that matter: the original app
 shows three pointer settings and hides thirteen, and the wall of knobs is what
 made this tab hard to read.
+
+A key the catalogue has no entry for is still shown, built from the device's own
+`rtcfg list` under the owning section's `prefixes`. Two things follow that are
+easy to get wrong:
+
+- Their **id is the rtcfg key itself**, and they are built inside `KnobSection`,
+  so they are not in `allControls`. `seed()` therefore starts from the rtcfg
+  listing, and `save()` falls back to `rtcfg set <key>` for ids the catalogue
+  does not own. Skip either and they render as their slider minimum and drop
+  edits without saying so.
+- A **three-segment key names its own group in the middle**, so the twelve
+  `bst/<profile>/s0_mult`-style keys land in Snipe, Twist and Dragscroll blocks
+  without any of those names appearing in our source. Whatever profiles a
+  firmware defines are what you get.
 
 Sensor surface quality is the first card on the Sensor(s) tab. It reads
 continuously while that tab is open, so you can roll the ball and watch it
@@ -300,6 +314,18 @@ Details worth keeping, all covered by `node src/protocol.js`:
 - `rtcfg list` prints `<key>  <value>  (default: <n>)` and keys may have three
   segments (`bst/<name>/s0_div`) — a parser anchored at end of line returns
   nothing at all.
+- **`rrl set` takes milliseconds, not hertz.** It is the axis sync window,
+  0–10, where 0 means no limit and 1 ms is 1000 Hz. Reading `rrl get` back as a
+  rate and writing it again sets a window a hundred times too long.
+- **`p2sm sma on|off` is separate from `p2sm sma window set N`.** Sizing the
+  smoothing filter while it is switched off changes nothing. `p2sm status`
+  reports `SMA smoothing: enabled|disabled` alongside `SMA window: N`.
+- **`bistable set N` changes the slot in use now; `bst/default` is only what the
+  board boots into.** Read the first with `bistable slot`. They are easy to
+  confuse and a control that reads one and writes the other looks broken.
+- Replies to `p2sm ...` contain the word **p2sm**, whose `2` is the first digit
+  in the string. Strip it before matching numbers or a 2.5x reading comes back
+  as 0.2x.
 - Curve segments are eight integers scaled by 100 in the order
   **start, end, cp1, cp2** — the end point comes before the control points.
 - Only `layer` events support solid/blink/breathe; every other RGB event is
@@ -311,15 +337,27 @@ Details worth keeping, all covered by `node src/protocol.js`:
 Requires a Chromium-based browser for Web Serial / Web Bluetooth. Without
 either, the app still opens in demo mode.
 
-## Still not built
+## Measured against the original
 
-The shell commands are documented above and the previous build is in git
-(`git show main:src/app.js`):
+`reference/marshmellow-ui.html` is the app this replaces, kept in the tree as
+the protocol reference. Every shell command it sends, we send, with the same
+spelling and the same argument units — that equivalence is what the notes above
+are for, and three of them exist because we had it wrong.
 
-- storage-partition backup and restore over USB (`board backup`, `board restore`)
-- the live sensor surface heat-map stream (`sensor stream --on`)
-- per-encoder-ID settings (step, min/max step, wrap, feedback pattern)
-- per-keymap sensor scaling, the `bst/<name>/s0_mult` family — these are
-  editable under Expert, just without a dedicated screen
+Still not built, with the commands they would need:
 
-Everything else the firmware reports through `rtcfg` is reachable under Expert.
+| Missing | Command |
+|---|---|
+| Storage-partition backup and restore over USB | `board backup`, `board restore` |
+| Factory erase | `board erase` |
+| Live sensor surface heat-map | `sensor stream --on` / `--off` |
+| Real layer names on RGB layer events | `board layers` |
+| Per-encoder-ID behaviours (step, min/max step, wrap, feedback pattern) | `rtcfg`, per encoder |
+
+Import/Export covers the runtime parameters only, and says so on the panel;
+the original's backup is a checksummed dump of the whole storage partition and
+is gated on unlocking ZMK Studio.
+
+Everything else the firmware reports through `rtcfg` is reachable — curated
+where we have a name for it, and filled in from the device's own listing where
+we do not, so a renamed or unknown key still appears rather than vanishing.
