@@ -36,6 +36,24 @@ const MAPS = [
 
 const FPS_WINDOW = 12;
 
+/** A moving blob, in the wire format a board sends, for demo mode. */
+function demoFrame(t) {
+  const W = 30;
+  const H = 30;
+  const cx = W / 2 + Math.cos(t) * 6;
+  const cy = H / 2 + Math.sin(t * 1.3) * 6;
+  const rows = [];
+  for (let y = 0; y < H; y++) {
+    let row = "";
+    for (let x = 0; x < W; x++) {
+      const v = Math.max(0, 220 - Math.hypot(x - cx, y - cy) * 22) + Math.random() * 18;
+      row += Math.min(255, Math.round(v)).toString(16).padStart(2, "0");
+    }
+    rows.push(row);
+  }
+  return `F 0 ${Math.round(t * 100).toString(16)}\n${rows.join("\n")}\nEND\n`;
+}
+
 export default function Heatmap({ live, onNote }) {
   const [on, setOn] = useState(false);
   const [map, setMap] = useState("ironbow");
@@ -121,31 +139,17 @@ export default function Heatmap({ live, onNote }) {
   }, []);
 
   // Demo has no device, so synthesise a moving blob rather than an empty box.
+  /**
+   * One path for both modes. Demo used to call draw() directly with a
+   * ready-made frame, which meant it exercised none of the plumbing that
+   * matters — the subscription, the reader, the chunk reassembly — and a
+   * missing device.onRaw sailed past every demo-mode check. Demo now emits the
+   * same text a board would, through the same tap.
+   */
   useEffect(() => {
-    if (!on || live) return undefined;
-    const W = 30;
-    const H = 30;
-    let t = 0;
-    const id = setInterval(() => {
-      t += 0.12;
-      const data = new Uint8Array(W * H);
-      const cx = W / 2 + Math.cos(t) * 6;
-      const cy = H / 2 + Math.sin(t * 1.3) * 6;
-      for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-          const d = Math.hypot(x - cx, y - cy);
-          data[y * W + x] = Math.max(0, 220 - d * 22) + Math.random() * 18;
-        }
-      }
-      draw({ id: 0, seq: t, width: W, height: H, data });
-    }, 60);
-    return () => clearInterval(id);
-  }, [on, live, draw]);
-
-  // The real stream.
-  useEffect(() => {
-    if (!on || !live) return undefined;
+    if (!on) return undefined;
     let stopped = false;
+    let demo;
     const reader = frameReader();
     const untap = device.onRaw((chunk) => {
       if (stopped) return;
@@ -156,28 +160,36 @@ export default function Heatmap({ live, onNote }) {
     setError(null);
     times.current = [];
 
-    (async () => {
-      try {
-        const out = await device.send("sensor stream --on");
-        if (unsupported(out)) {
-          setError("This board does not stream the sensor image.");
-          setOn(false);
+    if (live) {
+      (async () => {
+        try {
+          const out = await device.send("sensor stream --on");
+          if (unsupported(out)) {
+            setError("This board does not stream the sensor image.");
+            setOn(false);
+          }
+        } catch (err) {
+          if (!stopped) { setError(err.message); setOn(false); }
         }
-      } catch (err) {
-        if (!stopped) { setError(err.message); setOn(false); }
-      }
-    })();
+      })();
+    } else {
+      let t = 0;
+      demo = setInterval(() => { t += 0.12; device.emitRaw(demoFrame(t)); }, 60);
+    }
 
     return () => {
       stopped = true;
+      clearInterval(demo);
       untap();
       device.streaming = false;
       reader.reset();
       // Best effort: if this fails the board keeps streaming, and the next
       // command's reply arrives buried in pixels, so say so.
-      device.send("sensor stream --off").catch(() => {
-        onNote?.("Could not stop the sensor stream — reconnect if replies look garbled.");
-      });
+      if (live) {
+        device.send("sensor stream --off").catch(() => {
+          onNote?.("Could not stop the sensor stream — reconnect if replies look garbled.");
+        });
+      }
     };
   }, [on, live, draw, onNote]);
 

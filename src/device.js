@@ -62,11 +62,19 @@ class Device {
     this.lastByteAt = 0;            // for quiet-based reply completion
     this.lastCmdAt = 0;
     this.listeners = new Set();
+    // The sensor pixel stream is the one exchange here that is not
+    // request/response, so it needs bytes as they land rather than a tidied
+    // reply. Background pollers stand down while `streaming` is set — a
+    // `board output` reply dropped into the middle of a frame corrupts it.
+    this.streaming = false;
+    this.rawListeners = new Set();
   }
 
   get connected() { return !!(this.port || this.shell); }
 
   onLog(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  onRaw(fn) { this.rawListeners.add(fn); return () => this.rawListeners.delete(fn); }
+  emitRaw(text) { for (const fn of this.rawListeners) fn(text); }
   log(dir, text) { for (const fn of this.listeners) fn({ dir, text, at: Date.now() }); }
 
   async connectUSB() {
@@ -179,8 +187,10 @@ class Device {
         const { value, done } = await this.reader.read();
         if (done) break;
         if (value) {
-          this.buffer += decoder.decode(value, { stream: true });
+          const text = decoder.decode(value, { stream: true });
+          this.buffer += text;
           this.lastByteAt = Date.now();
+          if (this.rawListeners.size) this.emitRaw(text);
         }
       }
     } catch {
@@ -462,6 +472,21 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("device.js")) 
 
   // ANSI colour around a prompt must not hide it.
   await check("ansi prompt", (x) => { x.buffer = "ok\n\x1b[1;32muart:~$ \x1b[0m"; }, { text: "ok" });
+
+  // The raw tap. Both read paths call emitRaw on every chunk, so if these go
+  // missing the BLE notification handler throws on the first byte and the
+  // sensor stream cannot subscribe at all — neither of which the build catches.
+  console.assert(typeof d.onRaw === "function", "onRaw must exist");
+  console.assert(typeof d.emitRaw === "function", "emitRaw must exist");
+  console.assert(d.rawListeners instanceof Set, "rawListeners must exist");
+  console.assert(d.streaming === false, "streaming starts off");
+  const seen = [];
+  const untap = d.onRaw((t) => seen.push(t));
+  d.emitRaw("F 0 1A");
+  untap();
+  d.emitRaw("dropped");
+  console.assert(seen.length === 1 && seen[0] === "F 0 1A", `raw tap delivers then unsubscribes, got ${JSON.stringify(seen)}`);
+  console.assert(d.rawListeners.size === 0, "unsubscribing removes the listener");
 
   console.log("device.js self-check OK");
 }
