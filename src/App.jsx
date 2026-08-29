@@ -44,14 +44,24 @@ const DEMO_RTCFG = {
   "argb/brt": 60, "argb/tick": 30,
   "argb/bw1": 25, "argb/bw2": 15, "argb/bw3": 10,
   "argb/bc1": 8, "argb/bc2": 5, "argb/bc3": 3,
+  "bst/default": 0,
+  "bst/snipe/s0_mult": 1, "bst/snipe/s0_div": 4,
+  "bst/snipe/s1_mult": 1, "bst/snipe/s1_div": 4,
+  "bst/twist/s0_mult": 1, "bst/twist/s0_div": 10,
+  "bst/twist/s1_mult": 1, "bst/twist/s1_div": 40,
+  "bst/dragscroll/s0_mult": 1, "bst/dragscroll/s0_div": 3,
+  "bst/dragscroll/s1_mult": 1, "bst/dragscroll/s1_div": 30,
   "ec11/do_comp": 1, "ec11/comp_half": 1, "ec11/debounce_ms": 3,
   "ec11/trigger_window": 40, "ec11/rec_depth": 4,
-  "keymap/autoswitch": 1, "bst/default": 0,
+  "keymap/autoswitch": 1,
 };
 
 // Ranges the demo pretends the firmware reported, so sliders behave as they
 // would on a real board.
 const DEMO_RANGES = Object.fromEntries(Object.entries(DEMO_RTCFG).map(([k, v]) => {
+  // Scaling multipliers sit at 1 by default, and the generic "0 or 1 means a
+  // switch" guess below would render them as toggles.
+  if (/^bst\/[a-z0-9_]+\/s[01]_(mult|div)$/.test(k)) return [k, { value: v, def: v, min: 1, max: 100 }];
   const known = {
     "p2sm/ema_alpha": [1, 50], "p2sm/ptr_after_scroll": [0, 5000],
     "p2sm/twist_dy_mag_mul": [1, 100], "p2sm/twist_dy_mag_div": [1, 100],
@@ -64,7 +74,7 @@ const DEMO_RANGES = Object.fromEntries(Object.entries(DEMO_RTCFG).map(([k, v]) =
 const DEMO_STATE = {
   rtcfg: DEMO_RTCFG,
   ranges: DEMO_RANGES,
-  sens: 3.2, plane: 0, sma: 4, rrl: 0,
+  sens: 3.2, plane: 0, sma: 4, rrl: 4,
   twist: 1, twistSens: 2.5, twistReverse: 0, argb: 1,
   // Hide the same controls a real board would, so demo does not show both
   // spellings of a renamed key side by side.
@@ -92,7 +102,11 @@ export default function App() {
 
   const seed = useCallback((s) => {
     setState(s);
-    const next = {};
+    // Every rtcfg key first. Controls filled in from the device's own listing
+    // are built inside KnobSection, so they never appear in allControls — and
+    // without a value here every one of them rendered as its slider minimum
+    // instead of what the board actually reports. Their id is the key itself.
+    const next = { ...(s.rtcfg ?? {}) };
     for (const c of allControls) {
       const v = c.read(s);
       if (v != null) next[c.id] = v;
@@ -143,9 +157,20 @@ export default function App() {
       const written = {};
       for (const id of dirty) {
         const spec = allControls.find((c) => c.id === id);
-        if (!spec) continue;
-        await spec.write(values[id]);
-        if (spec.key) written[spec.key] = Math.round(values[id]);
+        if (spec) {
+          await spec.write(values[id]);
+          if (spec.key) written[spec.key] = Math.round(values[id]);
+          continue;
+        }
+        // Not in the catalogue means it came from the device listing, where the
+        // id is the rtcfg key. This used to `continue`, so every edit to one of
+        // those was dropped without a word — it cleared from the dirty set and
+        // the panel reported "Saved".
+        if (id in state.rtcfg) {
+          const v = Math.round(values[id]);
+          await device.send(`rtcfg set ${id} ${v}`);
+          written[id] = v;
+        }
       }
       // Raw settings and the export both read state.rtcfg, so it has to follow
       // what we just wrote or they show stale numbers.
@@ -263,7 +288,7 @@ export default function App() {
             <Pane active={tab === "sensors"} visited={visited.has("sensors")}>
               <Surface live={live} onNote={setNote} active={tab === "sensors"} />
               {sensorSections
-                .filter((sec) => !sec.optional || sec.controls.some((c) => !state.missing.has(c.id)))
+                .filter((sec) => !sec.optional || hasAnything(sec, state))
                 .map((sec) => (
                   <KnobSection
                     key={sec.id}
@@ -319,6 +344,18 @@ export default function App() {
  * Each control names the sub-group it belongs to, and they are gathered here
  * in first-seen order so the grouping stays predictable.
  */
+/**
+ * Does an optional section have anything to show? Its own controls count, and
+ * so do keys the firmware reports under its prefixes — the scaling section is
+ * almost entirely prefix-filled, so judging it on curated controls alone hid a
+ * dozen live settings.
+ */
+function hasAnything(sec, state) {
+  if (sec.controls.some((c) => !state.missing.has(c.id))) return true;
+  return (sec.prefixes ?? []).some((p) =>
+    Object.keys(state.rtcfg).some((k) => k.startsWith(p)));
+}
+
 /**
  * Dials read best side by side, but they must not jump ahead of the rows they
  * were declared after — the twist master switch belongs above the scroll-speed

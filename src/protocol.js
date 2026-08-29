@@ -240,6 +240,54 @@ export function parseSurface(text) {
   return out;
 }
 
+// ------------------------------------------------------------ p2sm readouts
+
+/**
+ * `p2sm sens pointer get` / `p2sm sens twist get` -> the value as a multiplier.
+ *
+ * The reply carries the word "p2sm", and its "2" is the first digit in the
+ * string — reading bare digits turns a 2.5x sensitivity into 0.2x. Strip the
+ * word first, exactly as the original app does.
+ */
+export function parseSensitivity(text) {
+  const m = String(text ?? "").replace(/p2sm/gi, "").match(/(\d+)/);
+  return m ? Number(m[1]) / 10 : null;
+}
+
+/**
+ * `p2sm status` -> the smoothing filter's state.
+ *
+ * Enabling is separate from sizing on the device: `p2sm sma on|off` flips the
+ * filter and `p2sm sma window set N` sizes it. Setting only the window on a
+ * board where the filter is off changes nothing at all.
+ */
+export function parseSma(status) {
+  const s = String(status ?? "");
+  return {
+    supported: /SMA smoothing:/i.test(s),
+    enabled: /SMA smoothing:\s*enabled/i.test(s),
+    window: Number(s.match(/SMA window:\s*(\d+)/i)?.[1] ?? 1),
+  };
+}
+
+/**
+ * `rrl get` -> the axis sync window in **milliseconds**, 0 meaning no limit.
+ *
+ * Anchored on the label rather than "first number in the reply". The units
+ * matter: `rrl set` takes ms, so treating the reply as a rate in Hz and
+ * writing it back sets a sync window hundreds of times too long.
+ */
+export function parseSyncWindow(text) {
+  const m = String(text ?? "").match(/Sync window:\s*(\d+)/i);
+  return m ? Number(m[1]) : null;
+}
+
+/** `bistable slot` -> the slot in use right now, or null if not reported. */
+export function parseBistableSlot(text) {
+  const m = String(text ?? "").match(/(?:current\s+)?slot:\s*(\d+)/i);
+  return m ? Number(m[1]) : null;
+}
+
 // ------------------------------------------------------------ board status
 
 /** `board status` -> firmware + battery, falling back to `board version`. */
@@ -392,6 +440,26 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   eq(help.battery, null, "help text carries no battery");
   eq(parseOutput("Output: usb"), "USB", "output normalised");
   eq(parseOutput("nothing"), null, "no output line");
+
+  // p2sm readouts. The "2" in "p2sm" is the trap: a bare digit match reads
+  // this reply as 0.2x rather than 2.5x.
+  eq(parseSensitivity("p2sm sens pointer: 25"), 2.5, "sensitivity ignores the p2sm in the reply");
+  eq(parseSensitivity("100"), 10, "bare value");
+  eq(parseSensitivity("nothing here"), null, "no digits, no guess");
+
+  const smaOn = parseSma("Twist scroll: enabled" + NL + "SMA smoothing: enabled" + NL + "SMA window: 4");
+  eq(smaOn, { supported: true, enabled: true, window: 4 }, "sma enabled + window");
+  eq(parseSma("SMA smoothing: disabled" + NL + "SMA window: 8").enabled, false, "sma disabled");
+  eq(parseSma("Twist scroll: enabled").supported, false, "firmware without sma");
+
+  // rrl is milliseconds, not hertz — the whole point of anchoring on the label.
+  eq(parseSyncWindow("Sync window: 4 msec"), 4, "sync window in ms");
+  eq(parseSyncWindow("Report rate limiter" + NL + "Sync window: 0"), 0, "0 means no limit");
+  eq(parseSyncWindow("rrl: command not found"), null, "unsupported reports nothing");
+
+  eq(parseBistableSlot("Current slot: 1"), 1, "bistable slot");
+  eq(parseBistableSlot("slot: 0 (Windows/Linux)"), 0, "short spelling");
+  eq(parseBistableSlot("bistable: command not found"), null, "no slot reported");
 
   console.assert(unsupported("plane: command not found"), "unsupported detected");
   console.assert(studioLocked("Unlock ZMK Studio first"), "studio lock detected");

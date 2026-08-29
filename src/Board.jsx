@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { device } from "./device.js";
 import {
   unsupported, parseRtcfg, parseKeymap, parseAssignments, parseSurface,
-  studioLocked as locked,
+  parseBistableSlot, studioLocked as locked,
 } from "./protocol.js";
 
 export const OUTPUTS = [
@@ -141,7 +141,10 @@ export function Keymap({ live, onNote }) {
       setAssign(parseAssignments(await device.send("keymap assign")));
       const cfg = parseRtcfg(await device.send("rtcfg list"));
       setAutoswitch(cfg["keymap/autoswitch"] ?? null);
-      setBistable("bst/default" in cfg ? cfg["bst/default"] : null);
+      // `bistable set` changes the slot in use right now; bst/default is only
+      // what the board boots into. Reading one and writing the other made this
+      // switch snap back to its old value on every refresh.
+      setBistable(parseBistableSlot(await device.send("bistable slot")));
     } catch (err) {
       onNote(err.message);
     } finally {
@@ -281,6 +284,7 @@ export function Keymap({ live, onNote }) {
       {bistable !== null && (
         <>
           <h3 className="sec">Keyboard mode</h3>
+          <p className="ctl__hint">Active now. The slot the board starts in is under Sensor(s) → Advanced scaling.</p>
           <div className="row row--wrap">
             {["Windows / Linux", "macOS"].map((label, i) => (
               <button
