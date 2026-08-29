@@ -75,6 +75,21 @@ class Device {
   onLog(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   onRaw(fn) { this.rawListeners.add(fn); return () => this.rawListeners.delete(fn); }
   emitRaw(text) { for (const fn of this.rawListeners) fn(text); }
+
+  /**
+   * Every incoming byte from either transport arrives here.
+   *
+   * While the pixel stream runs those bytes belong to it alone. Appending them
+   * to the command buffer as well left awaitPrompt rescanning a string growing
+   * by tens of kilobytes a second, fifty times a second, and nothing ever
+   * cleared it — which is what a blank heat-map and a wedged page looked like.
+   */
+  ingest(text) {
+    this.lastByteAt = Date.now();
+    if (this.streaming) { this.emitRaw(text); return; }
+    this.buffer += text;
+    if (this.rawListeners.size) this.emitRaw(text);
+  }
   log(dir, text) { for (const fn of this.listeners) fn({ dir, text, at: Date.now() }); }
 
   async connectUSB() {
@@ -132,8 +147,8 @@ class Device {
         this.log("recv", `Could not decode a notification: ${err.message}`);
         return;
       }
-      this.buffer += text;
-      if (this.rawListeners.size) this.emitRaw(text);
+      this.ingest(text);
+      if (this.streaming) return;
       if (this.shellDumps === undefined) this.shellDumps = 0;
       if (this.shellDumps < 3) {
         this.shellDumps++;
@@ -186,12 +201,7 @@ class Device {
       for (;;) {
         const { value, done } = await this.reader.read();
         if (done) break;
-        if (value) {
-          const text = decoder.decode(value, { stream: true });
-          this.buffer += text;
-          this.lastByteAt = Date.now();
-          if (this.rawListeners.size) this.emitRaw(text);
-        }
+        if (value) this.ingest(decoder.decode(value, { stream: true }));
       }
     } catch {
       /* reader cancelled on disconnect */
@@ -487,6 +497,22 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("device.js")) 
   d.emitRaw("dropped");
   console.assert(seen.length === 1 && seen[0] === "F 0 1A", `raw tap delivers then unsubscribes, got ${JSON.stringify(seen)}`);
   console.assert(d.rawListeners.size === 0, "unsubscribing removes the listener");
+
+  // Streaming bytes must bypass the command buffer entirely. Letting them pile
+  // up there is what made awaitPrompt rescan a megabyte fifty times a second.
+  const heard = [];
+  const untap2 = d.onRaw((t) => heard.push(t));
+  d.buffer = "";
+  d.streaming = false;
+  d.ingest("reply\n");
+  console.assert(d.buffer === "reply\n", `normal bytes buffer, got ${JSON.stringify(d.buffer)}`);
+  d.streaming = true;
+  d.ingest("F 0 1\n00ff\nEND\n");
+  console.assert(d.buffer === "reply\n", `streaming bytes must not buffer, got ${JSON.stringify(d.buffer)}`);
+  console.assert(heard.length === 2, `both reach the raw tap, got ${heard.length}`);
+  d.streaming = false;
+  d.buffer = "";
+  untap2();
 
   console.log("device.js self-check OK");
 }

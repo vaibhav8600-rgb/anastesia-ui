@@ -36,6 +36,16 @@ const MAPS = [
 
 const FPS_WINDOW = 12;
 
+/**
+ * A reply is not the same as an accepted command. A firmware without this
+ * subcommand prints its own usage — "Subcommands: ..." — rather than an error,
+ * so treating any non-empty reply as success shows a blank box forever.
+ */
+const streamAccepted = (reply) =>
+  !unsupported(reply) && !/subcommands|usage:/i.test(String(reply ?? ""));
+
+const firstLine = (text) => String(text ?? "").trim().split("\n")[0] ?? "";
+
 /** A moving blob, in the wire format a board sends, for demo mode. */
 function demoFrame(t) {
   const W = 30;
@@ -150,29 +160,47 @@ export default function Heatmap({ live, onNote }) {
     if (!on) return undefined;
     let stopped = false;
     let demo;
+    let diag;
+    let frames = 0;
+    let sample = "";
     const reader = frameReader();
     const untap = device.onRaw((chunk) => {
       if (stopped) return;
-      for (const frame of reader.push(chunk)) draw(frame);
+      // Keep the opening bytes verbatim. If nothing decodes, this is the only
+      // evidence of what the board actually sent, and a blank box is no help.
+      if (sample.length < 400) sample += chunk;
+      for (const frame of reader.push(chunk)) { frames++; draw(frame); }
     });
 
-    device.streaming = true;
     setError(null);
     times.current = [];
 
     if (live) {
       (async () => {
         try {
-          const out = await device.send("sensor stream --on");
-          if (unsupported(out)) {
-            setError("This board does not stream the sensor image.");
+          // Send before switching the transport into stream mode, so this
+          // command's own reply still reaches the command buffer and can be
+          // read. A board that starts flooding immediately may never show a
+          // prompt, so a timeout here is not a failure.
+          const out = await device.send("sensor stream --on", { timeout: 4000 });
+          if (stopped) return;
+          if (!streamAccepted(out)) {
+            setError(`The board would not start the stream: ${firstLine(out) || "no reply"}`);
             setOn(false);
+            return;
           }
-        } catch (err) {
-          if (!stopped) { setError(err.message); setOn(false); }
-        }
+        } catch { /* flooding board, no prompt — carry on */ }
+        if (stopped) return;
+        device.streaming = true;
+        diag = setTimeout(() => {
+          if (stopped || frames > 0) return;
+          setError(sample.trim()
+            ? `Streaming, but no frame decoded. The board is sending: ${JSON.stringify(sample.slice(0, 200))}`
+            : "The board accepted the command but has sent nothing.");
+        }, 5000);
       })();
     } else {
+      device.streaming = true;
       let t = 0;
       demo = setInterval(() => { t += 0.12; device.emitRaw(demoFrame(t)); }, 60);
     }
@@ -180,7 +208,9 @@ export default function Heatmap({ live, onNote }) {
     return () => {
       stopped = true;
       clearInterval(demo);
+      clearTimeout(diag);
       untap();
+      // Before the stop command, so its own reply is buffered and readable.
       device.streaming = false;
       reader.reset();
       // Best effort: if this fails the board keeps streaming, and the next
