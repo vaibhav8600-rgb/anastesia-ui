@@ -224,17 +224,18 @@ version, rather than a plausible-looking number.
 
 The bar shows which endpoint is carrying the pointer (USB / Bluetooth /
 dongle), the firmware version and the battery, read from `board output` and
-`board status`. Output is polled every 5 s and status every 5 min, and both
-skip a turn whenever one of your own commands is queued, so a poll never makes
-you wait.
+`board status`. Output is polled every 3 s and status every 5 min, and both
+stand down whenever one of your own commands is queued or the sensor stream is
+running, so a poll never makes you wait and never lands inside a frame.
 
 ## Keeping it quick
 
 Two things dominated first-paint, and both are fixed:
 
 - Effects used to read every event up front — around twenty round trips behind
-  a 200 ms inter-command floor before the tab drew anything. It now reads only
-  the event list and fetches details on selection, caching as it goes.
+  a 200 ms inter-command floor before the tab drew anything. It now reads the
+  event list, the layer names and whether RGB is supported — three calls — and
+  fetches each event's detail on selection, caching as it goes.
 - Panels talk to the device when they mount, so a visited tab now stays mounted
   and is hidden rather than torn down. Returning to a tab is instant instead of
   repeating its round trips.
@@ -250,8 +251,8 @@ first read. So `device.js` runs the previous UI's handshake on connect:
 
 1. settle — 2000 ms on USB, 1500 ms on BLE;
 2. probe — send `__init` until the reply contains `command not found`, which is
-   how a live shell answers a command it does not have. Retries every 500 ms up
-   to 25 s, each probe capped at 3 s so a dead link fails fast;
+   how a live shell answers a command it does not have. Retries every 300 ms up
+   to 25 s, each probe capped at 2.5 s so a dead link fails fast;
 3. `shell echo off`, so replies are not polluted by the echoed command.
 
 Only then does `readAll()` run. A dropped BLE link is caught via
