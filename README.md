@@ -341,7 +341,15 @@ Details worth keeping, all covered by `node src/protocol.js`:
   the same lines back, one per `board restore` command.
 - `sensor stream --on` emits `F <id> <seqHex>`, then hex rows one byte per
   pixel, then `END`. Lines split across chunk boundaries, so the reader has to
-  hold a partial line between them.
+  hold a partial line between them. **Not every firmware has it** — v101.4.4
+  does not. A board without a subcommand answers with the *parent* command's
+  help (`sensor - Sensor Diagnostics`, then `Subcommands:`), never an error, so
+  "a reply arrived" is not "the command worked".
+- While the stream runs, its bytes must **bypass** the command buffer rather
+  than being copied into it as well. `awaitPrompt` re-scans that buffer every
+  20 ms and nothing clears it mid-stream, so duplicating left it scanning
+  hundreds of kilobytes fifty times a second — a blank canvas and a wedged
+  page. `Device.ingest()` is the single place that decides.
 - Only `layer` events support solid/blink/breathe; every other RGB event is
   flash-only.
 - Commands go to USB one word at a time, because the device's line editor drops
@@ -371,7 +379,7 @@ original that is missing here.
 | Layer names on RGB events | By array position | By the number the board reports |
 | Storage backup / restore | Yes | Yes — see below |
 | Factory erase | One click | Behind typing `ERASE`, and names what it destroys |
-| Live sensor image | Fixed auto-contrast | Auto contrast is a switch; caption reports size, fps and range |
+| Live sensor image | Fixed auto-contrast; hidden if unsupported | Auto contrast is a switch; caption reports size, fps and range; when unsupported, says so and names the subcommands the board *does* have |
 | Settings as `.json` | — | Export, import, edit or paste |
 | Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |
 | 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |
