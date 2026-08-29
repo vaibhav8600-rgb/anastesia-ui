@@ -31,9 +31,9 @@ Seven tabs, matching the original's shape:
 | --- | --- |
 | Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
 | Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
-| Sensor(s) | Pointer feel, twist scroll, rotary encoder, sensor surface quality |
+| Sensor(s) | Surface quality with a trend strip, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, roll-quality map, live sensor image |
 | Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
-| Import/Export | Download and upload settings as .json, or paste them |
+| Import/Export | Settings as .json, plus full device backup, restore and erase |
 | Raw settings | Every runtime parameter, with its description, range and default |
 | Logs | Console with SEND/RECEIVE, millisecond timestamps, download, and a command prompt |
 
@@ -51,7 +51,10 @@ Seven tabs, matching the original's shape:
 | `src/Dial.jsx` | the radial knob |
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
-| `src/Board.jsx` | keymap profiles, import/export, surface quality |
+| `src/Board.jsx` | keymap profiles, import/export, storage backup, surface quality |
+| `src/Heatmap.jsx` | the live sensor image |
+| `src/RollMap.jsx` | tracking quality by roll direction and speed |
+| `src/Loading.jsx` | the one spinner, shared by every panel that waits |
 | `src/Logs.jsx` | the console tab |
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
@@ -126,27 +129,95 @@ and pauses when the page is hidden or the canvas is scrolled out of view.
 
 ## Choosing a control's shape
 
-A page of forty sliders reads as a spreadsheet, so `src/Control.jsx` picks by
-what the setting is like:
+A page of forty sliders reads as a spreadsheet and a page of forty dials reads
+as a cockpit, so `src/Control.jsx` picks by what the setting is like:
 
-- `hero: true` in the catalogue gets a **dial** — the few settings people
-  actually reach for (sensitivity, rotation, smoothing, scroll speed).
-- Everyday settings get a **slider**, where sweeping is the point.
+- `hero: true` gets a **dial** — the five settings you reach for to change how
+  the device feels (sensitivity, rotation, smoothing, scroll speed, brightness).
+  Deliberately a short list; a dial earns its space by being rare.
+- Everything else visible gets a **typed number box over a slider**, with its
+  two bounds printed underneath, so the range is readable without dragging.
 - Anything under Advanced gets a **number field** in a two-column grid, because
   there an exact value matters more than a sweep.
 - Anything with a 0-1 range is a **switch**, decided from the device's own range.
 
-Advanced controls additionally name a sub-group (`adv:`), so a run of twenty
-rows renders as a handful of short titled ones rather than one flat list.
+Dials are gathered into a row, but only when they are *adjacent* in the
+catalogue. Floating every dial to the top of its card put the scroll-speed dial
+above the switch that enables twist scrolling at all.
 
-Sensor surface quality reads continuously while the Sensor(s) tab is open, so
-you can roll the ball and watch it move; between reads the last value stays.
+Word units carry a leading space in the catalogue (`" frames"`, `" ms"`) and
+symbols do not (`"x"`, `"°"`). The scale under a slider uses that to print
+`1 … 16 frames` rather than `1 frames … 16 frames`.
+
+Each group is a card, and only what people actually reach for is on it — three
+or four rows. The rest sits behind **Advanced**, where every control names a
+sub-group (`adv:`), so a run of twenty rows renders as a handful of short titled
+ones rather than one flat list. Both halves of that matter: the original app
+shows three pointer settings and hides thirteen, and the wall of knobs is what
+made this tab hard to read.
+
+A key the catalogue has no entry for is still shown, built from the device's own
+`rtcfg list` under the owning section's `prefixes`. Two things follow that are
+easy to get wrong:
+
+- Their **id is the rtcfg key itself**, and they are built inside `KnobSection`,
+  so they are not in `allControls`. `seed()` therefore starts from the rtcfg
+  listing, and `save()` falls back to `rtcfg set <key>` for ids the catalogue
+  does not own. Skip either and they render as their slider minimum and drop
+  edits without saying so.
+- A **three-segment key names its own group in the middle**, so the twelve
+  `bst/<profile>/s0_mult`-style keys land in Snipe, Twist and Dragscroll blocks
+  without any of those names appearing in our source. Whatever profiles a
+  firmware defines are what you get.
+
+Sensor surface quality is the first card on the Sensor(s) tab. It reads
+continuously while that tab is open, so you can roll the ball and watch it
+move; between reads the last value stays on screen.
+
+### Roll quality
+
+`src/RollMap.jsx` bins SQUAL by **how the ball is moving** — direction around a
+polar chart, speed outward — one chart per sensor.
+
+It is deliberately *not* a map of the ball's surface, and the distinction is
+the whole design. Colouring a patch of the ball means knowing which patch is
+under the sensor, which needs rotation integrated from a known origin and
+wrapped at the ball's circumference. Neither is observable: the only motion we
+can see is the pointer the ball drives, and that has been through the
+firmware's sensitivity, its acceleration curve and then the OS's own pointer
+acceleration — nonlinear — while the circumference in pointer counts is
+unknown. Wrap at the wrong modulus and the same physical patch lands in a
+different cell every revolution: the map smears into noise *while still looking
+like a map*, which is worse than not drawing one.
+
+Direction and speed do survive that chain, and they answer the questions people
+actually have — does tracking fall off when I roll fast, is one direction worse
+than the others. Readings taken while the ball is still are dropped, since a
+resting value would drag every cell toward it.
+
+It reads the same `sensor surface` replies the gauge already asks for rather
+than polling a second time, and asks for a faster cadence only while it is
+collecting.
+
+Under each gauge is a **trend of the last 60 readings**. SQUAL is a single
+scalar — a count of trackable features — so it cannot make an image no matter
+what is done to it; what it can show is its own shape over time, and a dropout
+while you roll is exactly what one live number hides. The strip is scaled to
+its own window rather than to 0-max, because a good surface sits around 700±40
+and against a 1000 axis that is a flat line. That makes the vertical scale
+data-dependent, so the window's range is printed beside it; below a 2% spread
+it reads "steady" and draws flat rather than amplifying noise into a mountain.
 
 ## Layout and alignment
 
-The panel takes a straight 33% share of the stage (`minmax(360px, 33%)`). It
-was capped at 27rem, which read as 65/35 at 1280 but degraded to 77/23 by 1920
-and worse on anything wider; a share holds at 31-32% from 1280 through 2560.
+The panel takes a straight 40% share of the stage (`minmax(360px, 40%)`), which
+measures 59/41 at 1024 and 60/40 by 2560 — the small drift is the gap between
+the two, which belongs to neither.
+
+It was once capped at 27rem, which read as 65/35 at 1280 but degraded to 77/23
+by 1920 and worse on anything wider. A percentage holds its ratio at any width;
+a fixed cap cannot. The 360px floor keeps the panel usable at the 900px
+breakpoint, where 40% would be too narrow for a label and a field side by side.
 
 Two rules keep controls on a grid rather than merely near one:
 
@@ -174,6 +245,23 @@ carries the raw `board status` reply it was parsed from, and if
 `sensor surface` answers in a wording the parser does not recognise, the card
 prints the raw text instead of rendering an empty gauge.
 
+## Waiting is a normal state
+
+Every tab talks to the shell when it mounts, behind a 200 ms floor between
+commands, so "waiting" happens constantly rather than exceptionally. A panel
+that renders its headings over empty lists while it waits looks like a panel
+whose board reported nothing, which is why `src/Loading.jsx` exists and why
+Keymap, Acceleration, Effects, surface quality, the stream probe and the
+connect screen all use it instead of bare text or nothing at all.
+
+**Demo mode waits too, on purpose.** It used to answer instantly, which no
+device does, and the effect was that nothing ever rendered a loading state —
+so nothing exercised one, and a broken indicator could not have been noticed
+without hardware. Demo now takes `DEMO_LATENCY_MS` (450 ms, conservative
+against a real multi-command read) before answering. This is the same lesson as
+the sensor stream, where a demo path that skipped the real plumbing hid a
+missing method until it reached a device.
+
 ## Live vs demo
 
 `live` means "a device is attached", not "no command is in flight". Deriving it
@@ -189,17 +277,18 @@ version, rather than a plausible-looking number.
 
 The bar shows which endpoint is carrying the pointer (USB / Bluetooth /
 dongle), the firmware version and the battery, read from `board output` and
-`board status`. Output is polled every 5 s and status every 5 min, and both
-skip a turn whenever one of your own commands is queued, so a poll never makes
-you wait.
+`board status`. Output is polled every 3 s and status every 5 min, and both
+stand down whenever one of your own commands is queued or the sensor stream is
+running, so a poll never makes you wait and never lands inside a frame.
 
 ## Keeping it quick
 
 Two things dominated first-paint, and both are fixed:
 
 - Effects used to read every event up front — around twenty round trips behind
-  a 200 ms inter-command floor before the tab drew anything. It now reads only
-  the event list and fetches details on selection, caching as it goes.
+  a 200 ms inter-command floor before the tab drew anything. It now reads the
+  event list, the layer names and whether RGB is supported — three calls — and
+  fetches each event's detail on selection, caching as it goes.
 - Panels talk to the device when they mount, so a visited tab now stays mounted
   and is hidden rather than torn down. Returning to a tab is instant instead of
   repeating its round trips.
@@ -215,8 +304,8 @@ first read. So `device.js` runs the previous UI's handshake on connect:
 
 1. settle — 2000 ms on USB, 1500 ms on BLE;
 2. probe — send `__init` until the reply contains `command not found`, which is
-   how a live shell answers a command it does not have. Retries every 500 ms up
-   to 25 s, each probe capped at 3 s so a dead link fails fast;
+   how a live shell answers a command it does not have. Retries every 300 ms up
+   to 25 s, each probe capped at 2.5 s so a dead link fails fast;
 3. `shell echo off`, so replies are not polluted by the echoed command.
 
 Only then does `readAll()` run. A dropped BLE link is caught via
@@ -280,13 +369,54 @@ product `0x07`, 460800 baud) or BLE (service `c901c4e9-...`). Commands are lines
 like `rtcfg set p2sm/twist_thres 40`; responses end at the shell prompt
 (`endgame$`, `uart:~$`, `zmk$`, `zmk:~$`).
 
+The one exchange that is not request/response is the sensor image:
+`sensor stream --on` pushes frames until you stop it. Those arrive through
+`device.onRaw` rather than `device.send`, and `device.streaming` tells the
+background pollers to stand down while it runs — a `board output` reply landing
+in the middle of a frame corrupts it.
+
 Details worth keeping, all covered by `node src/protocol.js`:
 
 - `rtcfg list` prints `<key>  <value>  (default: <n>)` and keys may have three
   segments (`bst/<name>/s0_div`) — a parser anchored at end of line returns
   nothing at all.
+- **`rrl set` takes milliseconds, not hertz.** It is the axis sync window,
+  0–10, where 0 means no limit and 1 ms is 1000 Hz. Reading `rrl get` back as a
+  rate and writing it again sets a window a hundred times too long.
+- **`p2sm sma on|off` is separate from `p2sm sma window set N`.** Sizing the
+  smoothing filter while it is switched off changes nothing. `p2sm status`
+  reports `SMA smoothing: enabled|disabled` alongside `SMA window: N`.
+- **`bistable set N` changes the slot in use now; `bst/default` is only what the
+  board boots into.** Read the first with `bistable slot`. They are easy to
+  confuse and a control that reads one and writes the other looks broken.
+- Replies to `p2sm ...` contain the word **p2sm**, whose `2` is the first digit
+  in the string. Strip it before matching numbers or a 2.5x reading comes back
+  as 0.2x.
 - Curve segments are eight integers scaled by 100 in the order
   **start, end, cp1, cp2** — the end point comes before the control points.
+- `board backup` frames the partition as `BACKUP START <startHex> <sizeHex>`,
+  lines of `<offsetHex>:<dataHex>#<crc8>`, then `BACKUP END`. The checksum is
+  **CRC-8, polynomial 0x07, MSB-first**, no init or final XOR. Restore replays
+  the same lines back, one per `board restore` command.
+- `sensor stream --on` emits `F <id> <seqHex>`, then hex rows one byte per
+  pixel, then `END`. Lines split across chunk boundaries, so the reader has to
+  hold a partial line between them. **The `id` is the sensor**, and a trackball
+  has two: painting every frame onto one canvas makes them fight over it, so
+  there is a canvas per id, created when that id first appears.
+- **Not every firmware has the command** — v101.4.4 does not. It needs a driver
+  built with frame capture, and *which* driver depends on the sensor the board
+  carries: for a pmw3610 that is the `z4.1/feat/frame-grab` branch, a paw3395
+  is a different driver again, and some expose no frame capture at all. The
+  shell prompt must also be one of `zmk$`, `zmk:~$` or `uart:~$`. A board
+  without the subcommand answers with the *parent* command's help
+  (`sensor - Sensor Diagnostics`, then `Subcommands:`), never an error, so
+  "a reply arrived" is not "it worked". The panel therefore names no driver;
+  it prints the subcommands the board itself listed.
+- While the stream runs, its bytes must **bypass** the command buffer rather
+  than being copied into it as well. `awaitPrompt` re-scans that buffer every
+  20 ms and nothing clears it mid-stream, so duplicating left it scanning
+  hundreds of kilobytes fifty times a second — a blank canvas and a wedged
+  page. `Device.ingest()` is the single place that decides.
 - Only `layer` events support solid/blink/breathe; every other RGB event is
   flash-only.
 - Commands go to USB one word at a time, because the device's line editor drops
@@ -296,15 +426,66 @@ Details worth keeping, all covered by `node src/protocol.js`:
 Requires a Chromium-based browser for Web Serial / Web Bluetooth. Without
 either, the app still opens in demo mode.
 
-## Still not built
+The USB chooser filters on vendor `0x11`, which hides a board flashed with a
+driver branch that enumerates under another id. **Not listed? Show every serial
+port** on the connect screen drops the filter — the original calls the same
+thing "show only supported devices".
 
-The shell commands are documented above and the previous build is in git
-(`git show main:src/app.js`):
+## Original vs this app
 
-- storage-partition backup and restore over USB (`board backup`, `board restore`)
-- the live sensor surface heat-map stream (`sensor stream --on`)
-- per-encoder-ID settings (step, min/max step, wrap, feedback pattern)
-- per-keymap sensor scaling, the `bst/<name>/s0_mult` family — these are
-  editable under Expert, just without a dedicated screen
+`reference/marshmellow-ui.html` is the app this replaces, kept in the tree as
+the protocol reference. **Every shell command it sends, this app sends**, with
+the same spelling and the same argument units. There is no feature of the
+original that is missing here.
 
-Everything else the firmware reports through `rtcfg` is reachable under Expert.
+### Feature by feature
+
+| Capability | Original | Here |
+| --- | --- | --- |
+| Runtime parameters (`rtcfg`) | Curated screens only | Curated **plus** every key the board reports, and a searchable Raw tab |
+| Unknown or renamed keys | Vanish | Still shown, filled in from `rtcfg list` under the owning section |
+| Acceleration curves | Bezier editor | Same |
+| Keymap profiles, assignment, autoswitch | Yes | Same |
+| Per-OS scaling (`bst/…`) | 3 fixed cards: Snipe, Twist, Dragscroll | Grouped from the device's own listing, so *whatever* profiles a firmware defines appear |
+| Per-event RGB / vibration | Yes | Same, plus a colour swatch per Bluetooth profile |
+| Layer names on RGB events | By array position | By the number the board reports |
+| Storage backup / restore | Yes | Yes — see below |
+| Factory erase | One click | Behind typing `ERASE`, and names what it destroys |
+| Surface quality (SQUAL) | Live number and bar | Same, plus a 60-reading trend strip per sensor |
+| Roll-quality map | — | Quality binned by roll direction and speed, per sensor |
+| Live sensor image | One panel per sensor, 4 ramps, auto gain, blur; hidden if unsupported | Same, plus per-sensor seq/range/size/fps, Esc or Space to stop, and when unsupported it says so and names the subcommands the board *does* have |
+| Settings as `.json` | — | Export, import, edit or paste |
+| Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |
+| 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |
+| Demo mode without hardware | — | Every tab, including a synthetic sensor image |
+| Offline | Yes | Single self-contained HTML file |
+
+### Where we are deliberately stricter
+
+These are behaviour differences, not extra features, and each one is a bug in
+the original that we do not reproduce:
+
+- **The backup `.dat` image actually downloads.** The original builds the
+  anchor, appends it, and removes it again *without ever clicking it*, so only
+  the `.bak` is ever saved.
+- **The image is sized from the declared size and the furthest offset seen.**
+  The original allocates a fixed 32768 bytes and drops anything past it with no
+  error.
+- **A restore file is checksum-verified before a single byte reaches flash**,
+  and the write button does not appear until it passes. The original checks
+  only that each line *looks* like a line, then starts writing to flash.
+- **A stopped restore says the partition is half-written.** The original just
+  stops.
+- **`Unlock ZMK Studio` is detected in all three wordings.** The firmware says
+  "…first" for keymap writes but "…to allow backup" and "…to allow restoration"
+  for storage ones, so matching only the first reads a refusal as a normal
+  reply.
+- **Layer names are keyed by the reported number.** The original pushes them
+  into an array in encounter order, so a board that skips a layer number shifts
+  every later name onto the wrong layer.
+
+### Not built
+
+Nothing from the original. The one thing neither app has is per-encoder-ID
+behaviour screens (step, min/max step, wrap, feedback pattern); those keys are
+editable under Raw settings, just without a dedicated editor.

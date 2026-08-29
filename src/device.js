@@ -62,22 +62,52 @@ class Device {
     this.lastByteAt = 0;            // for quiet-based reply completion
     this.lastCmdAt = 0;
     this.listeners = new Set();
+    // The sensor pixel stream is the one exchange here that is not
+    // request/response, so it needs bytes as they land rather than a tidied
+    // reply. Background pollers stand down while `streaming` is set — a
+    // `board output` reply dropped into the middle of a frame corrupts it.
+    this.streaming = false;
+    this.rawListeners = new Set();
   }
 
   get connected() { return !!(this.port || this.shell); }
 
   onLog(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  onRaw(fn) { this.rawListeners.add(fn); return () => this.rawListeners.delete(fn); }
+  emitRaw(text) { for (const fn of this.rawListeners) fn(text); }
+
+  /**
+   * Every incoming byte from either transport arrives here.
+   *
+   * While the pixel stream runs those bytes belong to it alone. Appending them
+   * to the command buffer as well left awaitPrompt rescanning a string growing
+   * by tens of kilobytes a second, fifty times a second, and nothing ever
+   * cleared it — which is what a blank heat-map and a wedged page looked like.
+   */
+  ingest(text) {
+    this.lastByteAt = Date.now();
+    if (this.streaming) { this.emitRaw(text); return; }
+    this.buffer += text;
+    if (this.rawListeners.size) this.emitRaw(text);
+  }
   log(dir, text) { for (const fn of this.listeners) fn({ dir, text, at: Date.now() }); }
 
-  async connectUSB() {
+  /**
+   * `all` drops the vendor filter from the chooser. The filter hides anything
+   * that is not 0x11, which is right most of the time and wrong exactly when
+   * it matters: a board flashed with a different driver branch — the frame-grab
+   * pmw3610, say — can enumerate under another id and then never appears in
+   * the list at all. The original calls this "show only supported devices".
+   */
+  async connectUSB({ all = false } = {}) {
     // A previous failed attempt must not leave a transport behind: send()
     // would then write USB commands into a dead BLE characteristic, which is
     // why USB only worked again after a page refresh.
     await this.disconnect();
     this.closing = false;   // after disconnect, which sets it
-    const port = await navigator.serial.requestPort({
-      filters: [{ usbVendorId: USB.usbVendorId }],
-    });
+    const port = await navigator.serial.requestPort(
+      all ? {} : { filters: [{ usbVendorId: USB.usbVendorId }] },
+    );
     await port.open({ baudRate: USB.baudRate });
     this.port = port;
     this.kind = "usb";
@@ -124,7 +154,8 @@ class Device {
         this.log("recv", `Could not decode a notification: ${err.message}`);
         return;
       }
-      this.buffer += text;
+      this.ingest(text);
+      if (this.streaming) return;
       if (this.shellDumps === undefined) this.shellDumps = 0;
       if (this.shellDumps < 3) {
         this.shellDumps++;
@@ -177,10 +208,7 @@ class Device {
       for (;;) {
         const { value, done } = await this.reader.read();
         if (done) break;
-        if (value) {
-          this.buffer += decoder.decode(value, { stream: true });
-          this.lastByteAt = Date.now();
-        }
+        if (value) this.ingest(decoder.decode(value, { stream: true }));
       }
     } catch {
       /* reader cancelled on disconnect */
@@ -461,6 +489,37 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("device.js")) 
 
   // ANSI colour around a prompt must not hide it.
   await check("ansi prompt", (x) => { x.buffer = "ok\n\x1b[1;32muart:~$ \x1b[0m"; }, { text: "ok" });
+
+  // The raw tap. Both read paths call emitRaw on every chunk, so if these go
+  // missing the BLE notification handler throws on the first byte and the
+  // sensor stream cannot subscribe at all — neither of which the build catches.
+  console.assert(typeof d.onRaw === "function", "onRaw must exist");
+  console.assert(typeof d.emitRaw === "function", "emitRaw must exist");
+  console.assert(d.rawListeners instanceof Set, "rawListeners must exist");
+  console.assert(d.streaming === false, "streaming starts off");
+  const seen = [];
+  const untap = d.onRaw((t) => seen.push(t));
+  d.emitRaw("F 0 1A");
+  untap();
+  d.emitRaw("dropped");
+  console.assert(seen.length === 1 && seen[0] === "F 0 1A", `raw tap delivers then unsubscribes, got ${JSON.stringify(seen)}`);
+  console.assert(d.rawListeners.size === 0, "unsubscribing removes the listener");
+
+  // Streaming bytes must bypass the command buffer entirely. Letting them pile
+  // up there is what made awaitPrompt rescan a megabyte fifty times a second.
+  const heard = [];
+  const untap2 = d.onRaw((t) => heard.push(t));
+  d.buffer = "";
+  d.streaming = false;
+  d.ingest("reply\n");
+  console.assert(d.buffer === "reply\n", `normal bytes buffer, got ${JSON.stringify(d.buffer)}`);
+  d.streaming = true;
+  d.ingest("F 0 1\n00ff\nEND\n");
+  console.assert(d.buffer === "reply\n", `streaming bytes must not buffer, got ${JSON.stringify(d.buffer)}`);
+  console.assert(heard.length === 2, `both reach the raw tap, got ${heard.length}`);
+  d.streaming = false;
+  d.buffer = "";
+  untap2();
 
   console.log("device.js self-check OK");
 }

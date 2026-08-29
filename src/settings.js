@@ -7,14 +7,12 @@
 // ptr_after_scroll reaches 5000, not 1000).
 
 import { device } from "./device.js";
-import { parseRtcfg, parseRtcfgRanges, unsupported } from "./protocol.js";
+import {
+  parseRtcfg, parseRtcfgRanges, unsupported,
+  parseSensitivity, parseSma, parseSyncWindow,
+} from "./protocol.js";
 
 export { parseRtcfg, unsupported };
-
-const num = (text) => {
-  const m = String(text).match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-};
 
 /** Firmware's own wording, keyed by parameter. */
 export const RTCFG_HELP = {
@@ -69,10 +67,23 @@ export const RTCFG_HELP = {
   "usb/quar_n": "Size of persistent quarantine.",
 };
 
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** The bistable scaling slots: slot 0 is Windows/Linux, slot 1 is macOS. */
+const SCALE_FIELD = {
+  s0_mult: "Windows/Linux ×", s0_div: "Windows/Linux ÷",
+  s1_mult: "macOS ×", s1_div: "macOS ÷",
+};
+
 /** `p2sm/twist_dy_mag_mul` -> "Twist dy mag mul", for keys we have no label for. */
 export function autoLabel(key) {
+  const parts = key.split("/");
+  // bst/snipe/s0_div is a scaling slot, and "Snipe/s0 div" says nothing.
+  if (parts.length === 3 && parts[0] === "bst" && SCALE_FIELD[parts[2]]) {
+    return `${cap(parts[1])} ${SCALE_FIELD[parts[2]]}`;
+  }
   const tail = key.slice(key.indexOf("/") + 1).replace(/_/g, " ");
-  return tail.charAt(0).toUpperCase() + tail.slice(1);
+  return cap(tail);
 }
 
 const cfg = (key, label, o = {}) => ({
@@ -116,7 +127,7 @@ export const sensorSections = [
         id: "sens", label: "Sensitivity", kind: "range",
         min: 0.1, max: 10, step: 0.1, unit: "x", drives: "spin",
         hero: true,
-        hint: "Higher means the pointer travels further per turn of the ball.",
+        hint: "Pointer travel per turn of the ball.",
         read: (s) => s.sens,
         write: (v) => device.send(`p2sm sens pointer set ${Math.floor(v * 10)}`),
       },
@@ -124,7 +135,7 @@ export const sensorSections = [
         id: "plane", label: "Rotation", kind: "range",
         min: -180, max: 180, step: 1, unit: "°", drives: "tilt",
         hero: true,
-        hint: "Turn the whole tracking plane if the ball sits at an angle.",
+        hint: "Rotate the tracking plane if the ball sits at an angle.",
         read: (s) => s.plane,
         write: (v) => device.send(`plane set pointer ${Math.round(v)}`),
       },
@@ -132,22 +143,26 @@ export const sensorSections = [
         id: "sma", label: "Smoothing", kind: "range",
         min: 1, max: 16, step: 1, unit: " frames", drives: "smooth",
         hero: true,
-        hint: "Averages recent frames. Steadier aim, slightly more latency.",
+        hint: "Steadier aim, slightly more latency. 1 frame turns it off.",
         read: (s) => s.sma,
-        write: (v) => device.send(`p2sm sma window set ${Math.round(v)}`),
+        // The filter has a separate on/off switch on the device. Sizing it
+        // while it is switched off does nothing, so a window of 1 — which is
+        // no smoothing anyway — drives the switch rather than adding a second
+        // control that can disagree with this one.
+        write: async (v) => {
+          const n = Math.round(v);
+          await device.send(`p2sm sma window set ${n}`);
+          await device.send(`p2sm sma ${n > 1 ? "on" : "off"}`);
+        },
       },
-      {
-        id: "rrl", label: "Report rate cap", kind: "range",
-        min: 0, max: 1000, step: 10, unit: " Hz",
-        hint: "0 leaves the rate uncapped.",
-        read: (s) => s.rrl,
-        write: (v) => device.send(`rrl set ${Math.round(v)}`),
-      },
-      toggle("accel/dz_enable", "Dead zone", { drives: "deadzone" }),
-      cfg("accel/dz_thres", "Dead zone size", { drives: "deadzone" }),
+      toggle("p2sm/frame_sync", "Frame sync", { hint: "Eliminates jitter at the cost of polling rate." }),
+      // Everything below is real but rarely reached for. The original UI shows
+      // three pointer settings and hides the rest; a wall of knobs is the thing
+      // that made this tab hard to read.
+      toggle("accel/dz_enable", "Dead zone", { adv: "Dead zone", advanced: true, drives: "deadzone" }),
+      cfg("accel/dz_thres", "Dead zone size", { adv: "Dead zone", advanced: true, drives: "deadzone" }),
       cfg("accel/dz_cooldown", "Dead zone delay", { adv: "Dead zone", unit: " ms", advanced: true }),
       toggle("accel/dz_before", "Dead zone before acceleration", { adv: "Dead zone", advanced: true }),
-      toggle("p2sm/frame_sync", "Frame sync", { adv: "Stability", advanced: true }),
       cfg("p2sm/steady_thres", "Steady-state threshold", { adv: "Stability", advanced: true }),
       cfg("p2sm/steady_cd", "Steady-state cooldown", { adv: "Stability", unit: " ms", advanced: true }),
       cfg("rp/timeout_ms", "Axis sync window", { adv: "Axis handling", unit: " ms", advanced: true }),
@@ -173,6 +188,7 @@ export const sensorSections = [
         id: "twistSens", label: "Scroll speed", kind: "range",
         min: 0.1, max: 10, step: 0.1, unit: "x", drives: "twist",
         hero: true,
+        hint: "Scroll distance per twist of the ball.",
         read: (s) => s.twistSens,
         write: (v) => device.send(`p2sm sens twist set ${Math.floor(v * 10)}`),
       },
@@ -182,9 +198,9 @@ export const sensorSections = [
         read: (s) => s.twistReverse,
         write: () => device.send("p2sm twist reverse"),
       },
-      cfg("p2sm/twist_thres", "Twist threshold", { hero: true }),
-      cfg("p2sm/ema_alpha", "Scroll smoothing"),
-      toggle("p2sm/feedback_en", "Haptics", { drives: "haptic" }),
+      cfg("p2sm/ema_alpha", "Scroll smoothing", { adv: "Response", advanced: true }),
+      toggle("p2sm/feedback_en", "Haptics", { adv: "Haptics", advanced: true, drives: "haptic" }),
+      cfg("p2sm/twist_thres", "Twist threshold", { adv: "Detection", advanced: true }),
       cfg("p2sm/twist_act_ms", "Activation time", { adv: "Timing", unit: " ms", advanced: true }),
       cfg("p2sm/twist_deb", "Debounce", { adv: "Timing", unit: " ms", advanced: true }),
       cfg("p2sm/twist_ttl", "Time filter window", { adv: "Timing", unit: " ms", advanced: true }),
@@ -204,6 +220,36 @@ export const sensorSections = [
       cfg("p2sm/fb_thres", "Buzz every", { adv: "Haptics", advanced: true }),
       cfg("p2sm/fb_cooldown", "Buzz cooldown", { adv: "Haptics", unit: " ms", advanced: true }),
       cfg("p2sm/fb_max_cont", "Max continuous buzz", { adv: "Haptics", unit: " ms", advanced: true }),
+    ],
+  },
+  {
+    id: "polling",
+    label: "Bluetooth polling",
+    blurb: "How long the board waits to line the two axes up before reporting.",
+    optional: true,
+    controls: [
+      {
+        // `rrl set` takes MILLISECONDS. This was labelled "Report rate cap" in
+        // hertz with a 0-1000 range, so saving it wrote a sync window up to a
+        // hundred times longer than the firmware's own maximum.
+        id: "rrl", label: "Sync window", kind: "range",
+        min: 0, max: 10, step: 1, unit: " ms",
+        hint: "0 leaves polling unlimited. 1 ms is 1000 Hz, 10 ms is 100 Hz.",
+        read: (s) => s.rrl,
+        write: (v) => device.send(`rrl set ${Math.round(v)}`),
+      },
+    ],
+  },
+  {
+    id: "scaling",
+    label: "Advanced scaling",
+    blurb: "Applied before acceleration. Each profile scales differently per OS.",
+    prefixes: ["bst/"],
+    optional: true,
+    controls: [
+      cfg("bst/default", "Default profile", {
+        hint: "Which slot the board starts in: 0 for Windows/Linux, 1 for macOS.",
+      }),
     ],
   },
   {
@@ -255,7 +301,14 @@ export function extraControls(prefixes, rtcfg, covered) {
   return Object.keys(rtcfg)
     .filter((k) => prefixes.some((p) => k.startsWith(p)) && !covered.has(k))
     .sort()
-    .map((k) => cfg(k, autoLabel(k), { advanced: true, adv: "Other", hint: RTCFG_HELP[k] ?? k }));
+    .map((k) => {
+      // A three-segment key names its own group in the middle: the four
+      // bst/snipe/* slots become a "Snipe" block instead of four rows lost in
+      // a flat "Other" list.
+      const parts = k.split("/");
+      const adv = parts.length === 3 ? cap(parts[1]) : "Other";
+      return cfg(k, autoLabel(k), { advanced: true, adv, hint: RTCFG_HELP[k] ?? k });
+    });
 }
 
 export const allControls = [
@@ -278,12 +331,15 @@ export async function readAll() {
   const twistPct = status.match(/Twist scroll:[^\n]*?~?(\d+\.?\d*)\s*%/i);
   state.twistSens = twistPct
     ? Number(twistPct[1])
-    : (num(await device.send("p2sm sens twist get")) ?? 10) / 10;
+    : parseSensitivity(await device.send("p2sm sens twist get")) ?? 1;
 
-  const sma = status.match(/SMA window:\s*(\d+)/i);
-  state.sma = sma ? Number(sma[1]) : 1;
+  // A sized-but-switched-off filter is not smoothing anything, so report it as
+  // the 1 frame it behaves like rather than the window it happens to remember.
+  const sma = parseSma(status);
+  if (!sma.supported) state.missing.add("sma");
+  state.sma = sma.enabled ? sma.window : 1;
 
-  state.sens = (num(await device.send("p2sm sens pointer get")) ?? 10) / 10;
+  state.sens = parseSensitivity(await device.send("p2sm sens pointer get")) ?? 1;
 
   // Brightness above zero does not mean the lighting is switched on.
   state.argb = /state:\s*on/i.test(await device.send("argb state")) ? 1 : 0;
@@ -292,9 +348,9 @@ export async function readAll() {
   if (unsupported(plane)) state.missing.add("plane");
   else state.plane = Number(plane.match(/angle=(-?\d+)/)?.[1] ?? 0);
 
-  const rrl = await device.send("rrl get");
-  if (unsupported(rrl)) state.missing.add("rrl");
-  else state.rrl = num(rrl) ?? 0;
+  const rrl = parseSyncWindow(await device.send("rrl get"));
+  if (rrl === null) state.missing.add("rrl");
+  else state.rrl = rrl;
 
   // Hide controls whose keys this firmware does not carry.
   for (const c of allControls) {

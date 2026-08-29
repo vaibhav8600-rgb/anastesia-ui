@@ -127,7 +127,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
     grid-template-rows: minmax(0, 1fr);
     /* A share of the stage rather than a fixed cap: capping the panel at
        27rem made the split 77/23 on a 1920 screen and worse beyond that. */
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 33%);
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
     align-items: stretch;
   }
 }
@@ -233,16 +233,18 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 .ctl__label { font-weight: 500; font-size: 0.94rem; line-height: 1.3; }
 
-.ctl__value {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.9rem;
-  color: var(--accent);
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
 .ctl__hint { margin: 0; font-size: 0.8rem; color: var(--muted); }
+
+/* The two ends of the slider, printed under it. */
+.ctl__scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: -0.15rem;
+  font-size: 0.76rem;
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+  font-variant-numeric: tabular-nums;
+}
 
 .range {
   -webkit-appearance: none;
@@ -481,6 +483,36 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 .empty { margin: 0; color: var(--muted); font-size: 0.88rem; }
 
+/* ---------- loading ---------- */
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* The one round thing in a flat UI, because a spinner is a circle rather than
+   a rounded rectangle. */
+.loading__spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Still turning, so it still reads as "working", just not as a strobe. */
+@media (prefers-reduced-motion: reduce) {
+  .loading__spinner { animation-duration: 2.4s; }
+}
+
 .notice {
   display: flex;
   flex-wrap: wrap;
@@ -493,6 +525,12 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   color: var(--warn);
 }
 .notice p { margin: 0; }
+
+/* A verified backup is good news, and amber reads as a warning. */
+.notice--ok {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
+}
 
 .warn--inline { padding: 0.5rem 0.75rem; font-size: 0.85rem; }
 
@@ -853,8 +891,28 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 /* ---------- sections ---------- */
 
-.knobs { display: grid; gap: 1.1rem; }
-.knobs + .knobs { border-top: 1px solid var(--line); padding-top: 1.1rem; }
+/* Each group is a card, like the surface readout it now sits above. A hairline
+   between runs of knobs was not enough to tell where one group ended. */
+.knobs {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.15rem 1.25rem 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+/* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
+.knobs > .sec {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--text);
+}
+.knobs > .sec + .panel__blurb { margin-top: -1rem; }
+.knobs > .panel__blurb { margin-bottom: -0.35rem; }
 
 .raw__hint em {
   font-style: normal;
@@ -870,23 +928,24 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   .logrow__text { grid-column: 1 / -1; }
 }
 
-/* ---------- dials ---------- */
+/* ---------- dials ----------
+   Only for the settings people actually reach for. The rest are sliders and
+   fields; a page of dials is as unreadable as a page of sliders. */
 
 .dials {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  gap: 0.5rem;
-  padding: 0.9rem 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg);
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 0.5rem 0.4rem;
+  /* These sit inside a .knobs card now, so no frame of its own — a card within
+     a card read as a nesting level that is not really there. */
+  padding: 0.2rem 0;
 }
 
 .dial { display: grid; justify-items: center; gap: 0.3rem; }
 
 .dial__face {
   width: 100%;
-  max-width: 108px;
+  max-width: 96px;
   touch-action: none;
   cursor: ns-resize;
   /* Only the focus ring's shape — the gauge itself is drawn in SVG. */
@@ -934,6 +993,16 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 }
 .dial.is-disabled { opacity: 0.5; }
 
+/* A lone dial has no row-mates to line up against, and pinned to the left edge
+   with dead space beside it it reads as a stray. Centre it and let it take the
+   room it has: alone on the row, it is the card's focal control. */
+.dials:has(> .dial:only-child) {
+  grid-template-columns: minmax(96px, 128px);
+  justify-content: center;
+  padding: 0.45rem 0 0.15rem;
+}
+.dials:has(> .dial:only-child) .dial__face { max-width: 128px; }
+
 /* ---------- compact rows for the long tail ---------- */
 
 .grid2 { display: grid; gap: 0.1rem 1.6rem; }
@@ -967,6 +1036,113 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .grid2 .ctl--toggle { padding: 0.3rem 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
 .grid2 .ctl--toggle .ctl__hint { display: none; }
 .grid2 .ctl--toggle .ctl__label { font-weight: 400; font-size: 0.87rem; }
+
+/* ---------- roll quality rose ---------- */
+
+.rose { display: block; width: 100%; aspect-ratio: 1 / 1; max-height: 260px; }
+
+.rose__cell {
+  stroke: var(--bg-soft);
+  stroke-width: 0.6;
+  transition: fill 220ms ease;
+}
+.rose__cell.is-empty { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+.rose__cell--high { fill: #22e06a; }
+.rose__cell--mid { fill: var(--warn); }
+.rose__cell--low { fill: var(--danger); }
+
+.rose__tick {
+  fill: var(--muted);
+  font-size: 7px;
+  text-anchor: middle;
+}
+.rose__tick--left { text-anchor: start; }
+.rose__tick--right { text-anchor: end; }
+
+/* ---------- live sensor image ---------- */
+
+/* One cell per sensor. A trackball has two, and they only sit side by side
+   when the panel is genuinely wide enough for both. */
+.heat__grid { display: grid; gap: 0.75rem; }
+@container panel (min-width: 460px) {
+  .heat__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.heat__cell { display: grid; gap: 0.3rem; }
+
+/* Stacked by default: side by side, the stats squeeze "Sensor #0" onto two
+   lines in a half-width cell. They sit on one row once there is room. */
+.heat__head { display: grid; gap: 0.05rem; }
+
+@container panel (min-width: 720px) {
+  .heat__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+}
+
+.heat {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.heat__view { display: block; width: 100%; height: 100%; }
+
+.heat__idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.heat__meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.heat__live {
+  margin-left: 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--danger);
+  vertical-align: middle;
+}
+
+/* Each button carries its own ramp, so the choice is visible not verbal. */
+.heat__maps { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.heat__map {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  min-height: 0;
+  cursor: pointer;
+}
+.heat__map:hover { color: var(--text); }
+.heat__map.is-active { border-color: var(--accent); color: var(--text); }
+
+.heat__swatch {
+  display: block;
+  width: 72px;
+  height: 12px;
+  border-radius: 2px;
+}
 
 /* ---------- live surface quality ---------- */
 
@@ -1014,6 +1190,34 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .gauges__fill--high { background: #22e06a; }
 .gauges__fill--mid { background: var(--warn); }
 .gauges__fill--low { background: var(--danger); }
+
+/* The trend under each gauge. Stretched to fit, so the stroke must opt out of
+   scaling or it is drawn as a smear. */
+.spark {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: 0.4rem;
+}
+.spark polyline {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke: var(--muted);
+}
+.spark--high polyline { stroke: #22e06a; }
+.spark--mid polyline { stroke: var(--warn); }
+.spark--low polyline { stroke: var(--danger); }
+
+.spark__range {
+  display: block;
+  margin-top: 0.1rem;
+  text-align: right;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---------- buttons: one scale everywhere ----------
    Buttons and pills previously disagreed on height (44 vs 38) and on padding,

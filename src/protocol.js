@@ -240,6 +240,224 @@ export function parseSurface(text) {
   return out;
 }
 
+// ------------------------------------------------------------ p2sm readouts
+
+/**
+ * `p2sm sens pointer get` / `p2sm sens twist get` -> the value as a multiplier.
+ *
+ * The reply carries the word "p2sm", and its "2" is the first digit in the
+ * string — reading bare digits turns a 2.5x sensitivity into 0.2x. Strip the
+ * word first, exactly as the original app does.
+ */
+export function parseSensitivity(text) {
+  const m = String(text ?? "").replace(/p2sm/gi, "").match(/(\d+)/);
+  return m ? Number(m[1]) / 10 : null;
+}
+
+/**
+ * `p2sm status` -> the smoothing filter's state.
+ *
+ * Enabling is separate from sizing on the device: `p2sm sma on|off` flips the
+ * filter and `p2sm sma window set N` sizes it. Setting only the window on a
+ * board where the filter is off changes nothing at all.
+ */
+export function parseSma(status) {
+  const s = String(status ?? "");
+  return {
+    supported: /SMA smoothing:/i.test(s),
+    enabled: /SMA smoothing:\s*enabled/i.test(s),
+    window: Number(s.match(/SMA window:\s*(\d+)/i)?.[1] ?? 1),
+  };
+}
+
+/**
+ * `rrl get` -> the axis sync window in **milliseconds**, 0 meaning no limit.
+ *
+ * Anchored on the label rather than "first number in the reply". The units
+ * matter: `rrl set` takes ms, so treating the reply as a rate in Hz and
+ * writing it back sets a sync window hundreds of times too long.
+ */
+export function parseSyncWindow(text) {
+  const m = String(text ?? "").match(/Sync window:\s*(\d+)/i);
+  return m ? Number(m[1]) : null;
+}
+
+/** `bistable slot` -> the slot in use right now, or null if not reported. */
+export function parseBistableSlot(text) {
+  const m = String(text ?? "").match(/(?:current\s+)?slot:\s*(\d+)/i);
+  return m ? Number(m[1]) : null;
+}
+
+// ------------------------------------------------------------ layers
+
+/**
+ * `board layers` -> { 0: "Base", 1: "Nav" }.
+ *
+ * Keyed by the number the board reports, not by position. The original pushes
+ * names into an array in encounter order, so a board that skips a layer number
+ * shifts every name after it onto the wrong layer.
+ */
+export function parseLayers(text) {
+  const out = {};
+  const re = /^\s*(\d+)\s*:\s*(.+?)\s*$/gm;
+  for (let m; (m = re.exec(String(text ?? ""))) !== null; ) out[Number(m[1])] = m[2];
+  return out;
+}
+
+// ------------------------------------------------------------ storage backup
+
+/** CRC-8, polynomial 0x07, MSB-first, no init or final XOR. */
+export function crc8(bytes) {
+  let crc = 0;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let i = 0; i < 8; i++) crc = crc & 0x80 ? ((crc << 1) ^ 0x07) & 0xff : (crc << 1) & 0xff;
+  }
+  return crc;
+}
+
+const BACKUP_LINE = /^([0-9A-Fa-f]+):([0-9A-Fa-f]+)#([0-9A-Fa-f]{2})$/;
+const hexBytes = (hex) => {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+};
+const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, "0");
+
+/**
+ * `board backup`, or the text of a saved .bak, -> the storage partition.
+ *
+ * Wire format is `BACKUP START <startHex> <sizeHex>`, then lines of
+ * `<offsetHex>:<dataHex>#<crc8Hex>`, then `BACKUP END`. Every line's checksum
+ * is verified here, on the way in and again before any restore — the original
+ * only checks the shape of a file it is about to write to flash.
+ *
+ * The buffer is sized from the declared size and the largest offset seen. The
+ * original allocates a fixed 32768 and drops anything past it without a word.
+ */
+export function parseBackup(text) {
+  const errors = [];
+  const chunks = [];
+  const dataLines = [];
+  let started = false, ended = false, startLine = null, start = null, size = null;
+
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.includes("BACKUP START")) {
+      started = true;
+      startLine = line.slice(line.indexOf("BACKUP START"));
+      const m = startLine.match(/BACKUP START\s+([0-9A-Fa-f]+)\s+([0-9A-Fa-f]+)/);
+      if (m) { start = parseInt(m[1], 16); size = parseInt(m[2], 16); }
+      continue;
+    }
+    if (line.includes("BACKUP END")) { ended = true; break; }
+    const m = BACKUP_LINE.exec(line);
+    if (!m) continue;
+    const data = hexBytes(m[2]);
+    const want = parseInt(m[3], 16);
+    const got = crc8(data);
+    if (got !== want) {
+      errors.push(`Checksum mismatch at 0x${m[1].toUpperCase()}: line says #${hex2(want)}, data is #${hex2(got)}`);
+    }
+    chunks.push({ offset: parseInt(m[1], 16), data });
+    dataLines.push(line);
+  }
+
+  const reach = chunks.reduce((n, c) => Math.max(n, c.offset + c.data.length), 0);
+  const bytes = new Uint8Array(Math.max(size ?? 0, reach));
+  for (const c of chunks) bytes.set(c.data, c.offset);
+
+  if (!started) errors.unshift("No BACKUP START marker.");
+  else if (!ended) errors.unshift("No BACKUP END marker — the transfer was cut short.");
+  else if (!chunks.length) errors.unshift("The markers are there but carry no data.");
+
+  return {
+    ok: started && ended && chunks.length > 0 && errors.length === 0,
+    start, size, bytes, errors, startLine, dataLines,
+    lines: chunks.length,
+  };
+}
+
+/**
+ * A Zephyr shell prints the parent command's help when a subcommand is wrong:
+ *
+ *     sensor - Sensor Diagnostics
+ *     Subcommands:
+ *       surface   :Report surface quality
+ *       stream    :Stream sensor frames
+ *
+ * Pulling the names out turns "it refused" into "here is what it has", which
+ * is the difference between a dead end and a diagnosis.
+ */
+export function parseSubcommands(text) {
+  const s = String(text ?? "");
+  const at = s.search(/subcommands\s*:/i);
+  const body = at === -1 ? s : s.slice(at);
+  const out = [];
+  const re = /^[ \t]+([a-z0-9_][a-z0-9_-]*)\s*:/gim;
+  for (let m; (m = re.exec(body)) !== null; ) out.push(m[1]);
+  return [...new Set(out)];
+}
+
+// ------------------------------------------------------------ sensor stream
+
+const FRAME_HEAD = /(?:^|\s)F\s+(\d+)\s+([0-9A-Fa-f]+)$/;
+const FRAME_END = /(?:^|\s)END$/;
+const HEX_ROW = /^[0-9A-Fa-f]+$/;
+const noAnsi = (s) => s.replace(/\x1b\[[\d;]*[A-Za-z]/g, "");
+
+/**
+ * `sensor stream --on` emits one frame as:
+ *
+ *     F <id> <seqHex>
+ *     <row of hex, one byte per pixel>
+ *     ...
+ *     END
+ *
+ * Bytes arrive in arbitrary chunks that split lines anywhere, so the reader
+ * holds the partial line between pushes. A row of a different width to the
+ * first abandons the frame rather than rendering a skewed image.
+ */
+export function frameReader() {
+  let tail = "";
+  let cur = null;
+  return {
+    push(chunk) {
+      const frames = [];
+      tail += String(chunk ?? "").replace(/\r/g, "");
+      const lines = tail.split("\n");
+      tail = lines.pop() ?? "";
+      for (const raw of lines) {
+        const line = noAnsi(raw).trim();
+        if (!line) continue;
+        const head = FRAME_HEAD.exec(line);
+        if (head) { cur = { id: Number(head[1]), seq: parseInt(head[2], 16), rows: [] }; continue; }
+        if (!cur) continue;
+        if (FRAME_END.test(line)) {
+          const { id, seq, rows } = cur;
+          cur = null;
+          if (!rows.length) continue;
+          const width = rows[0].length;
+          const data = new Uint8Array(width * rows.length);
+          rows.forEach((r, y) => data.set(r, y * width));
+          frames.push({ id, seq, width, height: rows.length, data });
+          continue;
+        }
+        if (HEX_ROW.test(line) && line.length % 2 === 0) {
+          const row = hexBytes(line);
+          if (rowsMismatch(cur, row)) { cur = null; continue; }
+          cur.rows.push(row);
+        }
+      }
+      return frames;
+    },
+    reset() { tail = ""; cur = null; },
+  };
+}
+
+const rowsMismatch = (cur, row) => cur.rows.length > 0 && row.length !== cur.rows[0].length;
+
 // ------------------------------------------------------------ board status
 
 /** `board status` -> firmware + battery, falling back to `board version`. */
@@ -262,7 +480,12 @@ export function parseOutput(text) {
   return text?.match(/Output:\s*(USB|BLE|ESB)/i)?.[1]?.toUpperCase() ?? null;
 }
 
-export const studioLocked = (t) => /Unlock ZMK Studio first/i.test(String(t));
+/**
+ * The firmware says "Unlock ZMK Studio first" for keymap writes but "Unlock ZMK
+ * Studio to allow backup" / "...to allow restoration" for storage ones, so
+ * matching the first wording alone misses every backup refusal.
+ */
+export const studioLocked = (t) => /Unlock ZMK Studio/i.test(String(t));
 
 // ------------------------------------------------------------ self-check
 // node src/protocol.js
@@ -393,8 +616,100 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   eq(parseOutput("Output: usb"), "USB", "output normalised");
   eq(parseOutput("nothing"), null, "no output line");
 
+  // p2sm readouts. The "2" in "p2sm" is the trap: a bare digit match reads
+  // this reply as 0.2x rather than 2.5x.
+  eq(parseSensitivity("p2sm sens pointer: 25"), 2.5, "sensitivity ignores the p2sm in the reply");
+  eq(parseSensitivity("100"), 10, "bare value");
+  eq(parseSensitivity("nothing here"), null, "no digits, no guess");
+
+  const smaOn = parseSma("Twist scroll: enabled" + NL + "SMA smoothing: enabled" + NL + "SMA window: 4");
+  eq(smaOn, { supported: true, enabled: true, window: 4 }, "sma enabled + window");
+  eq(parseSma("SMA smoothing: disabled" + NL + "SMA window: 8").enabled, false, "sma disabled");
+  eq(parseSma("Twist scroll: enabled").supported, false, "firmware without sma");
+
+  // rrl is milliseconds, not hertz — the whole point of anchoring on the label.
+  eq(parseSyncWindow("Sync window: 4 msec"), 4, "sync window in ms");
+  eq(parseSyncWindow("Report rate limiter" + NL + "Sync window: 0"), 0, "0 means no limit");
+  eq(parseSyncWindow("rrl: command not found"), null, "unsupported reports nothing");
+
+  eq(parseBistableSlot("Current slot: 1"), 1, "bistable slot");
+  eq(parseBistableSlot("slot: 0 (Windows/Linux)"), 0, "short spelling");
+  eq(parseBistableSlot("bistable: command not found"), null, "no slot reported");
+
+  // layers: keyed by the reported number, so a gap cannot shift later names
+  eq(parseLayers("0: Base" + NL + "1: Nav" + NL + "3: Fn"), { 0: "Base", 1: "Nav", 3: "Fn" }, "layer names by number");
+  eq(parseLayers("board: command not found"), {}, "no layers reported");
+
+  // CRC-8/0x07 against known vectors
+  eq(crc8(new Uint8Array([0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39])), 0xF4, "crc8 of \"123456789\"");
+  eq(crc8(new Uint8Array([])), 0, "crc8 of nothing");
+
+  // backup round trip: build lines the way the board does, then read them back
+  const chunk = (off, arr) => {
+    const hex = [...arr].map((n) => n.toString(16).padStart(2, "0")).join("");
+    return `${off.toString(16)}:${hex}#${crc8(new Uint8Array(arr)).toString(16).padStart(2, "0")}`;
+  };
+  const good = [
+    "BACKUP START 0 8",
+    chunk(0, [0xDE, 0xAD, 0xBE, 0xEF]),
+    chunk(4, [1, 2, 3, 4]),
+    "BACKUP END",
+  ].join(NL);
+  const bk = parseBackup(good);
+  eq(bk.ok, true, "clean backup verifies");
+  eq(bk.lines, 2, "two data lines");
+  eq(bk.size, 8, "declared size read");
+  eq([...bk.bytes], [0xDE, 0xAD, 0xBE, 0xEF, 1, 2, 3, 4], "chunks land at their offsets");
+  eq(bk.dataLines.length, 2, "raw lines kept for restore");
+
+  // A single flipped checksum must fail the whole file, not pass quietly.
+  const bad = good.replace(/#[0-9a-f]{2}$/m, "#00");
+  const bkBad = parseBackup(bad);
+  eq(bkBad.ok, false, "bad checksum rejected");
+  console.assert(/Checksum mismatch/.test(bkBad.errors[0]), "mismatch is named");
+
+  eq(parseBackup("BACKUP START 0 4" + NL + chunk(0, [1, 2])).ok, false, "truncated transfer rejected");
+  eq(parseBackup("nothing here").ok, false, "not a backup at all");
+  // Past the original's fixed 32768 buffer, which drops these bytes silently.
+  eq(parseBackup(["BACKUP START 0 10000", chunk(0x8000, [7, 7]), "BACKUP END"].join(NL)).bytes.length,
+     0x10000, "buffer sized from the declared size, not capped at 32K");
+
+  // Zephyr help, exactly the shape a board answered a bad subcommand with.
+  const subHelp = [
+    "sensor - Sensor Diagnostics",
+    "Subcommands:",
+    "  surface   :Report surface quality",
+    "  selftest  :Run the sensor self test",
+  ].join(NL);
+  eq(parseSubcommands(subHelp), ["surface", "selftest"], "subcommand names from help");
+  console.assert(!parseSubcommands(subHelp).includes("stream"), "and stream is plainly absent");
+  eq(parseSubcommands("ok"), [], "a normal reply lists nothing");
+
+  // sensor stream: a whole frame, then the same bytes split mid-line
+  const frameText = ["F 0 1A", "00ff", "8040", "END"].join(NL) + NL;
+  const whole = frameReader().push(frameText);
+  eq(whole.length, 1, "one frame");
+  eq([whole[0].id, whole[0].seq, whole[0].width, whole[0].height], [0, 26, 2, 2], "frame header and shape");
+  eq([...whole[0].data], [0, 255, 128, 64], "pixels row by row");
+
+  // The wire splits wherever it likes; a reader that only handles whole lines
+  // drops every frame that straddles a chunk boundary.
+  const reader = frameReader();
+  let got = [];
+  for (const piece of ["F 0 1", "A" + NL + "00f", "f" + NL + "8040" + NL + "EN", "D" + NL]) {
+    got = got.concat(reader.push(piece));
+  }
+  eq(got.length, 1, "frame reassembled across chunk splits");
+  eq([...got[0].data], [0, 255, 128, 64], "same pixels after splitting");
+
+  // A ragged row is a corrupt frame, not a skewed picture.
+  eq(frameReader().push(["F 1 2", "00ff", "8040aa", "END"].join(NL) + NL).length, 0, "ragged frame dropped");
+  eq(frameReader().push("some log line" + NL).length, 0, "noise outside a frame is ignored");
+
   console.assert(unsupported("plane: command not found"), "unsupported detected");
   console.assert(studioLocked("Unlock ZMK Studio first"), "studio lock detected");
+  console.assert(studioLocked("Unlock ZMK Studio to allow backup"), "backup lock wording detected");
+  console.assert(studioLocked("Unlock ZMK Studio to allow restoration"), "restore lock wording detected");
 
   console.log("protocol.js self-check OK");
 }

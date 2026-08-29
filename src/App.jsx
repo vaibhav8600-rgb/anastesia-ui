@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { device, supported } from "./device.js";
 import {
   sensorSections, lightControls, LIGHT_PREFIXES, allControls, readAll,
@@ -10,7 +10,10 @@ import Curves from "./Curves.jsx";
 import Effects from "./Effects.jsx";
 import Logs from "./Logs.jsx";
 import { Keymap, ImportExport, Surface } from "./Board.jsx";
+import Heatmap from "./Heatmap.jsx";
+import RollMap from "./RollMap.jsx";
 import Status from "./Status.jsx";
+import Loading from "./Loading.jsx";
 
 // The seven tabs mirror the original's shape, so anyone coming from it knows
 // where to look.
@@ -44,14 +47,24 @@ const DEMO_RTCFG = {
   "argb/brt": 60, "argb/tick": 30,
   "argb/bw1": 25, "argb/bw2": 15, "argb/bw3": 10,
   "argb/bc1": 8, "argb/bc2": 5, "argb/bc3": 3,
+  "bst/default": 0,
+  "bst/snipe/s0_mult": 1, "bst/snipe/s0_div": 4,
+  "bst/snipe/s1_mult": 1, "bst/snipe/s1_div": 4,
+  "bst/twist/s0_mult": 1, "bst/twist/s0_div": 10,
+  "bst/twist/s1_mult": 1, "bst/twist/s1_div": 40,
+  "bst/dragscroll/s0_mult": 1, "bst/dragscroll/s0_div": 3,
+  "bst/dragscroll/s1_mult": 1, "bst/dragscroll/s1_div": 30,
   "ec11/do_comp": 1, "ec11/comp_half": 1, "ec11/debounce_ms": 3,
   "ec11/trigger_window": 40, "ec11/rec_depth": 4,
-  "keymap/autoswitch": 1, "bst/default": 0,
+  "keymap/autoswitch": 1,
 };
 
 // Ranges the demo pretends the firmware reported, so sliders behave as they
 // would on a real board.
 const DEMO_RANGES = Object.fromEntries(Object.entries(DEMO_RTCFG).map(([k, v]) => {
+  // Scaling multipliers sit at 1 by default, and the generic "0 or 1 means a
+  // switch" guess below would render them as toggles.
+  if (/^bst\/[a-z0-9_]+\/s[01]_(mult|div)$/.test(k)) return [k, { value: v, def: v, min: 1, max: 100 }];
   const known = {
     "p2sm/ema_alpha": [1, 50], "p2sm/ptr_after_scroll": [0, 5000],
     "p2sm/twist_dy_mag_mul": [1, 100], "p2sm/twist_dy_mag_div": [1, 100],
@@ -64,7 +77,7 @@ const DEMO_RANGES = Object.fromEntries(Object.entries(DEMO_RTCFG).map(([k, v]) =
 const DEMO_STATE = {
   rtcfg: DEMO_RTCFG,
   ranges: DEMO_RANGES,
-  sens: 3.2, plane: 0, sma: 4, rrl: 0,
+  sens: 3.2, plane: 0, sma: 4, rrl: 4,
   twist: 1, twistSens: 2.5, twistReverse: 0, argb: 1,
   // Hide the same controls a real board would, so demo does not show both
   // spellings of a renamed key side by side.
@@ -92,7 +105,11 @@ export default function App() {
 
   const seed = useCallback((s) => {
     setState(s);
-    const next = {};
+    // Every rtcfg key first. Controls filled in from the device's own listing
+    // are built inside KnobSection, so they never appear in allControls — and
+    // without a value here every one of them rendered as its slider minimum
+    // instead of what the board actually reports. Their id is the key itself.
+    const next = { ...(s.rtcfg ?? {}) };
     for (const c of allControls) {
       const v = c.read(s);
       if (v != null) next[c.id] = v;
@@ -105,7 +122,7 @@ export default function App() {
     setStatus("busy");
     setNote(kind === "usb" ? "Pick your device, then wait for its shell…" : "Scanning, then waiting for the shell…");
     try {
-      await (kind === "usb" ? device.connectUSB() : device.connectBLE());
+      await (kind === "ble" ? device.connectBLE() : device.connectUSB({ all: kind === "usb-all" }));
       setNote("Reading settings…");
       seed(await readAll());
       setStatus("ready");
@@ -143,9 +160,20 @@ export default function App() {
       const written = {};
       for (const id of dirty) {
         const spec = allControls.find((c) => c.id === id);
-        if (!spec) continue;
-        await spec.write(values[id]);
-        if (spec.key) written[spec.key] = Math.round(values[id]);
+        if (spec) {
+          await spec.write(values[id]);
+          if (spec.key) written[spec.key] = Math.round(values[id]);
+          continue;
+        }
+        // Not in the catalogue means it came from the device listing, where the
+        // id is the rtcfg key. This used to `continue`, so every edit to one of
+        // those was dropped without a word — it cleared from the dirty set and
+        // the panel reported "Saved".
+        if (id in state.rtcfg) {
+          const v = Math.round(values[id]);
+          await device.send(`rtcfg set ${id} ${v}`);
+          written[id] = v;
+        }
       }
       // Raw settings and the export both read state.rtcfg, so it has to follow
       // what we just wrote or they show stale numbers.
@@ -263,7 +291,7 @@ export default function App() {
             <Pane active={tab === "sensors"} visited={visited.has("sensors")}>
               <Surface live={live} onNote={setNote} active={tab === "sensors"} />
               {sensorSections
-                .filter((sec) => !sec.optional || sec.controls.some((c) => !state.missing.has(c.id)))
+                .filter((sec) => !sec.optional || hasAnything(sec, state))
                 .map((sec) => (
                   <KnobSection
                     key={sec.id}
@@ -274,6 +302,8 @@ export default function App() {
                     onChange={change}
                   />
                 ))}
+              <RollMap live={live} />
+              <Heatmap live={live} onNote={setNote} />
             </Pane>
 
             <Pane active={tab === "effects"} visited={visited.has("effects")}>
@@ -319,6 +349,34 @@ export default function App() {
  * Each control names the sub-group it belongs to, and they are gathered here
  * in first-seen order so the grouping stays predictable.
  */
+/**
+ * Does an optional section have anything to show? Its own controls count, and
+ * so do keys the firmware reports under its prefixes — the scaling section is
+ * almost entirely prefix-filled, so judging it on curated controls alone hid a
+ * dozen live settings.
+ */
+function hasAnything(sec, state) {
+  if (sec.controls.some((c) => !state.missing.has(c.id))) return true;
+  return (sec.prefixes ?? []).some((p) =>
+    Object.keys(state.rtcfg).some((k) => k.startsWith(p)));
+}
+
+/**
+ * Dials read best side by side, but they must not jump ahead of the rows they
+ * were declared after — the twist master switch belongs above the scroll-speed
+ * dial, not below it. So gather only *adjacent* dials into a row and leave
+ * everything else exactly where the catalogue put it.
+ */
+function runs(controls) {
+  const out = [];
+  for (const c of controls) {
+    const last = out[out.length - 1];
+    if (c.hero && last?.hero) last.items.push(c);
+    else out.push({ hero: !!c.hero, items: [c] });
+  }
+  return out;
+}
+
 function groupByAdv(controls) {
   const out = new Map();
   for (const c of controls) {
@@ -344,8 +402,7 @@ function KnobSection({ section, state, values, busy, onChange }) {
 
   if (!shown.length) return null;
 
-  const heroes = shown.filter((c) => c.hero && !c.advanced);
-  const main = shown.filter((c) => !c.hero && !c.advanced);
+  const main = shown.filter((c) => !c.advanced);
   const advanced = shown.filter((c) => c.advanced);
 
   const render = (c, compact) => (
@@ -363,8 +420,11 @@ function KnobSection({ section, state, values, busy, onChange }) {
     <section className="knobs">
       <h3 className="sec">{section.label}</h3>
       {section.blurb && <p className="panel__blurb">{section.blurb}</p>}
-      {heroes.length > 0 && <div className="dials">{heroes.map((c) => render(c, false))}</div>}
-      {main.map((c) => render(c, false))}
+      {runs(main).map((run, i) => (run.hero ? (
+        <div className="dials" key={i}>{run.items.map((c) => render(c, false))}</div>
+      ) : (
+        <Fragment key={i}>{run.items.map((c) => render(c, false))}</Fragment>
+      )))}
       {advanced.length > 0 && (
         <details className="sub">
           <summary>Advanced ({advanced.length})</summary>
@@ -401,6 +461,13 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
                 Connect over USB
               </button>
             )}
+            {/* The filtered chooser hides any board that does not enumerate as
+                0x11, which is exactly the case for some driver branches. */}
+            {supported.usb && (
+              <button className="btn btn--ghost" onClick={() => onConnect("usb-all")} disabled={status === "busy"}>
+                Not listed? Show every serial port
+              </button>
+            )}
             {supported.ble && (
               <button className="btn" onClick={() => onConnect("ble")} disabled={status === "busy"}>
                 Connect over Bluetooth
@@ -409,7 +476,12 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
           </div>
         )}
         <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
-        {note && <p className="toast toast--inline" role="status">{note}</p>}
+        {/* Connecting is the longest wait in the app — settle, probe, then a
+            full settings read — so it gets the spinner rather than a line of
+            text that could be mistaken for a finished result. */}
+        {status === "busy"
+          ? <Loading label={note ?? "Connecting…"} />
+          : note && <p className="toast toast--inline" role="status">{note}</p>}
 
         {/* A connection that fails is exactly when you need the log, and the
             Logs tab is behind a successful connect. So it lives here too. */}

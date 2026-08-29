@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
+import Loading from "./Loading.jsx";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const DEMO_LATENCY_MS = 450;
+
 import {
   unsupported, parseRtcfg, parseKeymap, parseAssignments, parseSurface,
-  studioLocked as locked,
+  parseBistableSlot, parseBackup, studioLocked as locked,
 } from "./protocol.js";
 
 export const OUTPUTS = [
@@ -19,6 +24,78 @@ export const OUTPUTS = [
  * Surface quality is out of whatever the sensor reports — 361 on one part,
  * 1000 on another — so the good/warn/bad bands differ per scale.
  */
+/** Readings kept per sensor. At one poll a second that is about a minute. */
+const SPARK_POINTS = 60;
+
+/**
+ * A plain polyline of the last readings — no library, no axes, no gridlines.
+ *
+ * The line always spans the full width and compresses as the window fills.
+ * Right-aligning a partial window instead was defensible — the time scale then
+ * never changes — but it draws a stub against the right edge for the first
+ * minute, which reads as a broken chart rather than a young one.
+ */
+function Spark({ values, max, band }) {
+  if (!values || values.length < 2 || !max) return null;
+  const W = 100;
+  const H = 20;
+  const PAD = 2;                       // so peaks are not clipped by the stroke
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo;
+
+  // Scaled to the window, not to 0-max. A good surface sits around 700±40, and
+  // against a 1000 axis that is a flat line that tells you nothing. Below a 2%
+  // spread there is no trend to show, only noise, so it is drawn flat rather
+  // than amplified into a mountain range.
+  const moving = span >= max * 0.02;
+  const step = W / (values.length - 1);
+  const y = (v) => (moving ? H - PAD - ((v - lo) / span) * (H - PAD * 2) : H / 2);
+  const points = values.map((v, i) => `${(i * step).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+
+  return (
+    <>
+      <svg
+        className={"spark spark--" + band}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Trend of the last ${values.length} readings, ${lo} to ${hi}`}
+      >
+        <polyline points={points} />
+      </svg>
+      {/* The vertical scale changes with the data, so it has to be printed or
+          the amplitude is unreadable. */}
+      <span className="spark__range">
+        {moving ? `${lo}–${hi}` : "steady"} over {values.length}
+      </span>
+    </>
+  );
+}
+
+/**
+ * Surface readings, shared. The roll map wants the same `sensor surface`
+ * replies the gauge already asks for, and polling twice for one command would
+ * just make both slower — the shell has a 200ms floor between commands.
+ *
+ * `wantFast` lets a consumer ask for a quicker cadence while it is collecting;
+ * one reading a second is fine to watch, but slow to fill a map with.
+ */
+const feed = new Set();
+let fastWanted = 0;
+
+export function onSurface(fn) {
+  feed.add(fn);
+  return () => feed.delete(fn);
+}
+export function wantFastSurface() {
+  fastWanted++;
+  return () => { fastWanted--; };
+}
+
+const SURFACE_MS = 1000;
+const SURFACE_FAST_MS = 300;
+
 export function qualityBand(quality, max) {
   const ratio = quality / max;
   const [warn, good] = max === 1000 ? [0.25, 0.5] : max === 361 ? [0.3, 0.6] : [0.34, 0.67];
@@ -30,6 +107,23 @@ export function Surface({ live, onNote, active = true }) {
   const [error, setError] = useState(null);
   const [raw, setRaw] = useState(null);
 
+  // A rolling window per sensor. SQUAL is one scalar, so it cannot make an
+  // image — but its shape over time is real, and a dropout while you roll the
+  // ball is exactly what a single live number hides.
+  const history = useRef(new Map());
+
+  /** Record then publish, so every path that reports a value also trends it. */
+  const publish = useCallback((list) => {
+    for (const s of list) {
+      const arr = history.current.get(s.sensor) ?? [];
+      arr.push(s.quality);
+      if (arr.length > SPARK_POINTS) arr.shift();
+      history.current.set(s.sensor, arr);
+    }
+    setSensors(list);
+    for (const fn of feed) fn(list);
+  }, []);
+
   // Reads continuously while the tab is open so you can watch the numbers move
   // as you roll the ball. Between reads the last value simply stays on screen.
   useEffect(() => {
@@ -37,7 +131,7 @@ export function Surface({ live, onNote, active = true }) {
     if (!live) {
       let t;
       const wobble = () => {
-        setSensors([
+        publish([
           { sensor: 0, quality: 690 + Math.round(Math.random() * 90), max: 1000 },
           { sensor: 1, quality: 180 + Math.round(Math.random() * 70), max: 1000 },
         ]);
@@ -51,7 +145,9 @@ export function Surface({ live, onNote, active = true }) {
     let timer;
     const tick = async () => {
       if (stop) return;
-      if (device.pending) { timer = setTimeout(tick, 200); return; }
+      // Yield to the pixel stream as well as to typed commands: a surface
+      // reply landing mid-frame corrupts the image.
+      if (device.pending || device.streaming) { timer = setTimeout(tick, 200); return; }
       try {
         const out = await device.send("sensor surface");
         if (stop) return;
@@ -60,21 +156,23 @@ export function Surface({ live, onNote, active = true }) {
         // Show what the board actually said rather than an empty card when the
         // wording is not one we recognise.
         setRaw(parsed.length ? null : out.trim());
-        setSensors(parsed);
+        publish(parsed);
         setError(null);
       } catch { /* a missed sample just leaves the last one showing */ }
-      if (!stop) timer = setTimeout(tick, 1000);
+      if (!stop) timer = setTimeout(tick, fastWanted > 0 ? SURFACE_FAST_MS : SURFACE_MS);
     };
     tick();
     return () => { stop = true; clearTimeout(timer); };
-  }, [live, active]);
+  }, [live, active, publish]);
 
   if (error) return <p className="empty">{error}</p>;
 
   return (
     <div className="surface">
       <h3 className="surface__title">Surface quality</h3>
-      <p className="surface__sub">Live sensor surface tracking quality</p>
+      <p className="surface__sub">
+        Live tracking quality, and its trend over the last {SPARK_POINTS} readings
+      </p>
       {sensors.length > 0 ? (
         <ul className="gauges">
           {sensors.map((s) => (
@@ -91,12 +189,19 @@ export function Surface({ live, onNote, active = true }) {
                 <span className="gauges__val">{s.max ? `${s.quality}/${s.max}` : s.quality}</span>
               </div>
               {s.max != null && (
-                <div className="gauges__track">
-                  <div
-                    className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
-                    style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                <>
+                  <div className="gauges__track">
+                    <div
+                      className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
+                      style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                    />
+                  </div>
+                  <Spark
+                    values={history.current.get(s.sensor)}
+                    max={s.max}
+                    band={qualityBand(s.quality, s.max)}
                   />
-                </div>
+                </>
               )}
             </li>
           ))}
@@ -104,7 +209,7 @@ export function Surface({ live, onNote, active = true }) {
       ) : raw ? (
         <pre className="surface__raw">{raw}</pre>
       ) : (
-        <p className="empty">Reading…</p>
+        <Loading label="Reading surface quality…" />
       )}
     </div>
   );
@@ -121,6 +226,11 @@ export function Keymap({ live, onNote }) {
 
   const load = useCallback(async () => {
     if (!live) {
+      // Demo answers instantly, which a device never does: a real read is a
+      // handshake plus commands behind a 200ms floor. Pretending otherwise
+      // meant demo never rendered a loading state, so nothing exercised one.
+      setBusy(true);
+      await sleep(DEMO_LATENCY_MS);
       setSlots([
         { id: 0, occupied: true, active: true, name: "default", bytes: 812 },
         { id: 1, occupied: true, active: false, name: "mac", bytes: 804 },
@@ -129,6 +239,7 @@ export function Keymap({ live, onNote }) {
       setAssign({ usb: "default", "wireless-1": "mac", "wireless-2": null });
       setAutoswitch(1);
       setBistable(0);
+      setBusy(false);
       return;
     }
     setBusy(true);
@@ -141,7 +252,10 @@ export function Keymap({ live, onNote }) {
       setAssign(parseAssignments(await device.send("keymap assign")));
       const cfg = parseRtcfg(await device.send("rtcfg list"));
       setAutoswitch(cfg["keymap/autoswitch"] ?? null);
-      setBistable("bst/default" in cfg ? cfg["bst/default"] : null);
+      // `bistable set` changes the slot in use right now; bst/default is only
+      // what the board boots into. Reading one and writing the other made this
+      // switch snap back to its old value on every refresh.
+      setBistable(parseBistableSlot(await device.send("bistable slot")));
     } catch (err) {
       onNote(err.message);
     } finally {
@@ -166,12 +280,14 @@ export function Keymap({ live, onNote }) {
     }
   };
 
-  if (!slots.length && !busy) {
+  if (!slots.length) {
     return (
       <>
         <p className="panel__blurb">Keymap profiles stored on the device.</p>
-        <p className="empty">No profile support reported.</p>
-        <button className="btn" onClick={load}>Refresh</button>
+        {busy
+          ? <Loading label="Reading profiles…" />
+          : <p className="empty">No profile support reported.</p>}
+        <button className="btn" onClick={load} disabled={busy}>Refresh</button>
       </>
     );
   }
@@ -281,6 +397,7 @@ export function Keymap({ live, onNote }) {
       {bistable !== null && (
         <>
           <h3 className="sec">Keyboard mode</h3>
+          <p className="ctl__hint">Active now. The slot the board starts in is under Sensor(s) → Advanced scaling.</p>
           <div className="row row--wrap">
             {["Windows / Linux", "macOS"].map((label, i) => (
               <button
@@ -420,10 +537,189 @@ export function ImportExport({ live, onNote, rtcfg, firmware }) {
         aria-label="Settings JSON"
       />
 
+      <StorageBackup live={live} onNote={onNote} />
+    </>
+  );
+}
+
+/** Trigger a real download. Appending without clicking saves nothing. */
+function saveFile(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const stamp = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * The whole storage partition, not just the runtime parameters: keymaps,
+ * profiles and effects included. Every line carries a CRC-8, and both
+ * directions verify them — a file that will not verify is never written to
+ * flash.
+ */
+function StorageBackup({ live, onNote }) {
+  const [busy, setBusy] = useState(null);      // 'backup' | 'restore' | 'erase'
+  const [progress, setProgress] = useState(0);
+  const [file, setFile] = useState(null);      // { name, text, check }
+  const [confirm, setConfirm] = useState("");
+  const cancelled = useRef(false);
+
+  const backup = async () => {
+    if (!live) { onNote("Demo mode — connect a device to back it up."); return; }
+    setBusy("backup");
+    try {
+      onNote("Reading the storage partition…");
+      // Tens of kilobytes of hex arrive a line at a time, far past a normal
+      // command's patience.
+      const out = await device.send("board backup", { timeout: 120000 });
+      if (locked(out)) { onNote("ZMK Studio is locked. Unlock it, then back up."); return; }
+      const b = parseBackup(out);
+      if (!b.ok) {
+        for (const e of b.errors.slice(0, 3)) onNote(e);
+        throw new Error(b.errors[0] ?? "The board did not return a usable backup.");
+      }
+      // The .bak is the restorable artefact; the .dat is the raw image, for
+      // anyone who wants to look inside it.
+      const between = out.slice(out.indexOf("BACKUP START"), out.indexOf("BACKUP END") + 10);
+      saveFile(`anastesia-backup-${stamp()}.bak`, new Blob([between], { type: "text/plain" }));
+      saveFile(`anastesia-backup-${stamp()}.dat`, new Blob([b.bytes], { type: "application/octet-stream" }));
+      onNote(`Backed up ${b.bytes.length} bytes in ${b.lines} chunks — every checksum verified.`);
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openBackup = async (f) => {
+    if (!f) return;
+    const text = await f.text();
+    const check = parseBackup(text);
+    setFile({ name: f.name, text, check });
+    onNote(check.ok
+      ? `${f.name}: ${check.lines} chunks, ${check.bytes.length} bytes, all checksums good.`
+      : `${f.name}: ${check.errors[0]}`);
+  };
+
+  const restore = async () => {
+    if (!file?.check.ok) return;
+    if (!live) { onNote(`Demo mode — would restore ${file.check.lines} chunks.`); return; }
+    setBusy("restore");
+    setProgress(0);
+    cancelled.current = false;
+    const { startLine, dataLines } = file.check;
+    try {
+      const first = await device.send(`board restore ${startLine}`);
+      if (locked(first)) { onNote("ZMK Studio is locked. Unlock it, then restore."); return; }
+      if (/invalid|not in progress/i.test(first)) throw new Error(`The board refused the header: ${first}`);
+
+      for (let i = 0; i < dataLines.length; i++) {
+        if (cancelled.current) throw new Error(`Stopped after ${i} of ${dataLines.length} chunks. The partition is half-written — restore again before using the device.`);
+        const res = await device.send(`board restore ${dataLines[i]}`);
+        if (locked(res)) throw new Error("ZMK Studio locked partway through. Unlock it and restore again.");
+        if (/invalid|mismatch|unsuccessful/i.test(res)) throw new Error(`Chunk ${i + 1} rejected: ${res}`);
+        if (!res.trim()) throw new Error(`Chunk ${i + 1}: the board said nothing back.`);
+        setProgress(Math.round(((i + 1) / dataLines.length) * 100));
+      }
+      await device.send("board restore BACKUP END");
+      setProgress(100);
+      onNote("Restored. The device reboots now.");
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const erase = async () => {
+    if (!live) { onNote("Demo mode — nothing was erased."); return; }
+    setBusy("erase");
+    try {
+      const out = await device.send("board erase", { timeout: 30000 });
+      if (locked(out)) { onNote("ZMK Studio is locked. Unlock it first."); return; }
+      onNote("Storage erased. The device reboots to defaults.");
+      setConfirm("");
+    } catch (err) {
+      onNote(err.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const check = file?.check;
+
+  return (
+    <>
+      <h3 className="sec">Full device backup</h3>
       <p className="ctl__hint">
-        This covers the runtime parameters. Keymap profiles and full
-        storage-partition backup over USB are not included.
+        The whole storage partition — keymaps, profiles and effects, not just the
+        parameters above. Needs USB and an unlocked ZMK Studio.
       </p>
+      <div className="row row--wrap">
+        <button className="btn" onClick={backup} disabled={!!busy}>
+          {busy === "backup" ? "Reading…" : "Download backup"}
+        </button>
+        <label className="btn btn--file">
+          Choose .bak file
+          <input
+            type="file"
+            accept=".bak,text/plain"
+            onChange={(e) => { openBackup(e.target.files?.[0]); e.target.value = ""; }}
+          />
+        </label>
+      </div>
+
+      {check && (
+        <div className={check.ok ? "notice notice--ok" : "notice"}>
+          <p>
+            <strong>{file.name}</strong>{" "}
+            {check.ok
+              ? `verified: ${check.lines} chunks, ${check.bytes.length} bytes.`
+              : check.errors[0]}
+          </p>
+          {check.ok && (
+            <button className="btn btn--danger" onClick={restore} disabled={!!busy}>
+              {busy === "restore" ? `Restoring ${progress}%` : "Write it to the device"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {busy === "restore" && (
+        <>
+          <div className="gauges__track">
+            <div className="gauges__fill gauges__fill--high" style={{ width: progress + "%" }} />
+          </div>
+          <button className="pill" onClick={() => { cancelled.current = true; }}>Stop</button>
+        </>
+      )}
+
+      <h3 className="sec">Erase everything</h3>
+      <p className="ctl__hint">
+        Wipes the storage partition and reboots to firmware defaults. Keymaps,
+        profiles and effects go with it. Back up first.
+      </p>
+      <div className="row row--wrap">
+        <input
+          className="search search--slim"
+          value={confirm}
+          placeholder="type ERASE"
+          aria-label="Type ERASE to confirm"
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+        <button
+          className="btn btn--danger"
+          disabled={confirm.trim().toUpperCase() !== "ERASE" || !!busy}
+          onClick={erase}
+        >
+          {busy === "erase" ? "Erasing…" : "Erase device"}
+        </button>
+      </div>
     </>
   );
 }
