@@ -1080,6 +1080,14 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
 }
 
+/* Consecutive cards were sitting flush — measured gap 0px. `.panel` carries a
+   1.1rem grid gap, but its only child is the tab's Pane wrapper, so the gap
+   never reached the cards inside it. Flush meant four tonal edges within a
+   couple of pixels: one card's dark bottom inner line and border, then the
+   next card's border and bright top highlight, with the drop shadow hidden
+   behind the card below. Spacing them lets each edge read as one edge. */
+:is(.knobs, .surface) + :is(.knobs, .surface) { margin-top: 1.15rem; }
+
 /* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
 .knobs > .sec {
   margin: 0;
@@ -2079,3 +2087,7 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   border-color: var(--line);
   background: var(--glass-bg-3);
 }
+
+/* Wrapping the three endpoint icons to hang one title on them must not move
+   them: the gap has to match .status's own, or the bar reflows. */
+.status__eps { display: inline-flex; align-items: center; gap: 0.55rem; }
