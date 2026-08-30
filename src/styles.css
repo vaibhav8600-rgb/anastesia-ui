@@ -21,6 +21,12 @@
   --text: #ece9fb;
   --muted: #c9c4e2;
   --accent: #b9a4ff;
+  /* Accent as text, lightened. One chip and one ticker used --accent directly,
+     and at 4.54:1 on tier 1 they were the only thing stopping the panel fill
+     dropping further — muted alone clears 4.7:1 down to 0.26. Lightening just
+     the text use frees the fill; the accent itself is unchanged everywhere it
+     is a border, a fill or a track. */
+  --accent-text: #cbbcff;
   --accent-ink: #1a1030;
   --warn: #ffb37a;
   --danger: #ff7d9c;
@@ -124,6 +130,7 @@
     --text: #241f3d;
     --muted: #4b4478;
     --accent: #6d4df0;
+    --accent-text: #4a2fc4;   /* darkened instead: light ground, same job */
     --accent-ink: #ffffff;
     --warn: #a4551d;
     --danger: #c0344f;
@@ -267,7 +274,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   color: var(--muted);
 }
 
-.chip--live { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.chip--live { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* ---------- stage ---------- */
 
@@ -338,7 +345,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 .ticker {
   font-variant-numeric: tabular-nums;
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 0;
   transition: opacity 180ms ease;
 }
@@ -1898,6 +1905,7 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   --text: #e8ebf7;
   --muted: #99a0bd;
   --accent: #7cd4ff;
+  --accent-text: #7cd4ff;   /* flat renders exactly as it did */
   --accent-ink: #06121b;
   --warn: #ffa06a;
   --danger: #ff6b8a;
