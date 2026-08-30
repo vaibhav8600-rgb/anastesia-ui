@@ -47,6 +47,16 @@
   --danger: #ff7d9c;
   --ok: #6ff0b0;
 
+  /* Every colour used as text gets a -text sibling, defined here rather than
+     discovered later: --accent-text existed only because one chip pinned the
+     panel fill. Measured on tier 1 at the brightest ground it covers, --danger
+     is 4.00:1 as text and fails; --warn and --ok pass at 5.54 and 6.82 and
+     alias straight through, so reaching for -text stays the reflex either way.
+     --danger itself is unchanged as a fill and a border. */
+  --danger-text: #ffa3b9;
+  --warn-text: var(--warn);
+  --ok-text: var(--ok);
+
   /* --- glass, in three elevation tiers ---------------------------------
      Stacking identical glass on identical glass turns to mud, so a tier is
      distinguished by how much of the ground it lets through, how hard its
@@ -151,6 +161,10 @@
     --warn: #a4551d;
     --danger: #c0344f;
     --ok: #1d7a4c;
+    /* Dark ink on a pale ground already: lightening these would be backwards. */
+    --warn-text: var(--warn);
+    --danger-text: var(--danger);
+    --ok-text: var(--ok);
 
     --glass-bg-1: rgba(255, 255, 255, 0.42);
     --glass-scrim-1: rgba(255, 255, 255, 0.22);
@@ -620,7 +634,7 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   padding: 0.75rem 1rem;
   border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
   border-radius: var(--radius);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 /* ---------- misc ---------- */
@@ -742,14 +756,14 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--warn) 10%, transparent);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 .notice p { margin: 0; }
 
 /* A verified backup is good news, and amber reads as a warning. */
 .notice--ok {
   border-color: color-mix(in srgb, var(--ok) 45%, transparent);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .warn--inline { padding: 0.5rem 0.75rem; font-size: var(--fs-body); }
@@ -781,9 +795,9 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 .pill:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 .pill.is-active, .pill[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .pill:disabled { opacity: 0.45; cursor: not-allowed; }
-.pill--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+.pill--danger:hover:not(:disabled) { color: var(--danger-text); border-color: var(--danger); }
 
-.btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.btn--danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
 .btn--danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 
 .ctl--inline { grid-template-columns: 1fr auto; align-items: center; }
@@ -906,7 +920,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 }
 
 .status__ep { display: inline-flex; color: color-mix(in srgb, var(--muted) 55%, transparent); }
-.status__ep.is-on { color: var(--ok); }
+.status__ep.is-on { color: var(--ok-text); }
 
 .status__ver, .status__link {
   font-size: var(--fs-body);
@@ -980,7 +994,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .logline__text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Commands you sent read green; the device's replies stay quiet. */
-.logline--send .logline__arrow, .logline--send .logline__text { color: var(--ok); }
+.logline--send .logline__arrow, .logline--send .logline__text { color: var(--ok-text); }
 .logline--recv .logline__text { color: var(--muted); }
 
 .console__foot { padding: 0.5rem var(--pad) 0.5rem; }
@@ -1293,7 +1307,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   transition: fill 220ms ease;
 }
 .rose__cell.is-empty { fill: color-mix(in srgb, var(--text) 7%, transparent); }
-.rose__cell--high { fill: #22e06a; }
+.rose__cell--high { fill: var(--ok); }
 .rose__cell--mid { fill: var(--warn); }
 .rose__cell--low { fill: var(--danger); }
 
@@ -1360,9 +1374,9 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .heat__live {
   margin-left: 0.5rem;
   font-size: var(--fs-micro);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--danger);
+  font-weight: var(--fw-micro);
+  letter-spacing: var(--ls-micro);
+  color: var(--danger-text);
   vertical-align: middle;
 }
 
@@ -1418,9 +1432,41 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .gauges__head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+/* The verdict in words. It sits on the micro step as a bordered tag, not as
+   coloured body text: beside a full-width bright bar a tinted word reads as
+   decoration, and the bar goes on carrying the meaning by itself. */
+.gauges__band {
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--pill);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-micro);
+  border: 1px solid var(--line);
+  background: var(--glass);
+}
+.gauges__band--high { color: var(--ok-text); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.gauges__band--mid { color: var(--warn-text); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.gauges__band--low { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+/* Pushed right, so the name and its verdict stay together on the left. */
+.gauges__val { margin-left: auto; text-align: right; }
+
+/* The reading that decides the verdict, printed where the verdict is read
+   rather than hidden in a tooltip nobody hovers. */
+.gauges__rule {
+  display: block;
+  font-style: normal;
+  /* Not monospace: it inherits the value's face otherwise and reads as a second
+     reading rather than as the rule the reading is judged against. */
+  font-family: inherit;
+  font-size: var(--fs-body);
+  color: var(--muted-dim);
 }
 .gauges__name { font-weight: var(--fw-label); font-size: var(--fs-label); }
 .gauges__val {
@@ -1443,7 +1489,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   transition: width 220ms ease, background-color 220ms ease;
 }
 /* Bright, saturated green when tracking is good — the reading you want to see. */
-.gauges__fill--high { background: #22e06a; }
+.gauges__fill--high { background: var(--ok); }
 .gauges__fill--mid { background: var(--warn); }
 .gauges__fill--low { background: var(--danger); }
 
@@ -1460,11 +1506,11 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   stroke-width: 1.5;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-  stroke: var(--muted);
+  /* Trend and verdict are different questions. This line used to repeat the
+     bar's band colour, which is a second copy of one cue rather than a second
+     cue. It shows shape now, on the UI accent. */
+  stroke: var(--accent);
 }
-.spark--high polyline { stroke: #22e06a; }
-.spark--mid polyline { stroke: var(--warn); }
-.spark--low polyline { stroke: var(--danger); }
 
 .spark__range {
   display: block;
@@ -1538,11 +1584,11 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .btn--ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--muted); }
 .btn--ghost:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 
-.btn--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.btn--danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .btn--danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 /* Rows of actions get consistent, slightly roomier spacing. */
@@ -1924,6 +1970,10 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   --warn: #ffa06a;
   --danger: #ff6b8a;
   --ok: #63e6a0;
+  /* One solid fill behind all of it; each clears on its own. */
+  --warn-text: var(--warn);
+  --danger-text: var(--danger);
+  --ok-text: var(--ok);
 
   --glass: #141828;
   --glass-view: #141828;
@@ -1989,6 +2039,10 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --warn: #a4551d;
     --danger: #c0344f;
     --ok: #1d7a4c;
+    /* Dark ink on a pale ground already: lightening these would be backwards. */
+    --warn-text: var(--warn);
+    --danger-text: var(--danger);
+    --ok-text: var(--ok);
 
     --glass: #ffffff;
     --glass-view: #ffffff;
