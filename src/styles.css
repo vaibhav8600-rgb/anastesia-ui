@@ -39,7 +39,7 @@
   --glass-saturate: 1.6;
 
   --glass-blur-1: 24px;
-  --glass-bg-1: rgba(20, 15, 42, 0.45);
+  --glass-bg-1: rgba(20, 15, 42, 0.41);
   /* The model panel is the same tier but carries a fraction of the fill:
      nothing on it owes 4.5:1 to the panel itself, so hiding the wash behind it
      bought nothing. Its two labels get their own backing instead. */
@@ -48,6 +48,14 @@
   --glass-highlight-1: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
   --glass-border-1: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.16) 38%, rgba(255, 255, 255, 0.05));
   --glass-shadow-1: 0 18px 40px -18px rgba(4, 2, 14, 0.7), 0 2px 6px -2px rgba(4, 2, 14, 0.55);
+
+  /* The viewport buys its edge from the edge, not from fill. Its job is to
+     show the scene, so its fill stays at 0.13 and cannot separate it from the
+     ground the way tier 1's 0.41 does. A dark ring outside a bright bevel is
+     how a real pane reads against a lit background, and it costs no opacity. */
+  --glass-border-view: linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.30) 42%, rgba(255, 255, 255, 0.12));
+  --glass-highlight-view: inset 0 1px 0 rgba(255, 255, 255, 0.30), inset 0 -1px 0 rgba(0, 0, 0, 0.30);
+  --glass-shadow-view: 0 0 0 1px rgba(8, 6, 22, 0.32), 0 18px 40px -18px rgba(4, 2, 14, 0.7), 0 2px 6px -2px rgba(4, 2, 14, 0.55);
 
   --glass-blur-2: none;
   --glass-bg-2: rgba(44, 35, 78, 0.20);
@@ -126,6 +134,9 @@
     --glass-highlight-1: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(120, 110, 165, 0.12);
     --glass-border-1: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.7) 40%, rgba(120, 110, 165, 0.18));
     --glass-shadow-1: 0 18px 40px -18px rgba(120, 110, 165, 0.4), 0 2px 6px -2px rgba(120, 110, 165, 0.3);
+    --glass-border-view: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.85) 42%, rgba(120, 110, 165, 0.32));
+    --glass-highlight-view: inset 0 1px 0 rgba(255, 255, 255, 1), inset 0 -1px 0 rgba(120, 110, 165, 0.18);
+    --glass-shadow-view: 0 0 0 1px rgba(120, 110, 165, 0.22), 0 18px 40px -18px rgba(120, 110, 165, 0.4), 0 2px 6px -2px rgba(120, 110, 165, 0.3);
 
     --glass-bg-2: rgba(255, 255, 255, 0.58);
     --glass-scrim-2: rgba(255, 255, 255, 0.2);
@@ -172,25 +183,28 @@ body {
   margin: 0;
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
-    /* A ground worth looking through.
-       The panels were already transmitting the wash faithfully — measured, 88%
-       of its large-scale structure survives into them. What was missing was
-       structure worth transmitting: the old field was one violet at low
-       luminance, so a translucent panel over it had nothing to show but more
-       violet. This is lighter and split into distinct warm and cool regions,
-       so a panel edge crosses a real hue boundary and the bloom is legible
-       through the pane. That, not opacity, is what reads as glass. */
-    radial-gradient(1080px 880px at 7% 66%, rgba(255, 148, 166, 0.30), transparent 62%),
-    radial-gradient(760px 600px at 1% 15%, rgba(255, 202, 216, 0.26), transparent 62%),
-    radial-gradient(1420px 1120px at 97% 34%, rgba(138, 178, 255, 0.42), transparent 66%),
-    radial-gradient(940px 760px at 71% 93%, rgba(164, 150, 255, 0.28), transparent 62%),
-    radial-gradient(880px 700px at 41% 3%, rgba(206, 206, 255, 0.24), transparent 62%),
-    linear-gradient(155deg, #787fb2 0%, #565c8a 50%, #3f4569 100%);
+    /* A dark base with a bright core, rather than a bright base throughout.
+       The old field floored at luma 77 because its base gradient was light
+       (#3f4569 alone is 70), not because the blooms covered too much. So the
+       base carries the darkness now — #1b1836 floors at 27 on its own — and
+       the blooms are free to be strong and saturated over it. Range 27..114
+       instead of 77..130: the same lit core, but with somewhere dark to fall.
+
+       Darkening uniformly would have been the wrong move. Panel separation is
+       alpha x (ground - fill) and the fills are darker than the ground, so a
+       dimmer ground shrinks every edge. A vignette measured exactly that way:
+       floor 23 but the settings edge fell 2.09:1 to 1.52:1. Wide range, lit
+       core, dark corners is the only shape that serves both. */
+    radial-gradient(1120px 940px at 29% 28%, rgba(176, 112, 255, 0.70), transparent 66%),
+    radial-gradient(1080px 900px at 81% 23%, rgba(96, 152, 255, 0.66), transparent 68%),
+    radial-gradient(900px 760px at 13% 87%, rgba(255, 108, 142, 0.38), transparent 62%),
+    radial-gradient(840px 700px at 66% 95%, rgba(255, 150, 196, 0.24), transparent 60%),
+    linear-gradient(155deg, #4a3f7a 0%, #2e2a55 52%, #1b1836 100%);
   /* Grain tiles; every gradient below it covers once. Without this the wash
      bands visibly across a wide panel. */
-  background-size: 140px 140px, auto, auto, auto, auto, auto, auto;
-  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-blend-mode: overlay, normal, normal, normal, normal, normal, normal;
+  background-size: 140px 140px, auto, auto, auto, auto, auto;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: overlay, normal, normal, normal, normal, normal;
   background-attachment: fixed;
   color: var(--text);
   font-size: clamp(0.95rem, 0.9rem + 0.2vw, 1.05rem);
@@ -289,10 +303,10 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   background:
     linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
     linear-gradient(var(--glass-bg-view), var(--glass-bg-view)) padding-box,
-    var(--glass-border-1) border-box;
+    var(--glass-border-view) border-box;
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
+  box-shadow: var(--glass-shadow-view), var(--glass-highlight-view);
   overflow: hidden;
 }
 
@@ -1917,6 +1931,9 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   --glass-shadow-1: none;
   --glass-shadow-2: none;
   --glass-shadow-3: none;
+  --glass-border-view: linear-gradient(var(--line), var(--line));
+  --glass-highlight-view: none;
+  --glass-shadow-view: none;
   --glass-sheen: none;
   --nm-up: none;
   --nm-up-sm: none;
