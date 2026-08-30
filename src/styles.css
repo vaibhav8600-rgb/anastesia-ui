@@ -1645,9 +1645,9 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .viewport__tools {
   position: absolute;
-  top: 0.55rem;
-  left: 0.55rem;
-  right: 0.55rem;
+  top: 0.5rem;
+  left: 0.5rem;
+  right: 0.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
@@ -1655,25 +1655,36 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 }
 .viewport__tools > * { pointer-events: auto; }
 
+/* The one thing floating over the viewport that was not in the tier system.
+   It had a bespoke fill mixed from --bg, a --line border and a neumorphic
+   shadow, so it sat at no elevation in particular next to the caption and the
+   pointer pad it shares the frame with. Tier 3, like both of them. */
 .vbtn {
   height: 30px;
   padding: 0 0.5rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--pill);
-  background: color-mix(in srgb, var(--bg) 62%, transparent);
-  box-shadow: var(--nm-up-sm), var(--sheen);
-  color: color-mix(in srgb, var(--text) 90%, transparent);
+  background: var(--glass-bg-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
+  /* Not --muted, which every other button row uses. This one can sit over the
+     model's near-white shell, and muted measures 4.22:1 against tier 3 with
+     that behind it. Full text is 5.96:1 on the same backdrop. */
+  color: var(--text);
   font-size: var(--fs-label);
   font-weight: var(--fw-label);
   cursor: pointer;
   transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
 }
-.vbtn:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 34%, transparent); }
+.vbtn:hover {
+  background: color-mix(in srgb, var(--text) 10%, var(--glass-bg-3));
+  border-color: color-mix(in srgb, #fff 24%, transparent);
+}
 .vbtn.is-on {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: color-mix(in srgb, #fff 30%, transparent);
-  box-shadow: var(--glow), var(--sheen);
+  /* Lit, but at the same height as its neighbours. */
+  box-shadow: var(--glass-shadow-3), var(--glow);
 }
 
 @media (pointer: coarse) { .vbtn { height: 36px; padding: 0 0.75rem; } }
@@ -1681,7 +1692,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 .palette {
   position: absolute;
   top: 3rem;
-  right: 0.55rem;
+  right: 0.5rem;
   width: 12.5rem;
   max-height: calc(100% - 4rem);
   overflow-y: auto;
@@ -1729,9 +1740,9 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 @media (max-width: 620px) {
   /* The toolbar overlays the viewport, so keep it out of the model's way. */
-  .viewport__tools { top: 0.4rem; left: 0.4rem; right: 0.4rem; gap: 0.25rem; }
-  .vbtn { height: 30px; padding: 0 0.5rem; font-size: var(--fs-body); }
-  .palette { top: 2.6rem; width: 11rem; }
+  .viewport__tools { top: 0.5rem; left: 0.5rem; right: 0.5rem; gap: 0.25rem; }
+  .vbtn { height: 30px; padding: 0 0.5rem; }
+  .palette { top: 2.5rem; width: 11rem; }
 }
 
 /* ---------- grouped actions ----------
@@ -1838,8 +1849,8 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 .pad {
   position: absolute;
-  left: 0.55rem;
-  bottom: 0.55rem;
+  left: 0.5rem;
+  bottom: 0.5rem;
   display: grid;
   gap: 0.25rem;
   padding: 0.5rem 0.75rem 0.5rem;
