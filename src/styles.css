@@ -19,7 +19,7 @@
 :root {
   --bg: #17142b;
   --text: #ece9fb;
-  --muted: #b9b3d6;
+  --muted: #c9c4e2;
   --accent: #b9a4ff;
   --accent-ink: #1a1030;
   --warn: #ffb37a;
@@ -40,21 +40,21 @@
 
   --glass-blur-1: 24px;
   --glass-bg-1: rgba(20, 15, 42, 0.30);
-  --glass-scrim-1: rgba(14, 10, 30, 0.28);
+  --glass-scrim-1: rgba(14, 10, 30, 0.14);
   --glass-highlight-1: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
   --glass-border-1: linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.16) 38%, rgba(255, 255, 255, 0.05));
   --glass-shadow-1: 0 18px 40px -18px rgba(4, 2, 14, 0.7), 0 2px 6px -2px rgba(4, 2, 14, 0.55);
 
   --glass-blur-2: none;
-  --glass-bg-2: rgba(44, 35, 78, 0.42);
-  --glass-scrim-2: rgba(16, 11, 34, 0.34);
-  --glass-highlight-2: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, 0.18);
-  --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.11) 40%, rgba(255, 255, 255, 0.04));
-  --glass-shadow-2: 0 10px 22px -12px rgba(4, 2, 14, 0.55), 0 1px 3px -1px rgba(4, 2, 14, 0.5);
+  --glass-bg-2: rgba(44, 35, 78, 0.14);
+  --glass-scrim-2: transparent;
+  --glass-highlight-2: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
+  --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.15) 40%, rgba(255, 255, 255, 0.05));
+  --glass-shadow-2: 0 14px 30px -14px rgba(4, 2, 14, 0.62), 0 2px 5px -2px rgba(4, 2, 14, 0.62);
 
   --glass-blur-3: 12px;
   --glass-bg-3: rgba(30, 23, 58, 0.62);
-  --glass-scrim-3: rgba(16, 11, 34, 0.34);
+  --glass-scrim-3: transparent;
   --glass-highlight-3: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.26);
   --glass-border-3: linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.18) 38%, rgba(255, 255, 255, 0.06));
   --glass-shadow-3: 0 26px 56px -20px rgba(3, 1, 12, 0.82), 0 3px 10px -3px rgba(3, 1, 12, 0.7);
@@ -67,12 +67,6 @@
   --blur: var(--glass-blur-1);
   --glass-filter: blur(var(--glass-blur-1)) saturate(var(--glass-saturate));
   --glass-filter-3: blur(var(--glass-blur-3)) saturate(var(--glass-saturate));
-  /* Opaque stand-ins, used by the @supports and reduced-transparency
-     branches. Sat between the composite over the lightest and the darkest
-     wash, so they read the same and test better than the glass worst case. */
-  --opaque-1: #2a2447;
-  --opaque-2: #322b52;
-  --opaque-3: #3a325e;
 
   /* Names the rest of the sheet already uses, now pointing at a tier. */
   --glass: var(--glass-bg-1);
@@ -174,6 +168,15 @@ body {
   margin: 0;
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
+    /* Edge-crossers. Blur cannot act on these — they are low-frequency, same as
+       the wash. Their job is to put a colour boundary UNDER a panel edge, so
+       the edge visibly refracts one hue into another. That discontinuity is
+       what reads as glass; a panel over a uniform field reads as paint.
+       Placed to cross the left panel's outer edge, the gap between the two
+       panels, and the right panel's outer edge. */
+    radial-gradient(760px 620px at 56% 26%, rgba(185, 164, 255, 0.18), transparent 66%),
+    radial-gradient(820px 700px at 4% 64%, rgba(226, 152, 150, 0.14), transparent 64%),
+    radial-gradient(640px 560px at 99% 72%, rgba(150, 190, 255, 0.12), transparent 62%),
     radial-gradient(1200px 850px at 8% 14%, rgba(198, 166, 255, 0.55), transparent 62%),
     radial-gradient(950px 760px at 88% 8%, rgba(150, 200, 255, 0.42), transparent 64%),
     radial-gradient(1050px 900px at 76% 92%, rgba(255, 158, 200, 0.40), transparent 62%),
@@ -181,9 +184,9 @@ body {
     linear-gradient(160deg, #3d3766, #241f3d 58%, #1a1730);
   /* Grain tiles; every gradient below it covers once. Without this the wash
      bands visibly across a wide panel. */
-  background-size: 140px 140px, auto, auto, auto, auto, auto;
-  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
-  background-blend-mode: overlay, normal, normal, normal, normal, normal;
+  background-size: 140px 140px, auto, auto, auto, auto, auto, auto, auto, auto;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-blend-mode: overlay, normal, normal, normal, normal, normal, normal, normal, normal;
   background-attachment: fixed;
   color: var(--text);
   font-size: clamp(0.95rem, 0.9rem + 0.2vw, 1.05rem);
@@ -1997,27 +2000,36 @@ textarea.search::-webkit-scrollbar-thumb:hover {
 /* No backdrop-filter at all: go opaque rather than leaving text over a
    raw gradient. This, not prefers-reduced-transparency, is the branch that
    catches most browsers that cannot do the effect. */
+/* No backdrop-filter at all. Nothing can blur, so the fill alone has to carry
+   legibility — but it stays translucent, because "cannot blur" is not "must be
+   a solid box". Alpha is raised until text clears its target over the lightest
+   point of the wash, and no further. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root:not([data-theme="flat"]) {
-    --glass-bg-1: var(--opaque-1);
-    --glass-bg-2: var(--opaque-2);
-    --glass-bg-3: var(--opaque-3);
+    --glass-bg-1: rgba(20, 15, 42, 0.86);
+    --glass-bg-2: rgba(44, 35, 78, 0.80);
+    --glass-bg-3: rgba(30, 23, 58, 0.92);
     --glass-scrim-1: transparent;
     --glass-scrim-2: transparent;
     --glass-scrim-3: transparent;
   }
 }
 
+/* REDUCE transparency, not remove it. The first version of this branch swapped
+   in fully opaque fills and killed the blur outright, which is over-compliance:
+   it deleted the theme for anyone with Windows "Transparency effects" off, and
+   that is most of why the glass read as solid. The preference asks for less
+   see-through, so the blur shrinks and the fill thickens — both stay. */
 @media (prefers-reduced-transparency: reduce) {
   :root:not([data-theme="flat"]) {
-    --glass-bg-1: var(--opaque-1);
-    --glass-bg-2: var(--opaque-2);
-    --glass-bg-3: var(--opaque-3);
+    --glass-blur-1: 10px;
+    --glass-blur-3: 6px;
+    --glass-bg-1: rgba(20, 15, 42, 0.72);
+    --glass-bg-2: rgba(44, 35, 78, 0.68);
+    --glass-bg-3: rgba(30, 23, 58, 0.86);
     --glass-scrim-1: transparent;
     --glass-scrim-2: transparent;
     --glass-scrim-3: transparent;
-    --glass-filter: none;
-    --glass-filter-3: none;
   }
 }
 
