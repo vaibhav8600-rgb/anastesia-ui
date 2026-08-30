@@ -514,9 +514,10 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   width: 6.5rem;
   flex: none;
   padding: 0.3rem 0.5rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--well);
+  box-shadow: var(--nm-in);
   text-align: right;
 }
 .raw__empty { color: var(--muted); border: 0; }
@@ -761,9 +762,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 /* ---------- curve chart ---------- */
 
 .chart {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--glass-2);
+  box-shadow: var(--glass-highlight-2);
   padding: 0.35rem;
   touch-action: none;   /* handles are dragged, not scrolled */
 }
@@ -852,8 +854,9 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   gap: 0.55rem;
   padding: 0.2rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
+  border-radius: var(--pill);
+  background: var(--glass-2);
+  box-shadow: var(--sheen);
 }
 
 .status__ep { display: inline-flex; color: color-mix(in srgb, var(--muted) 55%, transparent); }
@@ -1080,13 +1083,18 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
 }
 
-/* Consecutive cards were sitting flush — measured gap 0px. `.panel` carries a
-   1.1rem grid gap, but its only child is the tab's Pane wrapper, so the gap
-   never reached the cards inside it. Flush meant four tonal edges within a
-   couple of pixels: one card's dark bottom inner line and border, then the
-   next card's border and bright top highlight, with the drop shadow hidden
-   behind the card below. Spacing them lets each edge read as one edge. */
-:is(.knobs, .surface) + :is(.knobs, .surface) { margin-top: 1.15rem; }
+/* Every tab stacked its sections flush. `.panel` carries a 1.1rem grid gap,
+   but its only child is the tab's Pane wrapper, so the gap never reached the
+   content and each tab was left relying on whatever margins its elements
+   happened to carry — mostly none. On Acceleration the chart and its toolbar
+   did not merely touch, they overlapped by 5.6px. One rule gives every tab the
+   spacing the panel always intended, and adjacent margins collapse rather than
+   add, so elements that already carry their own keep it. */
+.panel > div > * + * { margin-top: 1.1rem; }
+
+/* A heading owns what follows it: the space belongs above the title, not
+   between the title and its content. */
+.panel > div > .sec + * { margin-top: 0.1rem; }
 
 /* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
 .knobs > .sec {
@@ -1646,7 +1654,6 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  margin-top: -0.35rem;
 }
 
 .actions {
@@ -1799,9 +1806,9 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 /* The connection log on the welcome screen: same rows as the Logs tab, but
    scoped to the copy column and capped so it never pushes the buttons away. */
 .console--welcome {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--glass-2);
   max-width: 34rem;
 }
 .console--welcome .logs__body { max-height: 15rem; padding: 0.5rem 0.75rem; }
