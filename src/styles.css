@@ -1201,7 +1201,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
      left edge of a wide card reads as though it failed to fill it. */
   grid-template-columns: repeat(auto-fit, minmax(84px, 96px));
   justify-content: center;
-  gap: 0.5rem 0.75rem;
+  /* 12px between 96px faces left the arcs almost touching, and the labels
+     under them closer still — "Sensitivity" and "Smoothing" are wider than the
+     dials they name. 24px is a quarter of a face, which reads as a gap. */
+  gap: 1rem 1.5rem;
   /* These sit inside a .knobs card now, so no frame of its own — a card within
      a card read as a nesting level that is not really there. */
   padding: 0.25rem 0;
