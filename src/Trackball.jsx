@@ -32,11 +32,14 @@ export const DEFAULT_COLOURS = {
   keys: ["#ef6b6b", "#eceae4", "#ef6b6b", "#eceae4", "#eceae4", "#ef6b6b", "#eceae4", "#ef6b6b"],
 };
 
-const STORE = "anastesia-colours";
+const STORE = "anastasia-colours";
+// The name was misspelled until now. Read the old key when the new one is
+// empty, so a palette someone already picked survives the correction.
+const STORE_WAS = "anastesia-colours";
 
 const loadColours = () => {
   try {
-    const v = JSON.parse(localStorage.getItem(STORE) || "null");
+    const v = JSON.parse(localStorage.getItem(STORE) || localStorage.getItem(STORE_WAS) || "null");
     if (!v) return DEFAULT_COLOURS;
     return {
       body: v.body ?? DEFAULT_COLOURS.body,
@@ -102,10 +105,9 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
-    // PCFSoftShadowMap is deprecated and three substitutes this anyway.
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Only the ball and the wheels move, and both are surfaces of revolution
     // turning about their own axis — their shadows never change. So the shadow
     // pass runs once and is then frozen, which is most of the per-frame cost.
@@ -261,7 +263,7 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     // ---------------------------------------------------------- shell
     const shellMat = track(new THREE.MeshStandardMaterial({
       color: 0xeeebe5, map: shellMap, bumpMap: shellMap, bumpScale: 0.014,
-      roughness: 0.78, metalness: 0, envMapIntensity: 0.5,
+      roughness: 0.78, metalness: 0, envMapIntensity: 0.34,
     }));
     const shell = add(new THREE.Mesh(track(new THREE.ExtrudeGeometry(roundedSquareShape(HALF, CORNER), {
       depth: 2.4, bevelEnabled: true, bevelThickness: 0.3, bevelSize: 0.3,
@@ -454,24 +456,37 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     // camera fits to and leave the device a speck in the middle of the frame.
     const ground = new THREE.Mesh(
       track(new THREE.PlaneGeometry(40, 40)),
-      track(new THREE.ShadowMaterial({ opacity: 0.4 })),
+      track(new THREE.ShadowMaterial({ opacity: 0.55 })),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
     // ---------------------------------------------------------- light
-    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-    const keyLight = new THREE.DirectionalLight(0xfff5ea, 2.6);
+    // Ambient at 0.9 was lighting every face of the shell equally, so the body
+    // read as a white cut-out rather than a moulded object: 54.8% of its pixels
+    // were above 200. It drops to a trace, and the job it was doing badly — not
+    // letting the unlit side go black — passes to a directional fill opposite
+    // the key, which shades across a surface instead of flooding it. The
+    // environment map already supplies the soft wrap that ambient cannot.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.10));
+    const fillLight = new THREE.DirectionalLight(0xd8e2ff, 0.55);
+    fillLight.position.set(8, 3, 11);
+    scene.add(fillLight);
+    const keyLight = new THREE.DirectionalLight(0xfff5ea, 2.35);
     keyLight.position.set(-7, 16, 9);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
-    keyLight.shadow.camera.left = -13; keyLight.shadow.camera.right = 13;
-    keyLight.shadow.camera.top = 13; keyLight.shadow.camera.bottom = -13;
+    // The frustum was 26 units across for a device 9 wide, so most of the map
+    // fell on empty floor and the shadow arrived as a grey smear. Tightened to
+    // the device plus its throw, with four times the texels over it.
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.left = -8; keyLight.shadow.camera.right = 8;
+    keyLight.shadow.camera.top = 8; keyLight.shadow.camera.bottom = -8;
     keyLight.shadow.camera.near = 1; keyLight.shadow.camera.far = 48;
     keyLight.shadow.bias = -0.0011;
+    keyLight.shadow.radius = 1.6;
     scene.add(keyLight);
-    const rimLight = new THREE.DirectionalLight(0x8fb8ff, 1.4);
+    const rimLight = new THREE.DirectionalLight(0x8fb8ff, 1.7);
     rimLight.position.set(9, 6, -10);
     scene.add(rimLight);
 
@@ -516,14 +531,44 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
       return d * 1.04;
     };
 
+    // A bounding-box centre is not an optical centre. Looking at it left the
+    // device sitting low with 187px of air above and 41 below at 1280, and the
+    // imbalance grew with the viewport: 263 against 46 at 1920. So after the
+    // fit, project the silhouette and pan until its middle is the frame's.
+    // Two passes converge; the pan is in view space, so it holds at any aspect.
+    const target = new THREE.Vector3();
+    const camUp = new THREE.Vector3();
+    const scratch = new THREE.Vector3();
+    // A hair above true centre. Optical centre reads slightly high, and the
+    // contact shadow occupies the space below the device.
+    const LOOK_BIAS = 0.04;
+
     const placeCamera = () => {
       const d = fitDist * view.zoom;
-      camera.position.set(
-        centre.x + d * Math.cos(view.el) * Math.sin(view.az),
-        centre.y + d * Math.sin(view.el),
-        centre.z + d * Math.cos(view.el) * Math.cos(view.az),
-      );
-      camera.lookAt(centre);
+      const aim = () => {
+        camera.position.set(
+          target.x + d * Math.cos(view.el) * Math.sin(view.az),
+          target.y + d * Math.sin(view.el),
+          target.z + d * Math.cos(view.el) * Math.cos(view.az),
+        );
+        camera.lookAt(target);
+        camera.updateMatrixWorld();
+      };
+      target.copy(centre);
+      aim();
+      const halfH = d * Math.tan((camera.fov * Math.PI) / 360);
+      for (let pass = 0; pass < 2; pass++) {
+        let lo = Infinity, hi = -Infinity;
+        for (const p of corners) {
+          scratch.copy(p).add(centre).project(camera);
+          lo = Math.min(lo, scratch.y); hi = Math.max(hi, scratch.y);
+        }
+        const off = (lo + hi) / 2 - LOOK_BIAS;
+        if (Math.abs(off) < 0.002) break;
+        camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        target.addScaledVector(camUp, off * halfH);
+        aim();
+      }
       renderer.shadowMap.needsUpdate = true;
     };
 

@@ -35,7 +35,7 @@ const SPARK_POINTS = 60;
  * never changes — but it draws a stub against the right edge for the first
  * minute, which reads as a broken chart rather than a young one.
  */
-function Spark({ values, max, band }) {
+function Spark({ values, max }) {
   if (!values || values.length < 2 || !max) return null;
   const W = 100;
   const H = 20;
@@ -56,7 +56,7 @@ function Spark({ values, max, band }) {
   return (
     <>
       <svg
-        className={"spark spark--" + band}
+        className="spark"
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
         role="img"
@@ -96,11 +96,25 @@ export function wantFastSurface() {
 const SURFACE_MS = 1000;
 const SURFACE_FAST_MS = 300;
 
+/** Where the bands fall, as fractions of whatever scale the sensor reports. */
+function bandCuts(max) {
+  return max === 1000 ? [0.25, 0.5] : max === 361 ? [0.3, 0.6] : [0.34, 0.67];
+}
+
 export function qualityBand(quality, max) {
+  const [warn, good] = bandCuts(max);
   const ratio = quality / max;
-  const [warn, good] = max === 1000 ? [0.25, 0.5] : max === 361 ? [0.3, 0.6] : [0.34, 0.67];
   return ratio < warn ? "low" : ratio < good ? "mid" : "high";
 }
+
+/** The reading at which this sensor's scale becomes good, in its own units. */
+export function goodAt(max) {
+  return Math.round(bandCuts(max)[1] * max);
+}
+
+/* The band was computed and then thrown away — only a CSS class survived, so a
+   colour was the entire verdict. Say it. */
+const BAND_WORD = { high: "good", mid: "fair", low: "poor" };
 
 export function Surface({ live, onNote, active = true }) {
   const [sensors, setSensors] = useState([]);
@@ -184,9 +198,23 @@ export function Surface({ live, onNote, active = true }) {
                   : `Reported by the board as ${s.quality}${s.max ? "/" + s.max : ""}`
               }
             >
+              {s.max != null && (
+                <span className="sr-only">
+                  {`Sensor ${s.sensor}: ${BAND_WORD[qualityBand(s.quality, s.max)]}. `}
+                  {`${s.quality} of ${s.max}; good from ${goodAt(s.max)}.`}
+                </span>
+              )}
               <div className="gauges__head">
                 <span className="gauges__name">Sensor #{s.sensor}</span>
-                <span className="gauges__val">{s.max ? `${s.quality}/${s.max}` : s.quality}</span>
+                {s.max != null && (
+                  <span className={"gauges__band gauges__band--" + qualityBand(s.quality, s.max)}>
+                    {BAND_WORD[qualityBand(s.quality, s.max)]}
+                  </span>
+                )}
+                <span className="gauges__val">
+                  {s.max ? `${s.quality}/${s.max}` : s.quality}
+                  {s.max != null && <em className="gauges__rule">good from {goodAt(s.max)}</em>}
+                </span>
               </div>
               {s.max != null && (
                 <>
@@ -196,11 +224,7 @@ export function Surface({ live, onNote, active = true }) {
                       style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
                     />
                   </div>
-                  <Spark
-                    values={history.current.get(s.sensor)}
-                    max={s.max}
-                    band={qualityBand(s.quality, s.max)}
-                  />
+                  <Spark values={history.current.get(s.sensor)} max={s.max} />
                 </>
               )}
             </li>
@@ -436,7 +460,7 @@ export function ImportExport({ live, onNote, rtcfg, firmware }) {
       catch { /* fall back to the snapshot rather than exporting nothing */ }
     }
     return JSON.stringify({
-      app: "anastesia-ui",
+      app: "anastasia-ui",
       exported: new Date().toISOString(),
       firmware: firmware ?? null,
       rtcfg: current,
@@ -454,7 +478,7 @@ export function ImportExport({ live, onNote, rtcfg, firmware }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `anastesia-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `anastasia-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     onNote("Settings file downloaded.");
@@ -586,8 +610,8 @@ function StorageBackup({ live, onNote }) {
       // The .bak is the restorable artefact; the .dat is the raw image, for
       // anyone who wants to look inside it.
       const between = out.slice(out.indexOf("BACKUP START"), out.indexOf("BACKUP END") + 10);
-      saveFile(`anastesia-backup-${stamp()}.bak`, new Blob([between], { type: "text/plain" }));
-      saveFile(`anastesia-backup-${stamp()}.dat`, new Blob([b.bytes], { type: "application/octet-stream" }));
+      saveFile(`anastasia-backup-${stamp()}.bak`, new Blob([between], { type: "text/plain" }));
+      saveFile(`anastasia-backup-${stamp()}.dat`, new Blob([b.bytes], { type: "application/octet-stream" }));
       onNote(`Backed up ${b.bytes.length} bytes in ${b.lines} chunks — every checksum verified.`);
     } catch (err) {
       onNote(err.message);

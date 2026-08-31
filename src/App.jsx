@@ -14,6 +14,7 @@ import Heatmap from "./Heatmap.jsx";
 import RollMap from "./RollMap.jsx";
 import Status from "./Status.jsx";
 import Loading from "./Loading.jsx";
+import ThemeToggle, { useTheme } from "./Theme.jsx";
 
 // The seven tabs mirror the original's shape, so anyone coming from it knows
 // where to look.
@@ -90,6 +91,10 @@ export default function App() {
   const [status, setStatus] = useState(() =>
     new URLSearchParams(location.search).has("demo") ? "demo" : "idle");
   const [note, setNote] = useState(null);
+  // Which transport a successful connect actually opened. device.kind holds the
+  // same fact but is a mutable singleton, so nothing re-renders when it changes
+  // and the header can keep announcing the previous session's link.
+  const [transport, setTransport] = useState(null);
   const [state, setState] = useState(null);
   const [values, setValues] = useState({});
   const [dirty, setDirty] = useState(() => new Set());
@@ -100,6 +105,7 @@ export default function App() {
   const [log, setLog] = useState([]);
   const [firmware, setFirmware] = useState(null);
   const scrollHint = useRef(null);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => device.onLog((e) => setLog((l) => [...l.slice(-400), e])), []);
 
@@ -120,9 +126,11 @@ export default function App() {
 
   const connect = async (kind) => {
     setStatus("busy");
+    setTransport(null);
     setNote(kind === "usb" ? "Pick your device, then wait for its shell…" : "Scanning, then waiting for the shell…");
     try {
       await (kind === "ble" ? device.connectBLE() : device.connectUSB({ all: kind === "usb-all" }));
+      setTransport(device.kind);
       setNote("Reading settings…");
       seed(await readAll());
       setStatus("ready");
@@ -135,6 +143,7 @@ export default function App() {
 
   const disconnect = async () => {
     await device.disconnect();
+    setTransport(null);
     setStatus("idle");
     setState(null);
     setValues({});
@@ -223,6 +232,8 @@ export default function App() {
         onConnect={connect}
         onDemo={startDemo}
         onClearLog={() => setLog([])}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -239,12 +250,13 @@ export default function App() {
     <div className="app">
       <header className="bar">
         <span className="brand">
-          <strong>Anastesia</strong>
+          <strong>Anastasia</strong>
           <em>by Vaibhav Rajput</em>
         </span>
         {!live && <span className="chip">Demo</span>}
         <div className="bar__spacer" />
-        <Status live={live} onFirmware={setFirmware} />
+        <Status live={live} transport={transport} onFirmware={setFirmware} />
+        <ThemeToggle theme={theme} onToggle={toggleTheme} />
         {dirty.size > 0 && <button className="btn btn--ghost" onClick={revert}>Revert</button>}
         <button className="btn btn--primary" onClick={save} disabled={dirty.size === 0 || busy}>
           {dirty.size > 0 ? `Save ${dirty.size}` : "Saved"}
@@ -440,14 +452,14 @@ function KnobSection({ section, state, values, busy, onChange }) {
   );
 }
 
-function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
+function Welcome({ status, note, log, onConnect, onDemo, onClearLog, theme, onToggleTheme }) {
   const none = !supported.usb && !supported.ble;
   return (
     <div className="welcome">
       {/* Splash: the model, without the view controls that belong to the editor. */}
       <Trackball values={{ sens: 4, sma: 3, glow: 1, brightness: 70 }} tools={false} />
       <div className="welcome__copy">
-        <h1>Anastesia</h1>
+        <h1>Anastasia</h1>
         <p>Tune your trackball by feel. Spin the ball — that is the preview, and it moves the way your settings will.</p>
         {none ? (
           <p className="warn">
@@ -475,7 +487,10 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
             )}
           </div>
         )}
-        <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
+        <div className="row row--wrap">
+          <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
         {/* Connecting is the longest wait in the app — settle, probe, then a
             full settings read — so it gets the spinner rather than a line of
             text that could be mistaken for a finished result. */}
@@ -504,7 +519,7 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog }) {
           </details>
         )}
 
-        <p className="app-byline">Anastesia-UI · by Vaibhav Rajput</p>
+        <p className="app-byline">Anastasia-UI · by Vaibhav Rajput</p>
       </div>
     </div>
   );

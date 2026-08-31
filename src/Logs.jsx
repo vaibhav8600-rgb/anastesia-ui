@@ -33,7 +33,7 @@ export default function Logs({ log, onClear, live, onNote }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `anastesia-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
+    a.download = `anastasia-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -1,9 +1,9 @@
 {
-  "name": "anastesia-ui",
+  "name": "anastasia-ui",
   "private": true,
   "version": "1.0.0",
   "author": "Vaibhav Rajput",
-  "description": "Anastesia-UI - web-based ZMK mouse/trackball configuration interface",
+  "description": "Anastasia-UI - web-based ZMK mouse/trackball configuration interface",
   "type": "module",
   "scripts": {
     "dev": "vite",
