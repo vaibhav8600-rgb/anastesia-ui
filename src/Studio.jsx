@@ -336,6 +336,13 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   const connect = async (pick = false) => {
     if (!("serial" in navigator)) { onNote?.("This browser has no Web Serial."); return; }
     setState("opening");
+    // Whatever we were holding goes first. A link left open keeps its writer,
+    // and findRpcPort then skips that port as "in use" while requestPort hands
+    // it straight back — so the new Link asks for a writer the old one still
+    // has, and getWriter throws on a locked stream. Closing here rather than in
+    // the failure path is what makes it true on every route in.
+    await link.current?.close();
+    link.current = null;
     try {
       // Try what is already granted first. Only ask for a port when nothing
       // granted answers, so the second visit never shows a chooser at all.
@@ -373,7 +380,35 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
     }
   };
 
-  const disconnect = async () => { await link.current?.close(); setState("idle"); };
+  const disconnect = async () => {
+    await link.current?.close();
+    link.current = null;
+    setState("idle");
+  };
+
+  /**
+   * After unlocking: ask again on the link we already have.
+   *
+   * A lock refuses the request, not the connection — the port is open and
+   * working, so reconnecting would close a good link and reopen it for no
+   * reason. Only when there is nothing open does this fall back to connecting.
+   */
+  const retryAfterUnlock = async () => {
+    setLockSeen(true);
+    if (!link.current?.open) { connect(false); return; }
+    setState("opening");
+    try {
+      await load();
+      setLocked(false);
+      setState("ready");
+    } catch (err) {
+      if (err?.code === ERR_LOCKED) { setLockSeen(false); setState("idle"); return; }
+      await link.current?.close();
+      link.current = null;
+      setState("idle");
+      onNote?.(String(err?.message ?? err));
+    }
+  };
 
   useEffect(() => () => { link.current?.close(); }, []);
 
@@ -519,7 +554,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
           itself the moment it does, without you coming back here.
         </p>
         <div className="row row--wrap">
-          <button className="btn btn--primary" onClick={() => { setLockSeen(true); connect(false); }}>
+          <button className="btn btn--primary" onClick={retryAfterUnlock}>
             I have unlocked it
           </button>
           <button className="btn btn--ghost" onClick={() => setLockSeen(true)}>Dismiss</button>
