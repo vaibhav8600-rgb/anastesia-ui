@@ -1870,13 +1870,18 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .keytag {
   position: absolute;
   transform: translate(-50%, -50%);
-  font-size: var(--fs-micro);
-  font-weight: var(--fw-micro);
-  letter-spacing: var(--ls-micro);
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: rgba(18, 14, 32, 0.92);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  /* Sentence case at body size rather than tracked capitals at micro. It reads
+     larger and takes noticeably less width, which is what stops a two-part
+     legend like "Mouse Forward - hold Device" running off its key. */
+  font-size: var(--fs-body);
+  font-weight: var(--fw-label);
+  line-height: 1.15;
+  text-align: center;
+  /* Wraps inside the width the render loop measures from the key itself. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: rgba(18, 14, 32, 0.94);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 /* ---------- keymap ----------

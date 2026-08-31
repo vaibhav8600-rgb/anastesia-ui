@@ -513,7 +513,21 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
     // each frame as the key presses in and out.
     for (const b of buttons) {
       b.geometry.computeBoundingBox();
-      b.userData.centre = b.geometry.boundingBox.getCenter(new THREE.Vector3());
+      const box = b.geometry.boundingBox;
+      b.userData.centre = box.getCenter(new THREE.Vector3());
+      // The eight corners, so the render loop can measure how wide the key is
+      // on screen right now. A label is then held to its own key rather than
+      // running across its neighbours — which is what "nowrap" was doing.
+      b.userData.corners = [
+        new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+      ];
     }
 
     const ringed = buttons
@@ -825,6 +839,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       if (tags.current && labels.current?.length) {
         const box = renderer.domElement.getBoundingClientRect();
         const v = new THREE.Vector3();
+        const c = new THREE.Vector3();
         ringed.forEach((mesh, i) => {
           const el = tags.current.children[i];
           if (!el) return;
@@ -837,9 +852,23 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
           // against an edge.
           if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) { el.hidden = true; return; }
           el.hidden = false;
-          el.textContent = text;
+          if (el.textContent !== text) el.textContent = text;
           el.style.left = `${((v.x + 1) / 2) * box.width}px`;
           el.style.top = `${((1 - v.y) / 2) * box.height}px`;
+
+          // How wide this key is on screen, so the label can be kept inside it.
+          let lo = Infinity, hi = -Infinity;
+          for (const corner of mesh.userData.corners) {
+            c.copy(corner);
+            mesh.localToWorld(c);
+            c.project(camera);
+            const px = ((c.x + 1) / 2) * box.width;
+            if (px < lo) lo = px;
+            if (px > hi) hi = px;
+          }
+          // A little inside the key, so the legend sits on the cap rather than
+          // running to its very edge.
+          el.style.maxWidth = `${Math.max(28, (hi - lo) * 0.88)}px`;
         });
       }
 
