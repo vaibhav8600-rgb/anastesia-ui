@@ -123,7 +123,9 @@ class Link {
         const where = subsystemOf(rr);
         if (where === "meta") {
           const code = rr.meta.simple_error ?? 0;
-          reject(new Error(META_ERRORS[code] ?? `Board error ${code}.`));
+          const err = new Error(META_ERRORS[code] ?? `Board error ${code}.`);
+          err.code = code;
+          reject(err);
           return;
         }
         resolve(rr[where] ?? {});
@@ -146,6 +148,9 @@ class Link {
  * bitmasks, HID usages are page-encoded, and the number alone cannot tell you
  * which — a bare 4 is both the letter A and the middle button.
  */
+/** UNLOCK_REQUIRED from zmk/meta.proto. */
+const ERR_LOCKED = 1;
+
 export function paramKind(name) {
   if (/mouse|mkp|mb|click/i.test(name ?? "")) return "mouse";
   if (/press|kp|consumer|key/i.test(name ?? "")) return "usage";
@@ -347,6 +352,14 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
       setState("ready");
       onNote?.(null);
     } catch (err) {
+      // A locked board is not a connection failure and does not belong in a
+      // corner. Keep the link, raise the dialog, and say so in the middle.
+      if (err?.code === ERR_LOCKED) {
+        setLocked(true);
+        setLockSeen(false);
+        setState("idle");
+        return;
+      }
       await link.current?.close();
       link.current = null;
       setState("idle");
@@ -382,7 +395,8 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
         setState("opening");
         await load();
         setState("ready");
-      } catch {
+      } catch (err) {
+        if (err?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
         await link.current?.close();
         link.current = null;
         setState("idle");
@@ -446,7 +460,8 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
       } catch { setDirty(true); }
       onNote?.("Key set. It is live on the board now; Save writes it to storage.");
     } catch (err) {
-      onNote?.(String(err?.message ?? err));
+      if (err?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
+      else onNote?.(String(err?.message ?? err));
     } finally { setBusy(false); }
   };
 
@@ -462,7 +477,10 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
       }
       setDirty(false);
       onNote?.("Keymap saved to the board.");
-    } catch (e) { onNote?.(String(e?.message ?? e)); } finally { setBusy(false); }
+    } catch (e) {
+      if (e?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
+      else onNote?.(String(e?.message ?? e));
+    } finally { setBusy(false); }
   };
 
   const discard = async () => {
@@ -472,12 +490,47 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
       await load();
       setDirty(false);
       onNote?.("Changes discarded; the board's saved keymap is back.");
-    } catch (e) { onNote?.(String(e?.message ?? e)); } finally { setBusy(false); }
+    } catch (e) {
+      if (e?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
+      else onNote?.(String(e?.message ?? e));
+    } finally { setBusy(false); }
   };
+
+  const lockDialog = locked && !lockSeen && (
+    <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="lock-title">
+      <div className="modal__card modal__card--warn">
+        <div className="modal__head">
+          {/* The triangle carries the meaning before the words do, which is
+              the point of it — and it is the shape people already read as
+              "stop and look" without having to. */}
+          <svg className="modal__icon" viewBox="0 0 24 24" role="img"
+               aria-label="Warning" focusable="false">
+            <path d="M12 2.6 22.4 20.4a1.2 1.2 0 0 1-1.04 1.8H2.64a1.2 1.2 0 0 1-1.04-1.8Z" />
+            <rect className="modal__bang" x="11" y="8.4" width="2" height="6.4" rx="1" />
+            <circle className="modal__bang" cx="12" cy="17.8" r="1.25" />
+          </svg>
+          <h3 className="modal__title" id="lock-title">The board is locked</h3>
+        </div>
+        <p className="modal__body">
+          ZMK Studio locks the keymap until you say otherwise, so the board
+          refuses to hand it over or change it while this is on. Press the
+          <strong> studio-unlock </strong> key on the device — this clears
+          itself the moment it does, without you coming back here.
+        </p>
+        <div className="row row--wrap">
+          <button className="btn btn--primary" onClick={() => { setLockSeen(true); connect(false); }}>
+            I have unlocked it
+          </button>
+          <button className="btn btn--ghost" onClick={() => setLockSeen(true)}>Dismiss</button>
+        </div>
+      </div>
+    </div>
+  );
 
   if (state !== "ready") {
     return (
       <>
+        {lockDialog}
         <h3 className="sec">Key bindings</h3>
         <p className="ctl__hint">
           Bindings are not in this firmware's shell — they live behind ZMK
@@ -528,39 +581,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
         <button className="btn btn--ghost" onClick={disconnect}>Disconnect editor</button>
       </div>
 
-      {locked && !lockSeen && (
-        <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="lock-title">
-          <div className="modal__card modal__card--warn">
-            <div className="modal__head">
-              {/* The triangle carries the meaning before the words do, which is
-                  the point of it — and it is the shape people already read as
-                  "stop and look" without having to. */}
-              <svg className="modal__icon" viewBox="0 0 24 24" role="img"
-                   aria-label="Warning" focusable="false">
-                <path d="M12 2.6 22.4 20.4a1.2 1.2 0 0 1-1.04 1.8H2.64a1.2 1.2 0 0 1-1.04-1.8Z" />
-                <rect className="modal__bang" x="11" y="8.4" width="2" height="6.4" rx="1" />
-                <circle className="modal__bang" cx="12" cy="17.8" r="1.25" />
-              </svg>
-              <h3 className="modal__title" id="lock-title">The board is locked</h3>
-            </div>
-            <p className="modal__body">
-              ZMK Studio locks the keymap until you say otherwise, so the board
-              will refuse every change while this is on. Press the
-              <strong> studio-unlock </strong> key on the device — this clears
-              itself the moment it does, without you coming back here.
-            </p>
-            <p className="modal__body">
-              You can look around while it is locked. Only saving and setting a
-              key will be refused.
-            </p>
-            <div className="row row--wrap">
-              <button className="btn btn--primary" onClick={() => setLockSeen(true)}>
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {lockDialog}
 
       {locked && lockSeen && (
         <p className="warn warn--inline">

@@ -452,6 +452,9 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         track(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 1.05, 32, 1, false)), wheelMat,
       ));
       wheel.position.copy(outward).multiplyScalar(WHEEL_DIST).setY(0.95);
+      // Which way this corner faces. The label above it is printed on that
+      // face, so it needs the same normal to know when it is being looked at.
+      wheel.userData.outward = outward.clone();
       wheel.castShadow = true;
       wheel.userData.spin = 0;
       wheels.push(wheel);
@@ -569,9 +572,13 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       ...ringedWheels.map((wheel) => {
         const at = new THREE.Vector3();
         wheel.getWorldPosition(at);
-        at.y += WHEEL_R + 0.55;          // clear of the tread, onto the shell
-        at.z -= WHEEL_R * 0.5;           // and a little back from the edge
-        return { mesh: wheel, fixed: at };
+        const face = wheel.userData.outward;
+        // On the side wall directly above the encoder, not on the top plate:
+        // just clear of the tread, and pushed out to sit on the surface rather
+        // than inside it.
+        at.y += WHEEL_R + 0.15;
+        at.addScaledVector(face, 0.35);
+        return { mesh: wheel, fixed: at, face };
       }),
     ];
 
@@ -874,14 +881,24 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         const box = renderer.domElement.getBoundingClientRect();
         const v = new THREE.Vector3();
         const c = new THREE.Vector3();
+        const toCam = new THREE.Vector3();
         tagTargets.forEach((target, i) => {
           const el = tags.current.children[i];
           if (!el) return;
           const text = labels.current[i];
           if (!text) { el.hidden = true; return; }
           const mesh = target.mesh;
-          if (target.fixed) v.copy(target.fixed);
-          else { v.copy(mesh.userData.centre); mesh.localToWorld(v); }
+          if (target.fixed) {
+            // Printed on a wall, so it goes when the wall does. Looking down at
+            // the board, this face is edge-on and its legend has no business
+            // floating over the top plate.
+            toCam.copy(camera.position).sub(target.fixed).normalize();
+            if (toCam.dot(target.face) < 0.34) { el.hidden = true; return; }
+            v.copy(target.fixed);
+          } else {
+            v.copy(mesh.userData.centre);
+            mesh.localToWorld(v);
+          }
           v.project(camera);
           // Behind the camera, or off the frame: hide rather than smear it
           // against an edge.
