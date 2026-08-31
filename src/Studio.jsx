@@ -229,14 +229,18 @@ export function ringOrder(keys, count = 8) {
   return chosen
     .map((c) => ({
       ...c,
-      // Screen y grows downward and the model's z grows toward the viewer, so
-      // the vertical axis is negated to make the two rotations agree.
+      // Not negated. Two negations cancelled and mirrored the board: the
+      // model's shape axis already runs opposite to the layout's screen y, and
+      // the flat rotation negates it a second time on the way to world z. The
+      // result was a vertical flip — the top-left key labelled bottom-left,
+      // the bottom-middle key labelled top-left — which is what a mirror looks
+      // like as against a rotation, and is how it was spotted.
       //
       // Normalised to [0, 2pi) because atan2 returns -pi for a key due west
       // when the vertical difference is negative zero and +pi when it is
       // positive zero. Left alone, a key on that boundary would jump from one
       // end of the ring to the other on the sign of a zero.
-      angle: (Math.atan2(-((c.k.y ?? 0) + (c.k.height ?? 100) / 2 - cy),
+      angle: (Math.atan2((c.k.y ?? 0) + (c.k.height ?? 100) / 2 - cy,
         (c.k.x ?? 0) + (c.k.width ?? 100) / 2 - cx) + Math.PI * 2) % (Math.PI * 2),
     }))
     .sort((a, b) => a.angle - b.angle)

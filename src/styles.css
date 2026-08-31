@@ -1863,20 +1863,20 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   z-index: 1;
 }
 
+/* Printed on the key, not floating over it. No pill, no border, no shadow of
+   its own — dark ink with a fine light edge, which is how a legend on a real
+   keycap catches the light and which reads on both the coral keys and the
+   white shell without a plate behind it. */
 .keytag {
   position: absolute;
   transform: translate(-50%, -50%);
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--pill);
-  border: 1px solid var(--line-soft);
-  background: var(--glass-bg-3);
-  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
   font-size: var(--fs-micro);
   font-weight: var(--fw-micro);
   letter-spacing: var(--ls-micro);
   text-transform: uppercase;
-  color: var(--text);
   white-space: nowrap;
+  color: rgba(18, 14, 32, 0.92);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 /* ---------- keymap ----------
