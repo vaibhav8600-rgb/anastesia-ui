@@ -573,10 +573,13 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         const at = new THREE.Vector3();
         wheel.getWorldPosition(at);
         const face = wheel.userData.outward;
-        // On the side wall directly above the encoder, not on the top plate:
-        // just clear of the tread, and pushed out to sit on the surface rather
-        // than inside it.
-        at.y += WHEEL_R + 0.15;
+        // On the side wall directly above the encoder, not on the top plate.
+        // The height comes from the wheel's own box rather than its radius:
+        // the radius is across the tread, and using it lifted the legend most
+        // of the way up the wall instead of leaving it beside the wheel.
+        const half = (wheel.geometry.boundingBox.max.y
+          - wheel.geometry.boundingBox.min.y) / 2;
+        at.y += half + 0.12;
         at.addScaledVector(face, 0.35);
         return { mesh: wheel, fixed: at, face };
       }),

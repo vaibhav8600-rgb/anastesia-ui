@@ -652,10 +652,10 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
       )}
 
       {layout && (() => {
-        const small = keys
-          .map((k, position) => ({ k, position }))
-          .filter(({ k }) => (k.width ?? 100) / spanX < 0.055
-            || (k.height ?? 100) / spanY < 0.055);
+        // Grouped by encoder, not by layout order. Listing them in raw position
+        // order put Volume Up, then the other wheel, then Volume Down — the two
+        // halves of one encoder split by an unrelated key.
+        const small = wheelOrder(keys).flat().map((position) => ({ position }));
         if (!small.length) return null;
         return (
           <>
