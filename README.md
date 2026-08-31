@@ -309,6 +309,25 @@ near-white base, and the two neumorphic shadows change meaning: the highlight
 becomes near-white and the shadow a soft violet-grey, which is what stops the
 style turning into grey mud on a pale ground.
 
+### Motion
+
+Two things move, both specular, so they read as one material:
+
+- a **sheen** slides across a button on hover, opacity and transform only —
+  never the blur radius, which cannot be animated cheaply;
+- a **droplet** spreads from where you pressed. `src/ripple.js` is one
+  delegated `pointerdown` listener that writes the pointer position into two
+  custom properties and flips an attribute; the animation itself is CSS, so
+  nothing runs per frame. Position is why it is not pure CSS — a `:active`
+  ripple can only grow from the centre, and on a tab as wide as
+  "Import/Export" that is visibly not where you clicked. A keyboard press has
+  no pointer, and falls back to the centre.
+
+Both are glass-only. Flat had no specular anything, and a highlight spreading
+across a solid fill would be the one glass trait it inherited. Both are also
+decoration, so `prefers-reduced-motion: reduce` removes them outright rather
+than shortening them.
+
 ### Type: four steps
 
 Twenty-seven distinct size/weight/tracking combinations rendered on a single

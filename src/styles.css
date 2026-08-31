@@ -2150,6 +2150,42 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   transform: translateX(35%);
 }
 
+/* A droplet where you pressed. The sheen answers the pointer arriving; this
+   answers it landing, and the two read as one material because both are the
+   same specular white on the same surface.
+
+   Glass only. Flat had no specular anything, and a highlight spreading across
+   a solid fill would be the one glass trait it inherited.
+
+   Only opacity and transform move, so it composites without touching layout —
+   which matters most for .vbtn, whose six instances sit over a canvas that is
+   already redrawing. --rx/--ry come from the pointer; without them it falls
+   back to the centre, which is what a keyboard press gets. */
+:root:not([data-theme="flat"]) :is(.btn, .pill, .theme-btn, .vbtn, .tab)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: var(--rx, 50%) var(--ry, 50%);
+  background: radial-gradient(
+    circle at var(--rx, 50%) var(--ry, 50%),
+    rgba(255, 255, 255, 0.5),
+    rgba(255, 255, 255, 0.14) 38%,
+    rgba(255, 255, 255, 0) 62%);
+}
+
+:root:not([data-theme="flat"]) :is(.btn, .pill, .theme-btn, .vbtn, .tab)[data-droplet]::before {
+  animation: droplet 460ms cubic-bezier(0.22, 0.68, 0.3, 1);
+}
+
+@keyframes droplet {
+  from { opacity: 0.85; transform: scale(0.28); }
+  to   { opacity: 0;    transform: scale(1.9); }
+}
+
 
 /* ---------- fallbacks and preferences ----------
    All four branches reassign the same tokens rather than restating rules, so
@@ -2198,6 +2234,10 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   :root { --glass-sheen: none; }
   .btn::after, .pill::after, .theme-btn::after, .vbtn::after, .tab::after {
     transition: none;
+  }
+  .btn::before, .pill::before, .theme-btn::before, .vbtn::before, .tab::before {
+    animation: none !important;
+    content: none;
   }
 }
 
