@@ -121,7 +121,28 @@ render loop. Routing them through React state would re-render the settings
 panel on every frame.
 
 The camera fits the model's real bounding-box corners at the current orbit
-angle, so it fills a phone strip and a desktop panel equally well.
+angle, so it fills a phone strip and a desktop panel equally well. A bounding
+box centre is not an *optical* centre, though: aiming at it left the device
+sitting low with 187px of air above and 41 below at 1280, and the imbalance
+grew with the viewport — 263 against 46 at 1920. After the fit, the silhouette
+is projected and the camera panned in view space until its middle is the
+frame's. Two passes converge, and the ratio then holds at any aspect: 133/104
+at 1280, 182/141 at 1920. The residual air above is a deliberate 0.04 NDC
+bias — optical centre reads slightly high, and the contact shadow occupies the
+space below.
+
+Lighting is a **ratio**, not a flood. Ambient at 0.9 reached every face of the
+shell equally, which is the one thing a white object cannot survive: 54.8% of
+its pixels sat above 200 and the body read as a cut-out rather than a moulded
+shape. Ambient is 0.10 now and the job it was doing badly — keeping the unlit
+side off black — belongs to a directional fill opposite the key, which shades
+across a surface instead of flooding it. Near-white fell to 28.5%, and the
+shell's tonal spread *widened* from 40 to 51 while its mean moved only 204 to
+186, which is the check that this is form rather than dimming.
+
+The shadow frustum was 26 units across for a device 9 wide, so most of the map
+landed on empty floor and what arrived was a grey smear. Tightened to the
+device plus its throw with four times the texels, it reads as contact.
 
 Two things keep it cheap: the shadow pass runs once and is then frozen (only
 the ball and wheels move, and both are surfaces of revolution turning about
@@ -175,6 +196,21 @@ Sensor surface quality is the first card on the Sensor(s) tab. It reads
 continuously while that tab is open, so you can roll the ball and watch it
 move; between reads the last value stays on screen.
 
+Each row says its verdict in words — **good / fair / poor** — and prints the
+reading that decides it ("good from 500"). `qualityBand()` had been computing
+the band and then throwing it away, passing only a CSS class, which left a bar
+colour carrying the whole message. The word is a bordered tag on the micro
+step rather than tinted text: beside a full-width bright bar, a coloured word
+reads as decoration. The threshold is per row, not per card, because the
+cut-off is a fraction of each sensor's own scale (0.25/0.5 on a 1000 scale,
+0.3/0.6 on 361) and two sensors can report different scales. `goodAt()` and
+`qualityBand()` come off the same lookup, so what is shown and what is applied
+cannot drift.
+
+The trend line under the bar is on the UI accent, not on the band colour it
+used to repeat. Trend and verdict are different questions, and a second copy
+of one cue is not a second cue.
+
 ### Roll quality
 
 `src/RollMap.jsx` bins SQUAL by **how the ball is moving** — direction around a
@@ -215,13 +251,41 @@ Two systems, kept separate in `src/styles.css` so they cannot fight:
 
 **Glass** is for anything that *floats* — the two stage panels, the header
 chips, the popovers. A translucent fill, a bright hairline edge, and a blur of
-what is behind it. The page itself is a fixed four-blob radial wash, which is
-the thing the glass has to be glass *of*; the 3D canvas is `alpha: true`, so the
-wash shows through behind the model too.
+what is behind it. The page itself is a fixed wash, which is the thing the
+glass has to be glass *of*; the 3D canvas is `alpha: true`, so the wash shows
+through behind the model too.
+
+The wash is four saturated blooms over a **dark** base gradient, and the base
+is what matters. An earlier version used a light base (`#3f4569` is luma 70),
+which capped the floor no matter what the blooms did: the darkest pixel on the
+page was luma 77 and saturation had drained to 0.23, so nothing read as dark
+and the whole field sat above mid-grey. With `#1b1836` at the bottom the range
+is 28–114 at 0.35 saturation — the same lit core, with somewhere to fall away
+at the corners.
+
+Darkening uniformly is the tempting move and it is wrong. Separation across a
+panel edge is `alpha x (ground - fill)`, and every fill is darker than the
+ground, so a dimmer ground shrinks every edge: a vignette measured floor 23
+but dropped the settings panel edge from 2.09:1 to 1.52:1.
 
 Panels **smoke** rather than lighten: a dark translucent fill over a lit ground.
 Lightening them on a dark ground was tried first and produced grey slabs — the
 sense of glass comes from the ground being brighter than the pane.
+
+Glass comes in **three elevation tiers**, distinguished by how much ground they
+let through, how hard the edge catches light, and how far they sit off the
+surface below. Tier 1 is the two stage panels (fill 0.41), tier 2 the cards
+inside them (0.20, deliberately *without* blur — it sits on an already-blurred
+backdrop, so a second full-screen pass would buy nothing), tier 3 the things
+floating over the model: the caption, the pointer pad, the palette and the
+viewport's tool buttons.
+
+The viewport is the exception that proves the rule. Its job is to show the
+scene, so its fill stays at 0.13 and cannot separate it from the ground the way
+tier 1 does. It buys its edge from the **edge** instead — a bright bevel inside
+a dark ring, which is how a real pane reads against a lit background and costs
+no opacity. Measured against the ground it carries 2.71:1 and 1.92:1, ahead of
+the settings panel's own 1.80:1.
 
 **Neumorphism** is for anything you *touch* — buttons, switches, sliders,
 fields. One light source, top-left, for all of them: raised things take a pale
@@ -231,17 +295,83 @@ the direction per element is what makes this style look cheap.
 
 Two costs are deliberately not paid:
 
-- **Only the two large panels carry `backdrop-filter`.** Nesting it inside them
-  buys nothing — there is nothing between an inner card and its parent to blur —
-  and costs a second full-screen blur pass.
+- **Cards do not blur.** Nesting `backdrop-filter` inside an already-blurred
+  panel buys nothing — there is nothing between an inner card and its parent to
+  blur — and costs a second full-screen pass.
 - **The viewport buttons do not blur either.** Six of them sit on top of a
   canvas that redraws at 30fps, so each would force a re-composite every frame.
-  A plain translucent fill is indistinguishable at that size.
+  They are tier 3 in every other respect. Tier 3 therefore has two expressions:
+  the palette blurs its backdrop, the three overlay elements do not. That is a
+  known seam, not an oversight.
 
 Light mode is not the dark palette with swapped text. It gets its own wash on a
 near-white base, and the two neumorphic shadows change meaning: the highlight
 becomes near-white and the shadow a soft violet-grey, which is what stops the
 style turning into grey mud on a pale ground.
+
+### Type: four steps
+
+Twenty-seven distinct size/weight/tracking combinations rendered on a single
+tab, including a card title at 16.8/650 against a control label at 15.0/500 —
+a difference you have to measure rather than see — and 13.6, 13.9, 14.1 and
+14.4 doing one job with four values.
+
+| token | size | weight | used for |
+| --- | --- | --- | --- |
+| `--fs-title` | 16.8px | 700 | card and section titles |
+| `--fs-label` | 14.0px | 550 | control labels, buttons, tabs, summaries |
+| `--fs-body` | 12.8px | 400 | prose, hints, values, units, captions |
+| `--fs-micro` | 11.2px | 700 caps | eyebrows and tags, one tracking |
+
+Every step differs in **both** size and weight, so the hierarchy survives a
+squint. Buttons all sit on the label step, which is why the viewport's tool
+buttons are not micro: micro means capitals, without exception, so the step is
+identifiable by shape alone.
+
+Four sizes remain outside the scale — dial numerals, dial units and rose ticks.
+They are drawn in user units inside an SVG `viewBox` and scale with the
+graphic, not the page.
+
+### Spacing: a 4px grid
+
+Twenty-five distinct spacing values, most a pixel or two apart — 0.3 and 0.35
+rem, 0.55 and 0.6, and one card padding declaration holding 1.15, 1.25 and 1.35
+at once. Every padding, margin and gap now snaps to a multiple of 4px, which
+leaves seven — 4, 8, 12, 16, 20, 24 and 40 — plus zero and two negatives. Card
+padding is one token, `--card-pad`.
+
+### Colour: every ink has a text-safe sibling
+
+The accent is violet and stays violet, and the reason is measurable rather than
+aesthetic. The model's coral `#ef6b6b` is fixed hardware identity, and it sits
+**19 dE and 19 degrees of hue** from `--danger` — promoting it to the UI accent
+would make "this is interactive" and "this will destroy something" the same
+signal on the same panel. Violet's nearest semantic neighbour is 56 dE away.
+Coral also measures 3.23:1 on tier 1 and cannot be rescued by lightening,
+which moves it toward pink and so toward danger.
+
+Any colour used as **text** has a `-text` sibling defined where the colour is
+defined, sized to clear 4.7:1 on tier 1 at the brightest ground it covers:
+
+| ink | on tier 1 | |
+| --- | --- | --- |
+| `--text` `#ece9fb` | 8.14 | |
+| `--ok-text` | 6.82 | aliases `--ok` |
+| `--accent-text` `#cbbcff` | 5.63 | `--accent` itself is 4.54 |
+| `--muted` `#c9c4e2` | 5.77 | |
+| `--warn-text` | 5.54 | aliases `--warn` |
+| `--danger-text` `#ffa3b9` | 5.17 | `--danger` itself is 4.00 |
+| `--muted-dim` | 4.72 | replaces three hand-dimmed fades |
+
+The two that pass unchanged are aliased anyway, because the point is the
+reflex: nobody should have to remember which three of five needed it. `--accent`
+and `--danger` keep their original values as fills, borders and tracks, where
+the 4.5:1 text rule does not apply.
+
+Contrast is audited by **enumerating every rendered ink** — walking the DOM for
+elements that render their own text and tallying size, weight and computed
+colour — rather than by checking the token list. Token-level auditing is what
+let three `color-mix` fades sit under 4.5:1 unnoticed.
 
 ### Both themes are switchable
 
@@ -263,14 +393,24 @@ build separated regions with hairlines where the glass one uses depth.
 
 ## Layout and alignment
 
-The panel takes a straight 40% share of the stage (`minmax(360px, 40%)`), which
-measures 59/41 at 1024 and 60/40 by 2560 — the small drift is the gap between
-the two, which belongs to neither.
+The panel takes a 40% share of the stage, `clamp(360px, 40%, 1000px)`: 59/41
+at 1280, 60/40 from 1920 to 2560, 70/30 at 3440. The small drift below 1920 is
+the gap between the two panels, which belongs to neither.
 
 It was once capped at 27rem, which read as 65/35 at 1280 but degraded to 77/23
 by 1920 and worse on anything wider. A percentage holds its ratio at any width;
 a fixed cap cannot. The 360px floor keeps the panel usable at the 900px
 breakpoint, where 40% would be too narrow for a label and a field side by side.
+The 1000px ceiling only bites past 2500 and stops an ultrawide handing a third
+of the desk to a settings column.
+
+A 600px measure inside the panel was tried and removed. It kept toggles near
+their labels but left a dead column on the right at every width above 1600 —
+142px at 1920, 400 at 2560 — and capping the panel to match cost the ratio
+instead (74/26 at 2560). Cards fill the panel; the panel's own ceiling is the
+measure. The alternative that pays neither price is a two-column card layout,
+which only one tab has the cards to use and which would split the Effects tab's
+`.sec` heading from the content it introduces.
 
 Two rules keep controls on a grid rather than merely near one:
 
@@ -330,7 +470,20 @@ version, rather than a plausible-looking number.
 
 The bar shows which endpoint is carrying the pointer (USB / Bluetooth /
 dongle), the firmware version and the battery, read from `board output` and
-`board status`. Output is polled every 3 s and status every 5 min, and both
+`board status`.
+
+Two different facts sit next to each other there, and they are labelled so they
+cannot be confused: the **icons** are where the board sends the pointer, the
+text reads "**via USB**" or "**via BLE**" and is the link this app is
+configuring over. They genuinely differ — on Bluetooth with a cable in for
+power, a lit USB icon is correct.
+
+Which transport is open comes from App rather than from `device.kind`.
+`device.kind` holds the same fact but is a mutable singleton, so nothing
+re-renders when it changes and the header kept naming the previous session's
+link for as long as it took the next 3-second poll to land. The poll stays as
+the correction that catches a link dropping underneath us, which a prop cannot
+see. Output is polled every 3 s and status every 5 min, and both
 stand down whenever one of your own commands is queued or the sensor stream is
 running, so a poll never makes you wait and never lands inside a frame.
 
