@@ -323,12 +323,11 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 @media (min-width: 900px), (min-width: 620px) and (max-height: 560px) {
   .stage {
     grid-template-rows: minmax(0, 1fr);
-    /* A share of the stage, but only up to what the content can fill. 40% with
-       no ceiling meant the panel kept growing past the 600px measure — 142px of
-       dead panel at 1920 and 400 at 2560 — while the one thing on screen that
-       can always use more width sat next to it. Past ~1600 the extra goes to
-       the model instead. Below that nothing moves: 40% is still under the cap. */
-    grid-template-columns: minmax(0, 1fr) minmax(360px, min(40%, 640px));
+    /* 40% of the stage, with a ceiling only far enough out to stop an ultrawide
+       turning the panel into a third of the desk. A 640px cap held the measure
+       but cost the ratio — 74/26 at 2560 — and the ratio is the thing you see.
+       This holds 60/40 to 2500px and 71/29 at 3440. */
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 40%, 1000px);
     align-items: stretch;
   }
 }
@@ -1153,10 +1152,10 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
    did not merely touch, they overlapped by 5.6px. One rule gives every tab the
    spacing the panel always intended, and adjacent margins collapse rather than
    add, so elements that already carry their own keep it. */
-/* A 40% panel is 770px at 1920 and wider again beyond that, which put a
-   toggle most of a screen away from the label it answers to. Content stops at
-   a readable measure and stays left, where the eye already is. */
-.panel > div { max-width: 600px; margin-inline: auto; }
+/* Cards fill the panel. A 600px measure inside it left a dead column on the
+   right at every width above 1600, and capping the panel to match cost the
+   ratio instead. The panel's own ceiling is the measure now. */
+.panel > div { max-width: 100%; }
 
 .panel > div > * + * { margin-top: 1rem; }
 
@@ -1196,11 +1195,12 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 
 .dials {
   display: grid;
-  /* Fixed tracks packed from the left, so one dial and a row of three are the
-     same size in the same place. Stretching to 1fr made a lone dial a
-     different object from its neighbours in the section above. */
-  grid-template-columns: repeat(auto-fill, minmax(84px, 96px));
-  justify-content: start;
+  /* Fixed tracks, centred as a group. Fixed so that one dial and a row of
+     three are the same size — stretching to 1fr made a lone dial a different
+     object from its neighbours. Centred because a short row packed against the
+     left edge of a wide card reads as though it failed to fill it. */
+  grid-template-columns: repeat(auto-fit, minmax(84px, 96px));
+  justify-content: center;
   gap: 0.5rem 0.75rem;
   /* These sit inside a .knobs card now, so no frame of its own — a card within
      a card read as a nesting level that is not really there. */
