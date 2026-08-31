@@ -1155,7 +1155,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 /* Cards fill the panel. A 600px measure inside it left a dead column on the
    right at every width above 1600, and capping the panel to match cost the
    ratio instead. The panel's own ceiling is the measure now. */
-.panel > div { max-width: 100%; }
+.panel > div { max-width: 100%; min-width: 0; }
 
 .panel > div > * + * { margin-top: 1rem; }
 
@@ -1199,12 +1199,29 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
      three are the same size — stretching to 1fr made a lone dial a different
      object from its neighbours. Centred because a short row packed against the
      left edge of a wide card reads as though it failed to fill it. */
-  grid-template-columns: repeat(auto-fit, minmax(84px, 96px));
+  /* Flexible tracks with the row capped, not fixed tracks. auto-fit counts
+     repetitions off the track's MAX, so a fixed 96px max means three dials
+     cannot fit a 290px row at all and break to two-and-one instead — worse
+     than tight. Flexible tracks let them shrink to fit, and .dial__face's own
+     96px cap keeps them from ever growing past it, so the size invariant that
+     makes a lone dial the same object as a row of three still holds. */
+  grid-template-columns: repeat(auto-fit, minmax(min(78px, 100%), 1fr));
+  justify-items: center;
+  min-width: 0;
   justify-content: center;
-  /* 12px between 96px faces left the arcs almost touching, and the labels
-     under them closer still — "Sensitivity" and "Smoothing" are wider than the
-     dials they name. 24px is a quarter of a face, which reads as a gap. */
-  gap: 1rem 1.5rem;
+  max-width: 27rem;
+  margin-inline: auto;
+  /* A quarter of a face was still not a gap. These are 96px arcs with wide
+     labels under them — "Sensitivity" and "Smoothing" are wider than the dials
+     they name — so the row needs air on the order of half a face before three
+     controls stop reading as one block. The card has it spare: 384px of
+     content in 650px of card at 1920.
+
+     Tied to the panel's width rather than fixed, because a flat 40px fits at
+     1280 with 12px to spare and one notch narrower would wrap three dials to
+     two-and-one — which reads worse than tight. It takes the full 40 wherever
+     there is room and gives it back before the row has to break. */
+  gap: 1.25rem clamp(1.5rem, 6cqw, 2.5rem);
   /* These sit inside a .knobs card now, so no frame of its own — a card within
      a card read as a nesting level that is not really there. */
   padding: 0.25rem 0;
