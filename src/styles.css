@@ -641,13 +641,44 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 /* ---------- misc ---------- */
 
+/* A card in the corner, not a strip along the bottom. As a full-width bar of
+   muted text on a dark ground it read as chrome, and "the board is locked" —
+   the one message that stops a keypress doing anything — went unnoticed. */
 .toast {
+  position: fixed;
+  right: var(--pad);
+  bottom: var(--pad);
+  z-index: 20;
+  max-width: min(30rem, calc(100vw - 2 * var(--pad)));
   margin: 0;
-  padding: 0.5rem var(--pad);
+  padding: 0.75rem 1rem;
   font-size: var(--fs-body);
-  color: var(--muted);
-  border-top: 1px solid var(--line);
-  background: var(--bg-soft);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--glass-bg-3);
+  backdrop-filter: var(--glass-filter-3);
+  -webkit-backdrop-filter: var(--glass-filter-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
+  animation: toast-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(0.5rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
+/* The welcome screen has room for it in the flow and no corner to spare. */
+.toast--inline {
+  position: static;
+  max-width: none;
+  border-left-width: 1px;
+  animation: none;
 }
 .toast--inline { border: 0; padding: 0; background: none; }
 
@@ -1851,6 +1882,233 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- modal ----------
+   For the one thing that stops everything else working. A corner card can be
+   missed; this cannot, and it dims what is behind it so it is clear that the
+   board — not the app — is waiting on you. */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: var(--pad);
+  background: rgba(8, 6, 22, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: modal-in 180ms ease;
+}
+
+.modal__card {
+  width: min(30rem, 100%);
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--glass-bg-3);
+  backdrop-filter: var(--glass-filter-3);
+  -webkit-backdrop-filter: var(--glass-filter-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
+}
+
+/* A warning, and it should look like one before it is read: amber edge, amber
+   rule under the heading, and the triangle everyone already knows. */
+.modal__card--warn {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3),
+    inset 0 3px 0 0 var(--warn);
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.modal__icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  fill: var(--warn);
+}
+
+/* Punched out of the triangle, so the mark reads at any size. */
+.modal__bang { fill: var(--bg); }
+
+.modal__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-title);
+  letter-spacing: var(--ls-title);
+  color: var(--warn-text);
+}
+
+.modal__body { margin: 0; font-size: var(--fs-body); color: var(--muted); }
+
+@keyframes modal-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal { animation: none; }
+}
+
+/* ---------- key tags on the model ----------
+   One label per key, moved to its key in the render loop. Pointer-events off
+   throughout: the model underneath stays draggable, and a tag never eats a
+   click meant for the key it names. */
+
+.keytags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Printed on the key, not floating over it. No pill, no border, no shadow of
+   its own — dark ink with a fine light edge, which is how a legend on a real
+   keycap catches the light and which reads on both the coral keys and the
+   white shell without a plate behind it. */
+.keytag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  /* Sentence case at body size rather than tracked capitals at micro. It reads
+     larger and takes noticeably less width, which is what stops a two-part
+     legend like "Mouse Forward - hold Device" running off its key. */
+  font-size: var(--fs-body);
+  font-weight: var(--fw-label);
+  line-height: 1.15;
+  text-align: center;
+  /* Wraps inside the width the render loop measures from the key itself. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: rgba(18, 14, 32, 0.94);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+/* ---------- keymap ----------
+   Keys are placed by the board's own physical layout, in hundredths of a key
+   unit, so the container carries the aspect ratio and every key is a
+   percentage inside it. That way one rule renders any board's shape. */
+
+.kmap {
+  position: relative;
+  /* Keys size their type against the board, not the viewport, so a narrow key
+     in a narrow panel still gets type in proportion to itself. */
+  container-type: inline-size;
+  width: 100%;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--glass-bg-2);
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
+}
+
+.kmap__key {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0.25rem;
+  min-height: 0;                 /* the shared 44px floor would break the grid */
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-3);
+  color: var(--text);
+  line-height: 1.1;
+  text-align: center;
+  /* A long binding name breaks rather than being clipped mid-word. */
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.kmap__key:hover { border-color: color-mix(in srgb, var(--text) 34%, transparent); }
+.kmap__key.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--glass-bg-3));
+}
+
+/* A hold-tap carries two answers. Tap is what an ordinary press does, so it
+   takes the cap; hold sits under it, smaller and muted, labelled so the two
+   are never read as one. */
+.kmap__cap { display: block; }
+
+/* A key too small for any label. It still shows where it is and stays
+   clickable; what it does is listed under the board. */
+.kmap__key--tiny { padding: 0; }
+.kmap__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.kmap__key--tiny.is-active .kmap__dot { background: var(--accent); }
+
+.kmap__sub {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
+.kmap__list { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.75rem 0; padding: 0; list-style: none; }
+
+/* The picker is a card, not a modal: on a panel this narrow a dialog would
+   cover the very keys you are choosing between. */
+.picker { margin: 0.75rem 0; }
+
+/* ---------- numbered steps ----------
+   Used by the flash flow, where the order is the instruction. The marker sits
+   in its own column so a step's controls wrap under its text, not under its
+   number. */
+
+.steps {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.steps > li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  font-size: var(--fs-body);
+  color: var(--muted);
+}
+/* Every real child goes in the second column. The counter is a pseudo-element,
+   so it is auto-placed into the first and everything else stacks beside it —
+   without this, a step with two children puts the second one back in column
+   one, which is 1.5rem wide, and a warning renders as a vertical strip of
+   single letters. */
+.steps > li > * { grid-column: 2; }
+
+.steps > li::before {
+  counter-increment: step;
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--pill);
+  border: 1px solid var(--line);
+  background: var(--glass);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  color: var(--text);
+}
+.steps .warn--inline { margin-top: 0.5rem; }
+
 /* ---------- advanced sub-groups ---------- */
 
 .advgroup + .advgroup { margin-top: 1rem; }
@@ -2150,6 +2408,42 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   transform: translateX(35%);
 }
 
+/* A droplet where you pressed. The sheen answers the pointer arriving; this
+   answers it landing, and the two read as one material because both are the
+   same specular white on the same surface.
+
+   Glass only. Flat had no specular anything, and a highlight spreading across
+   a solid fill would be the one glass trait it inherited.
+
+   Only opacity and transform move, so it composites without touching layout —
+   which matters most for .vbtn, whose six instances sit over a canvas that is
+   already redrawing. --rx/--ry come from the pointer; without them it falls
+   back to the centre, which is what a keyboard press gets. */
+:root:not([data-theme="flat"]) :is(.btn, .pill, .theme-btn, .vbtn, .tab)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: var(--rx, 50%) var(--ry, 50%);
+  background: radial-gradient(
+    circle at var(--rx, 50%) var(--ry, 50%),
+    rgba(255, 255, 255, 0.5),
+    rgba(255, 255, 255, 0.14) 38%,
+    rgba(255, 255, 255, 0) 62%);
+}
+
+:root:not([data-theme="flat"]) :is(.btn, .pill, .theme-btn, .vbtn, .tab)[data-droplet]::before {
+  animation: droplet 460ms cubic-bezier(0.22, 0.68, 0.3, 1);
+}
+
+@keyframes droplet {
+  from { opacity: 0.85; transform: scale(0.28); }
+  to   { opacity: 0;    transform: scale(1.9); }
+}
+
 
 /* ---------- fallbacks and preferences ----------
    All four branches reassign the same tokens rather than restating rules, so
@@ -2198,6 +2492,10 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   :root { --glass-sheen: none; }
   .btn::after, .pill::after, .theme-btn::after, .vbtn::after, .tab::after {
     transition: none;
+  }
+  .btn::before, .pill::before, .theme-btn::before, .vbtn::before, .tab::before {
+    animation: none !important;
+    content: none;
   }
 }
 

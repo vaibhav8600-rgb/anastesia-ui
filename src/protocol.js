@@ -476,6 +476,59 @@ export function parseBoardStatus(status, version) {
   return out;
 }
 
+/**
+ * Split a reported firmware version into what it means. The firmware encodes
+ * the sensor in the major: a board with a PAW3395 reports 101.4.4 for what is
+ * really 1.4.4. Showing the raw number is not just untidy — it makes every
+ * comparison against a release tag wrong by a hundred, and it hides the one
+ * fact that decides which of two .uf2 files you need.
+ */
+export function parseFirmware(raw) {
+  if (!raw) return null;
+  const m = String(raw).match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return { version: String(raw), paw3395: false, raw: String(raw) };
+  const major = Number(m[1]);
+  const paw3395 = major >= 100;
+  return {
+    version: `${paw3395 ? major - 100 : major}.${m[2]}.${m[3]}`,
+    paw3395,
+    raw: String(raw),
+  };
+}
+
+/** Numeric compare of two dotted versions. Returns >0 when a is newer. */
+export function compareVersions(a, b) {
+  const pa = String(a).split(".").map(Number);
+  const pb = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+// A UF2 block is 512 bytes and carries three magic words. Checking all three is
+// what stops a .zip, a .hex or a half-downloaded file reaching a bootloader.
+const UF2_START0 = 0x0a324655;
+const UF2_START1 = 0x9e5d5157;
+const UF2_END = 0x0ab16f30;
+
+export function isUF2(buffer) {
+  if (buffer.byteLength < 512 || buffer.byteLength % 512 !== 0) return false;
+  const v = new DataView(buffer);
+  return v.getUint32(0, true) === UF2_START0
+    && v.getUint32(4, true) === UF2_START1
+    && v.getUint32(508, true) === UF2_END;
+}
+
+/** Which of a release's assets belongs to this board. */
+export function pickAsset(assets, paw3395) {
+  const uf2 = (assets ?? []).filter((a) => a.name.toLowerCase().endsWith(".uf2"));
+  const paw = uf2.filter((a) => /paw3395/i.test(a.name));
+  const plain = uf2.filter((a) => !/paw3395/i.test(a.name));
+  return (paw3395 ? paw[0] : plain[0]) ?? null;
+}
+
 export function parseOutput(text) {
   return text?.match(/Output:\s*(USB|BLE|ESB)/i)?.[1]?.toUpperCase() ?? null;
 }
@@ -614,6 +667,47 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("protocol.js")
   eq(help.version, "0.9.9", "falls back to board version");
   eq(help.battery, null, "help text carries no battery");
   eq(parseOutput("Output: usb"), "USB", "output normalised");
+
+  // The sensor rides in the major. 101.4.4 is 1.4.4 on a PAW3395, and reading
+  // it literally would put the board a hundred versions ahead of every release.
+  eq(parseFirmware("101.4.4"), { version: "1.4.4", paw3395: true, raw: "101.4.4" }, "paw3395 major");
+  eq(parseFirmware("1.4.4"), { version: "1.4.4", paw3395: false, raw: "1.4.4" }, "plain major");
+  eq(parseFirmware(null), null, "no version yet");
+  eq(parseFirmware("weird"), { version: "weird", paw3395: false, raw: "weird" }, "unparseable is passed through");
+  console.assert(compareVersions("1.4.5", "1.4.4") > 0, "newer patch");
+  console.assert(compareVersions("1.4.4", "1.4.4") === 0, "same version");
+  console.assert(compareVersions("1.10.0", "1.9.9") > 0, "numeric, not lexical");
+  console.assert(compareVersions("1.4", "1.4.0") === 0, "missing segment is zero");
+
+  // A bootloader takes whatever it is handed, so the check that a file is
+  // really a UF2 is the one that matters. Three magic words, and a length that
+  // is a whole number of 512-byte blocks.
+  const uf2 = (mutate = () => {}) => {
+    const b = new ArrayBuffer(512);
+    const v = new DataView(b);
+    v.setUint32(0, 0x0a324655, true);
+    v.setUint32(4, 0x9e5d5157, true);
+    v.setUint32(508, 0x0ab16f30, true);
+    mutate(v);
+    return b;
+  };
+  console.assert(isUF2(uf2()), "a well-formed block is a UF2");
+  console.assert(!isUF2(uf2((v) => v.setUint32(0, 0x504b0304, true))), "a zip is not a UF2");
+  console.assert(!isUF2(uf2((v) => v.setUint32(508, 0, true))), "a missing end magic is caught");
+  console.assert(!isUF2(new ArrayBuffer(300)), "a truncated download is not a whole block");
+  console.assert(!isUF2(new ArrayBuffer(0)), "an empty file is not a UF2");
+
+  // Picking the wrong variant is the failure this tab exists to prevent.
+  const assets = [
+    { name: "endgame-1.4.4.uf2" },
+    { name: "endgame-paw3395-1.4.4.uf2" },
+    { name: "firmware.zip" },
+  ];
+  eq(pickAsset(assets, true).name, "endgame-paw3395-1.4.4.uf2", "paw3395 board takes the paw3395 build");
+  eq(pickAsset(assets, false).name, "endgame-1.4.4.uf2", "default board does not take the paw3395 build");
+  eq(pickAsset([{ name: "notes.txt" }], false), null, "a release with no .uf2 offers nothing");
+  eq(pickAsset([{ name: "endgame-paw3395-1.4.4.uf2" }], false), null,
+     "a paw3395-only release offers nothing to a default board");
   eq(parseOutput("nothing"), null, "no output line");
 
   // p2sm readouts. The "2" in "p2sm" is the trap: a bare digit match reads

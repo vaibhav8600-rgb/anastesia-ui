@@ -78,8 +78,17 @@ export function hasWebGL() {
 const reducedMotion = () =>
   typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export default function Trackball({ values, onScrollTick, tools = true }) {
+export default function Trackball({ values, onScrollTick, tools = true, keyLabels, wheelLabels }) {
   const host = useRef(null);
+  const tags = useRef(null);
+  // Shown by default — the whole point is seeing what the keys do — with a way
+  // to clear them off when you would rather just look at the device.
+  const [showTags, setShowTags] = useState(true);
+  // Keys first, then the two encoder wheels, which is the order the render
+  // loop walks its targets in.
+  const labels = useRef(null);
+  labels.current = showTags ? [...(keyLabels ?? []), ...(wheelLabels ?? [])] : null;
+  const anyLabels = (keyLabels?.length ?? 0) + (wheelLabels?.length ?? 0) > 0;
   const api = useRef(null);
   const dot = useRef(null);
   const rpm = useRef(null);
@@ -107,7 +116,11 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Not PCFSoftShadowMap: three deprecates it and substitutes this anyway,
+    // warning once per frame while it does. A comment here said exactly that
+    // and I removed it after finding the constant still exported — the export
+    // survives, the behaviour does not.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     // Only the ball and the wheels move, and both are surfaces of revolution
     // turning about their own axis — their shadows never change. So the shadow
     // pass runs once and is then frozen, which is most of the per-frame cost.
@@ -439,6 +452,9 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         track(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 1.05, 32, 1, false)), wheelMat,
       ));
       wheel.position.copy(outward).multiplyScalar(WHEEL_DIST).setY(0.95);
+      // Which way this corner faces. The label above it is printed on that
+      // face, so it needs the same normal to know when it is being looked at.
+      wheel.userData.outward = outward.clone();
       wheel.castShadow = true;
       wheel.userData.spin = 0;
       wheels.push(wheel);
@@ -494,6 +510,80 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     const glow = new THREE.PointLight(0x7cd4ff, 0, 24, 2);
     glow.position.set(0, 1.1, 0);
     scene.add(glow);
+
+    // The model's keys, ordered by where they sit rather than by the order
+    // they happened to be built in. The keymap is sorted the same way, so the
+    // two line up without either side knowing the other's indices.
+    // Where a key actually is, which is not where its mesh is. These are
+    // extruded shapes whose vertices carry the position, so every button's
+    // own transform sits at the origin and getWorldPosition returns the middle
+    // of the ball for all eight of them. The centre of the geometry is the
+    // real answer; cached in local space so the render loop can transform it
+    // each frame as the key presses in and out.
+    for (const b of [...buttons, ...wheels]) {
+      b.geometry.computeBoundingBox();
+      const box = b.geometry.boundingBox;
+      b.userData.centre = box.getCenter(new THREE.Vector3());
+      // The eight corners, so the render loop can measure how wide the key is
+      // on screen right now. A label is then held to its own key rather than
+      // running across its neighbours — which is what "nowrap" was doing.
+      b.userData.corners = [
+        new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+      ];
+    }
+
+    const ringed = buttons
+      .map((b) => {
+        const p = b.userData.centre.clone();
+        b.localToWorld(p);
+        // Same normalisation as the layout side: a key on the pi boundary
+        // must not swap ends of the ring on the sign of a zero.
+        return { mesh: b, angle: (Math.atan2(p.z, p.x) + Math.PI * 2) % (Math.PI * 2) };
+      })
+      .sort((a, b) => a.angle - b.angle)
+      .map((k) => k.mesh);
+
+    // The encoders, left to right. Their bindings come through as two labels in
+    // the same order, so a wheel is named by where it is rather than by which
+    // one happened to be built first.
+    const ringedWheels = wheels
+      .map((w) => {
+        const p = new THREE.Vector3();
+        w.getWorldPosition(p);
+        return { mesh: w, x: p.x };
+      })
+      .sort((a, b) => a.x - b.x)
+      .map((w) => w.mesh);
+
+    // Keys are labelled where they are; encoders are labelled on the shell
+    // just above them. A wheel spins when you click it, and a label pinned to
+    // a spinning mesh has no business being a label — this anchor is a fixed
+    // point in the rig's own space, worked out once, so the tag sits on the
+    // body and stays there however the wheel turns.
+    const tagTargets = [
+      ...ringed.map((mesh) => ({ mesh })),
+      ...ringedWheels.map((wheel) => {
+        const at = new THREE.Vector3();
+        wheel.getWorldPosition(at);
+        const face = wheel.userData.outward;
+        // On the side wall directly above the encoder, not on the top plate.
+        // The height comes from the wheel's own box rather than its radius:
+        // the radius is across the tread, and using it lifted the legend most
+        // of the way up the wall instead of leaving it beside the wheel.
+        const half = (wheel.geometry.boundingBox.max.y
+          - wheel.geometry.boundingBox.min.y) / 2;
+        at.y += half + 0.12;
+        at.addScaledVector(face, 0.35);
+        return { mesh: wheel, fixed: at, face };
+      }),
+    ];
 
     // ---------------------------------------------------------- camera
     const bounds = new THREE.Box3().setFromObject(rig);
@@ -787,6 +877,56 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         velY *= d;
       }
 
+      // Bindings float over their own keys. Positions are written straight to
+      // the DOM here rather than through state: this runs every frame, and a
+      // re-render per frame would take the settings panel with it.
+      if (tags.current && labels.current?.length) {
+        const box = renderer.domElement.getBoundingClientRect();
+        const v = new THREE.Vector3();
+        const c = new THREE.Vector3();
+        const toCam = new THREE.Vector3();
+        tagTargets.forEach((target, i) => {
+          const el = tags.current.children[i];
+          if (!el) return;
+          const text = labels.current[i];
+          if (!text) { el.hidden = true; return; }
+          const mesh = target.mesh;
+          if (target.fixed) {
+            // Printed on a wall, so it goes when the wall does. Looking down at
+            // the board, this face is edge-on and its legend has no business
+            // floating over the top plate.
+            toCam.copy(camera.position).sub(target.fixed).normalize();
+            if (toCam.dot(target.face) < 0.34) { el.hidden = true; return; }
+            v.copy(target.fixed);
+          } else {
+            v.copy(mesh.userData.centre);
+            mesh.localToWorld(v);
+          }
+          v.project(camera);
+          // Behind the camera, or off the frame: hide rather than smear it
+          // against an edge.
+          if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) { el.hidden = true; return; }
+          el.hidden = false;
+          if (el.textContent !== text) el.textContent = text;
+          el.style.left = `${((v.x + 1) / 2) * box.width}px`;
+          el.style.top = `${((1 - v.y) / 2) * box.height}px`;
+
+          // How wide this key is on screen, so the label can be kept inside it.
+          let lo = Infinity, hi = -Infinity;
+          for (const corner of mesh.userData.corners) {
+            c.copy(corner);
+            mesh.localToWorld(c);
+            c.project(camera);
+            const px = ((c.x + 1) / 2) * box.width;
+            if (px < lo) lo = px;
+            if (px > hi) hi = px;
+          }
+          // A little inside the key, so the legend sits on the cap rather than
+          // running to its very edge.
+          el.style.maxWidth = `${Math.max(28, (hi - lo) * 0.88)}px`;
+        });
+      }
+
       for (const b of buttons) {
         if (b.userData.press > 0) {
           b.userData.press = Math.max(0, b.userData.press - step * 3.6);
@@ -875,6 +1015,17 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         aria-label="Trackball preview. Drag the ball to roll it, drag the body to turn the device, scroll to zoom. Arrow keys roll, shift with arrows turns, plus and minus zoom."
       />
 
+      {/* One span per key on the model, moved to its key every frame. Hidden
+          until something gives it a label, so the model is uncluttered unless
+          the keymap editor is open with a keymap read. */}
+      {supported && showTags && anyLabels && (
+        <div className="keytags" ref={tags} aria-hidden="true">
+          {[...(keyLabels ?? []), ...(wheelLabels ?? [])].map((_, i) => (
+            <span key={i} className="keytag" hidden />
+          ))}
+        </div>
+      )}
+
       {supported && tools && (
         <div className="pad" aria-hidden="true">
           <span className="pad__label">Pointer output</span>
@@ -887,6 +1038,18 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
 
       {supported && tools && (
         <div className="viewport__tools">
+          {/* "Labels", not "Keys": beside Top, Port and Wheels, which are all
+              camera views, "Keys" read as a fourth one rather than a switch. */}
+          {anyLabels && (
+            <button
+              className={"vbtn" + (showTags ? " is-on" : "")}
+              onClick={() => setShowTags((v) => !v)}
+              aria-pressed={showTags}
+              title={showTags ? "Hide the key bindings" : "Show the key bindings"}
+            >
+              Labels
+            </button>
+          )}
           <button className="vbtn" onClick={() => api.current?.setView("home")}>Reset</button>
           <button className="vbtn" onClick={() => api.current?.setView("top")}>Top</button>
           <button className="vbtn" onClick={() => api.current?.setView("port")}>Port</button>

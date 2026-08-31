@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
 import Loading from "./Loading.jsx";
+import Studio from "./Studio.jsx";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const DEMO_LATENCY_MS = 450;
@@ -239,7 +240,7 @@ export function Surface({ live, onNote, active = true }) {
   );
 }
 
-export function Keymap({ live, onNote }) {
+export function Keymap({ live, onNote, onKeyLabels, onWheelLabels }) {
   const [slots, setSlots] = useState([]);
   const [assign, setAssign] = useState({});
   const [changed, setChanged] = useState(false);
@@ -318,11 +319,21 @@ export function Keymap({ live, onNote }) {
 
   return (
     <>
+      {/* The editor first: bindings are what people open this tab for, and
+          profiles are the housekeeping around them. */}
+      <Studio onNote={onNote} onKeyLabels={onKeyLabels} onWheelLabels={onWheelLabels} />
+
       <p className="panel__blurb">
         Save the live keymap into a slot, then point each connection at the slot it should use.
       </p>
 
-      {changed && <p className="notice">The live keymap has unsaved changes.</p>}
+      {/* The board says "your current keymap has changes" whenever the live
+          keymap differs from the last saved slot — which, with no slot saved,
+          is always and forever. Comparing against a profile that does not
+          exist is not information, so it waits until there is one. */}
+      {changed && slots.some((s) => s.occupied) && (
+        <p className="notice">The live keymap differs from your saved profiles.</p>
+      )}
 
       <h3 className="sec">Profiles</h3>
       <ul className="slots">
@@ -444,6 +455,7 @@ export function Keymap({ live, onNote }) {
           Reset to default keymap
         </button>
       </div>
+
     </>
   );
 }

@@ -8,6 +8,7 @@ import Trackball, { hasWebGL } from "./Trackball.jsx";
 import Control from "./Control.jsx";
 import Curves from "./Curves.jsx";
 import Effects from "./Effects.jsx";
+import Firmware from "./Firmware.jsx";
 import Logs from "./Logs.jsx";
 import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Heatmap from "./Heatmap.jsx";
@@ -29,6 +30,7 @@ const TABS = [
   { id: "sensors", label: "Sensor(s)" },
   { id: "effects", label: "Effects" },
   { id: "io", label: "Import/Export" },
+  { id: "firmware", label: "Firmware" },
   { id: "raw", label: "Raw settings" },
   { id: "logs", label: "Logs" },
 ];
@@ -95,6 +97,10 @@ export default function App() {
   // same fact but is a mutable singleton, so nothing re-renders when it changes
   // and the header can keep announcing the previous session's link.
   const [transport, setTransport] = useState(null);
+  // Bindings the keymap editor wants drawn on the model, in the order the
+  // model rings its keys. Empty whenever the editor is not showing a keymap.
+  const [keyLabels, setKeyLabels] = useState([]);
+  const [wheelLabels, setWheelLabels] = useState([]);
   const [state, setState] = useState(null);
   const [values, setValues] = useState({});
   const [dirty, setDirty] = useState(() => new Set());
@@ -220,6 +226,14 @@ export default function App() {
     el._t = setTimeout(() => { el.dataset.live = "0"; }, 600);
   }, []);
 
+  // A card in the corner has to leave on its own. Errors stay put — being told
+  // the board is locked and then having it vanish is worse than not being told.
+  useEffect(() => {
+    if (!note || /lock|fail|error|could not|refus|did not/i.test(note)) return undefined;
+    const t = setTimeout(() => setNote(null), 6000);
+    return () => clearTimeout(t);
+  }, [note]);
+
   const startDemo = useCallback(() => { seed(DEMO_STATE); setStatus("demo"); }, [seed]);
   useEffect(() => { if (status === "demo") startDemo(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -249,9 +263,11 @@ export default function App() {
   return (
     <div className="app">
       <header className="bar">
+        {/* The byline lives on the landing page, where there is room for it
+            and a reason to read it. In the working header it was competing for
+            width with the device status on every screen. */}
         <span className="brand">
           <strong>Anastasia</strong>
-          <em>by Vaibhav Rajput</em>
         </span>
         {!live && <span className="chip">Demo</span>}
         <div className="bar__spacer" />
@@ -267,7 +283,7 @@ export default function App() {
       {/* The console wants the whole width; everything else keeps the preview. */}
       <main className={"stage" + (tab === "logs" ? " stage--wide" : "")}>
         <section className="stage__view">
-          <Trackball values={scene} onScrollTick={onScrollTick} />
+          <Trackball values={scene} onScrollTick={onScrollTick} keyLabels={keyLabels} wheelLabels={wheelLabels} />
           <p className="stage__caption">
             {hasWebGL()
               ? "Roll the ball · drag the body to turn · scroll to zoom"
@@ -293,7 +309,7 @@ export default function App() {
 
           <div className={"panel" + (tab === "logs" ? " panel--flush" : "")} role="tabpanel">
             <Pane active={tab === "keymap"} visited={visited.has("keymap")}>
-              <Keymap live={live} onNote={setNote} />
+              <Keymap live={live} onNote={setNote} onKeyLabels={setKeyLabels} onWheelLabels={setWheelLabels} />
             </Pane>
 
             <Pane active={tab === "acceleration"} visited={visited.has("acceleration")}>
@@ -340,6 +356,10 @@ export default function App() {
               <ImportExport live={live} onNote={setNote} rtcfg={state.rtcfg} firmware={firmware} />
             </Pane>
 
+            <Pane active={tab === "firmware"} visited={visited.has("firmware")}>
+              <Firmware live={live} firmware={firmware} onNote={setNote} />
+            </Pane>
+
             <Pane active={tab === "raw"} visited={visited.has("raw")}>
               <Raw rtcfg={state.rtcfg} ranges={state.ranges} live={live} onNote={setNote} />
             </Pane>
@@ -351,7 +371,11 @@ export default function App() {
         </section>
       </main>
 
-      {note && <p className="toast" role="status">{note}</p>}
+      {note && (
+        <p className="toast" role="status" onClick={() => setNote(null)}>
+          {note}
+        </p>
+      )}
     </div>
   );
 }
