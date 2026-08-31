@@ -420,12 +420,20 @@ class Device {
 
       // Something came back and then stopped: treat that as the whole reply,
       // even without a prompt we know.
+      //
+      // "Something" has to mean content, not whitespace. `keymap status` reads
+      // every slot out of flash before it prints anything, and the shell emits
+      // a bare newline first — so a buffer holding just that, going quiet for
+      // the 1.2s the read takes, was being called a complete and empty reply.
+      // The listing then arrived after we had stopped listening, and a board
+      // with saved profiles reported none.
+      const meaningful = clean.trim().length > 0;
       const quiet = this.lastByteAt && Date.now() - this.lastByteAt > QUIET_MS;
-      if (clean.length > 0 && quiet) return tidy(clean, cmd);
+      if (meaningful && quiet) return tidy(clean, cmd);
 
       if (Date.now() > deadline) {
         // Anything at all beats an exception; only true silence is an error.
-        if (clean.length > 0) return tidy(clean, cmd);
+        if (meaningful) return tidy(clean, cmd);
         throw new Error(`Timed out: ${cmd}`);
       }
       await sleep(20);
@@ -483,6 +491,25 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("device.js")) 
     x.buffer = "p2sm/x 1";
     x.lastByteAt = Date.now();
   }, { text: "p2sm/x 1" });
+
+  // The one that cost a board its profiles. `keymap status` reads every slot
+  // out of flash before printing, and the shell emits a bare newline first.
+  // A buffer holding only that, quiet for longer than QUIET_MS, is not a
+  // finished empty reply — it is a command still working, and calling it done
+  // threw away the listing that arrived a moment later.
+  await check("whitespace only, gone quiet", (x) => {
+    x.buffer = String.fromCharCode(10);
+    x.lastByteAt = Date.now() - (QUIET_MS + 200);
+  }, { throws: true });
+
+  await check("whitespace only, then the real answer", (x) => {
+    const NL = String.fromCharCode(10);
+    x.buffer = NL;
+    x.lastByteAt = Date.now() - (QUIET_MS + 200);
+    // The listing lands while awaitPrompt is still waiting, as it does on a
+    // board that takes a second to read its slots.
+    setTimeout(() => { x.buffer += "  Slot 1: unoccupied" + NL + "uart:~$ "; }, 60);
+  }, { text: "Slot 1: unoccupied" });
 
   // Total silence is the only genuine failure.
   await check("silence", () => {}, { throws: true });
