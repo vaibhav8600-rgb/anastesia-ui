@@ -78,8 +78,11 @@ export function hasWebGL() {
 const reducedMotion = () =>
   typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export default function Trackball({ values, onScrollTick, tools = true }) {
+export default function Trackball({ values, onScrollTick, tools = true, keyLabels }) {
   const host = useRef(null);
+  const tags = useRef(null);
+  const labels = useRef(keyLabels);
+  labels.current = keyLabels;
   const api = useRef(null);
   const dot = useRef(null);
   const rpm = useRef(null);
@@ -499,6 +502,20 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     glow.position.set(0, 1.1, 0);
     scene.add(glow);
 
+    // The model's keys, ordered by where they sit rather than by the order
+    // they happened to be built in. The keymap is sorted the same way, so the
+    // two line up without either side knowing the other's indices.
+    const ringed = buttons
+      .map((b) => {
+        const p = new THREE.Vector3();
+        b.getWorldPosition(p);
+        // Same normalisation as the layout side: a key on the pi boundary
+        // must not swap ends of the ring on the sign of a zero.
+        return { mesh: b, angle: (Math.atan2(p.z, p.x) + Math.PI * 2) % (Math.PI * 2) };
+      })
+      .sort((a, b) => a.angle - b.angle)
+      .map((k) => k.mesh);
+
     // ---------------------------------------------------------- camera
     const bounds = new THREE.Box3().setFromObject(rig);
     const centre = bounds.getCenter(new THREE.Vector3());
@@ -791,6 +808,29 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         velY *= d;
       }
 
+      // Bindings float over their own keys. Positions are written straight to
+      // the DOM here rather than through state: this runs every frame, and a
+      // re-render per frame would take the settings panel with it.
+      if (tags.current && labels.current?.length) {
+        const box = renderer.domElement.getBoundingClientRect();
+        const v = new THREE.Vector3();
+        ringed.forEach((mesh, i) => {
+          const el = tags.current.children[i];
+          if (!el) return;
+          const text = labels.current[i];
+          if (!text) { el.hidden = true; return; }
+          mesh.getWorldPosition(v);
+          v.project(camera);
+          // Behind the camera, or off the frame: hide rather than smear it
+          // against an edge.
+          if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) { el.hidden = true; return; }
+          el.hidden = false;
+          el.textContent = text;
+          el.style.left = `${((v.x + 1) / 2) * box.width}px`;
+          el.style.top = `${((1 - v.y) / 2) * box.height}px`;
+        });
+      }
+
       for (const b of buttons) {
         if (b.userData.press > 0) {
           b.userData.press = Math.max(0, b.userData.press - step * 3.6);
@@ -878,6 +918,15 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
         role="application"
         aria-label="Trackball preview. Drag the ball to roll it, drag the body to turn the device, scroll to zoom. Arrow keys roll, shift with arrows turns, plus and minus zoom."
       />
+
+      {/* One span per key on the model, moved to its key every frame. Hidden
+          until something gives it a label, so the model is uncluttered unless
+          the keymap editor is open with a keymap read. */}
+      {supported && keyLabels?.length > 0 && (
+        <div className="keytags" ref={tags} aria-hidden="true">
+          {keyLabels.map((_, i) => <span key={i} className="keytag" hidden />)}
+        </div>
+      )}
 
       {supported && tools && (
         <div className="pad" aria-hidden="true">

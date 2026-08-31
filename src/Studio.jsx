@@ -202,7 +202,48 @@ function describe(binding, behaviors, layers) {
   return { name, full: name, detail: null };
 }
 
-export default function Studio({ onNote }) {
+/**
+ * The board's keys in the order the model rings them: by angle around the
+ * layout's centre, largest keys only.
+ *
+ * The model has eight keys and no encoders, so the slivers are dropped rather
+ * than shifting everything after them by one. Sorting both sides by the same
+ * geometric rule is what pairs them — neither has to know the other's indices,
+ * and the ordering is derived from the board's own coordinates rather than
+ * from an assumption that two build orders happen to agree.
+ */
+export function ringOrder(keys, count = 8) {
+  if (!keys?.length) return [];
+  // Largest first, and only then a centre. Taking the centre of every key
+  // would let the encoders — which the model has no keys for — drag it off to
+  // one side, and a moved centre rotates the whole ring: the sequence stays
+  // right but starts on the wrong key, so every label lands one place over.
+  const chosen = keys
+    .map((k, position) => ({ position, k, area: (k.width ?? 100) * (k.height ?? 100) }))
+    .sort((a, b) => b.area - a.area)
+    .slice(0, count);
+
+  const cx = chosen.reduce((a, { k }) => a + (k.x ?? 0) + (k.width ?? 100) / 2, 0) / chosen.length;
+  const cy = chosen.reduce((a, { k }) => a + (k.y ?? 0) + (k.height ?? 100) / 2, 0) / chosen.length;
+
+  return chosen
+    .map((c) => ({
+      ...c,
+      // Screen y grows downward and the model's z grows toward the viewer, so
+      // the vertical axis is negated to make the two rotations agree.
+      //
+      // Normalised to [0, 2pi) because atan2 returns -pi for a key due west
+      // when the vertical difference is negative zero and +pi when it is
+      // positive zero. Left alone, a key on that boundary would jump from one
+      // end of the ring to the other on the sign of a zero.
+      angle: (Math.atan2(-((c.k.y ?? 0) + (c.k.height ?? 100) / 2 - cy),
+        (c.k.x ?? 0) + (c.k.width ?? 100) / 2 - cx) + Math.PI * 2) % (Math.PI * 2),
+    }))
+    .sort((a, b) => a.angle - b.angle)
+    .map((c) => c.position);
+}
+
+export default function Studio({ onNote, onKeyLabels }) {
   const link = useRef(null);
   const [state, setState] = useState("idle");   // idle | opening | ready
   const [device, setDevice] = useState(null);
@@ -290,6 +331,20 @@ export default function Studio({ onNote }) {
   const disconnect = async () => { await link.current?.close(); setState("idle"); };
 
   useEffect(() => () => { link.current?.close(); }, []);
+
+  // Hand the model the same bindings, ordered its way. Cleared on unmount so
+  // the labels do not outlive the tab that meant them.
+  const labelKeys = layouts?.layouts?.[layouts.active_layout_index ?? 0]?.keys;
+  const shownLayer = keymap?.layers?.[layer];
+  useEffect(() => {
+    if (!onKeyLabels) return undefined;
+    if (!labelKeys?.length || !shownLayer) { onKeyLabels([]); return undefined; }
+    onKeyLabels(ringOrder(labelKeys).map((position) => {
+      const d = describe(shownLayer.bindings?.[position], behaviors, keymap?.layers);
+      return d.sub ? `${d.name} · ${d.sub}` : d.name;
+    }));
+    return () => onKeyLabels([]);
+  }, [onKeyLabels, labelKeys, shownLayer, behaviors, keymap]);
 
   const setBinding = async (position, binding) => {
     setBusy(true);
@@ -431,11 +486,16 @@ export default function Studio({ onNote }) {
             // follows the board's own width. A narrow encoder key gets small
             // type rather than a clipped label.
             const size = ((w / spanX) * 100 * 0.13).toFixed(2);
+            // An encoder key is a sliver of the board. No type size fits
+            // "Volume Down" inside it, so it carries a dot and its binding is
+            // listed under the board instead of being shrunk into illegibility.
+            const tiny = (w / spanX) < 0.055 || (h / spanY) < 0.055;
             return (
               <button
                 key={position}
                 className={"kmap__key"
                   + (picking === position ? " is-active" : "")
+                  + (tiny ? " kmap__key--tiny" : "")
                   // A tall, narrow key reads down its length instead of being
                   // cut off across it — which is exactly the encoder keys.
                   + (h > w * 1.8 ? " kmap__key--tall" : "")}
@@ -450,8 +510,13 @@ export default function Studio({ onNote }) {
                 title={b.detail ? `${b.full} · ${b.detail}` : b.full}
                 onClick={() => setPicking(picking === position ? null : position)}
               >
-                <span className="kmap__cap">{b.name}</span>
-                {b.sub && <span className="kmap__sub">{b.sub}</span>}
+                {tiny ? <span className="kmap__dot" aria-hidden="true" /> : (
+                  <>
+                    <span className="kmap__cap">{b.name}</span>
+                    {b.sub && <span className="kmap__sub">{b.sub}</span>}
+                  </>
+                )}
+                {tiny && <span className="sr-only">{b.full}</span>}
               </button>
             );
           })}
@@ -462,6 +527,35 @@ export default function Studio({ onNote }) {
           position. The bindings are still listed below.
         </p>
       )}
+
+      {layout && (() => {
+        const small = keys
+          .map((k, position) => ({ k, position }))
+          .filter(({ k }) => (k.width ?? 100) / spanX < 0.055
+            || (k.height ?? 100) / spanY < 0.055);
+        if (!small.length) return null;
+        return (
+          <>
+            <p className="ctl__hint">
+              Marked with a dot on the board — too small to label in place:
+            </p>
+            <div className="row row--wrap">
+              {small.map(({ position }) => {
+                const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
+                return (
+                  <button
+                    key={position}
+                    className={"pill" + (picking === position ? " is-active" : "")}
+                    onClick={() => setPicking(picking === position ? null : position)}
+                  >
+                    {b.name}{b.sub ? ` · ${b.sub}` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {!layout && (
         <ol className="kmap__list">

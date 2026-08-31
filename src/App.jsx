@@ -97,6 +97,9 @@ export default function App() {
   // same fact but is a mutable singleton, so nothing re-renders when it changes
   // and the header can keep announcing the previous session's link.
   const [transport, setTransport] = useState(null);
+  // Bindings the keymap editor wants drawn on the model, in the order the
+  // model rings its keys. Empty whenever the editor is not showing a keymap.
+  const [keyLabels, setKeyLabels] = useState([]);
   const [state, setState] = useState(null);
   const [values, setValues] = useState({});
   const [dirty, setDirty] = useState(() => new Set());
@@ -269,7 +272,7 @@ export default function App() {
       {/* The console wants the whole width; everything else keeps the preview. */}
       <main className={"stage" + (tab === "logs" ? " stage--wide" : "")}>
         <section className="stage__view">
-          <Trackball values={scene} onScrollTick={onScrollTick} />
+          <Trackball values={scene} onScrollTick={onScrollTick} keyLabels={keyLabels} />
           <p className="stage__caption">
             {hasWebGL()
               ? "Roll the ball · drag the body to turn · scroll to zoom"
@@ -295,7 +298,7 @@ export default function App() {
 
           <div className={"panel" + (tab === "logs" ? " panel--flush" : "")} role="tabpanel">
             <Pane active={tab === "keymap"} visited={visited.has("keymap")}>
-              <Keymap live={live} onNote={setNote} />
+              <Keymap live={live} onNote={setNote} onKeyLabels={setKeyLabels} />
             </Pane>
 
             <Pane active={tab === "acceleration"} visited={visited.has("acceleration")}>

@@ -1851,6 +1851,34 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- key tags on the model ----------
+   One label per key, moved to its key in the render loop. Pointer-events off
+   throughout: the model underneath stays draggable, and a tag never eats a
+   click meant for the key it names. */
+
+.keytags {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.keytag {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--pill);
+  border: 1px solid var(--line-soft);
+  background: var(--glass-bg-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+}
+
 /* ---------- keymap ----------
    Keys are placed by the board's own physical layout, in hundredths of a key
    unit, so the container carries the aspect ratio and every key is a
@@ -1897,6 +1925,17 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    takes the cap; hold sits under it, smaller and muted, labelled so the two
    are never read as one. */
 .kmap__cap { display: block; }
+
+/* A key too small for any label. It still shows where it is and stays
+   clickable; what it does is listed under the board. */
+.kmap__key--tiny { padding: 0; }
+.kmap__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.kmap__key--tiny.is-active .kmap__dot { background: var(--accent); }
 
 /* Tall and narrow — an encoder key. Reading down its length fits "Volume Down"
    where reading across it fits "Vol". */
