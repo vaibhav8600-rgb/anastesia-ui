@@ -16,6 +16,37 @@ import Loading from "./Loading.jsx";
 // be held by one page at a time.
 
 const BAUD = 115200;          // CDC-ACM ignores it, but open() demands one
+// Long enough for a board that is awake, short enough that probing the wrong
+// port costs a moment rather than the full request timeout.
+const PROBE_MS = 2500;
+
+/**
+ * Find the port that speaks RPC by asking each one.
+ *
+ * The board exposes two CDC-ACM interfaces from the same USB device — one for
+ * the Zephyr shell, one for Studio's RPC — so they share a vendor and product
+ * id and requestPort() filters cannot separate them. On this hardware they
+ * come up as two COM ports with the same name, and which is which is not
+ * something a person should have to know. So: try each port the user has
+ * already granted, ask it who it is, and keep the one that answers.
+ *
+ * A port the settings tabs are holding fails to open and is skipped, which is
+ * exactly the behaviour wanted — that is the shell port by definition.
+ */
+async function findRpcPort(onTry) {
+  for (const port of await navigator.serial.getPorts()) {
+    const link = new Link();
+    try {
+      onTry?.();
+      await link.connect(port);
+      const info = await link.call("core", { get_device_info: true }, PROBE_MS);
+      return { link, info: info.get_device_info ?? null };
+    } catch {
+      await link.close();
+    }
+  }
+  return null;
+}
 
 /** One request in flight at a time, matched back by request_id. */
 class Link {
@@ -31,11 +62,12 @@ class Link {
 
   get open() { return !!this.port; }
 
-  async connect() {
-    const port = await navigator.serial.requestPort();
-    await port.open({ baudRate: BAUD });
-    this.port = port;
-    this.writer = port.writable.getWriter();
+  /** Take an already-open port, or ask for one. */
+  async connect(port) {
+    const p = port ?? await navigator.serial.requestPort();
+    if (!p.readable) await p.open({ baudRate: BAUD });
+    this.port = p;
+    this.writer = p.writable.getWriter();
     this.read();
     return this;
   }
@@ -127,8 +159,6 @@ export default function Studio({ onNote }) {
 
   const load = useCallback(async () => {
     const l = link.current;
-    const info = await l.call("core", { get_device_info: true });
-    setDevice(info.get_device_info ?? null);
     const lock = await l.call("core", { get_lock_state: true });
     setLocked(lock.get_lock_state === LOCKED);
 
@@ -154,28 +184,48 @@ export default function Studio({ onNote }) {
     setBehaviors(map);
   }, []);
 
-  const connect = async () => {
+  const wire = (l) => {
+    l.onNotification = (n) => {
+      if (n.keymap?.unsaved_changes_status_changed !== undefined) {
+        setDirty(!!n.keymap.unsaved_changes_status_changed);
+      }
+      if (n.core?.lock_state_changed !== undefined) {
+        setLocked(n.core.lock_state_changed === LOCKED);
+      }
+    };
+    l.onClose = () => { setState("idle"); };
+    return l;
+  };
+
+  const connect = async (pick = false) => {
     if (!("serial" in navigator)) { onNote?.("This browser has no Web Serial."); return; }
     setState("opening");
     try {
-      link.current = new Link();
-      link.current.onNotification = (n) => {
-        if (n.keymap?.unsaved_changes_status_changed !== undefined) {
-          setDirty(!!n.keymap.unsaved_changes_status_changed);
-        }
-        if (n.core?.lock_state_changed !== undefined) {
-          setLocked(n.core.lock_state_changed === LOCKED);
-        }
-      };
-      link.current.onClose = () => { setState("idle"); };
-      await link.current.connect();
+      // Try what is already granted first. Only ask for a port when nothing
+      // granted answers, so the second visit never shows a chooser at all.
+      let found = pick ? null : await findRpcPort();
+      if (!found) {
+        const l = new Link();
+        await l.connect();
+        const info = await l.call("core", { get_device_info: true }, PROBE_MS)
+          .catch(async (e) => { await l.close(); throw e; });
+        found = { link: l, info: info.get_device_info ?? null };
+      }
+      link.current = wire(found.link);
+      setDevice(found.info);
       await load();
       setState("ready");
       onNote?.(null);
     } catch (err) {
       await link.current?.close();
+      link.current = null;
       setState("idle");
-      onNote?.(err?.name === "NotFoundError" ? "No port picked." : String(err?.message ?? err));
+      onNote?.(
+        err?.name === "NotFoundError" ? "No port picked."
+          : /did not answer/.test(String(err?.message))
+            ? "That port did not answer. This board shows two — one is the shell the settings tabs use, the other is the RPC. Try the other one."
+            : String(err?.message ?? err),
+      );
     }
   };
 
@@ -240,13 +290,17 @@ export default function Studio({ onNote }) {
         <h3 className="sec">Key bindings</h3>
         <p className="ctl__hint">
           Bindings are not in this firmware's shell — they live behind ZMK
-          Studio's RPC, which this app speaks directly. It needs its own
-          connection: your build puts the RPC on a second USB serial interface,
-          so pick the port that is <em>not</em> the one the settings tabs use.
+          Studio's RPC, which this app speaks directly. The board exposes that
+          on a second USB serial interface, so the editor needs its own
+          connection. It works out which of the board's ports that is by asking
+          each one, so you should not have to know.
         </p>
         <div className="row row--wrap">
-          <button className="btn btn--primary" onClick={connect} disabled={state === "opening"}>
-            {state === "opening" ? "Opening…" : "Connect the keymap editor"}
+          <button className="btn btn--primary" onClick={() => connect(false)} disabled={state === "opening"}>
+            {state === "opening" ? "Looking for the board…" : "Connect the keymap editor"}
+          </button>
+          <button className="btn btn--ghost" onClick={() => connect(true)} disabled={state === "opening"}>
+            Pick the port myself
           </button>
         </div>
         {state === "opening" && <Loading label="Reading the keymap…" />}
