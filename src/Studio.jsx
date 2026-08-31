@@ -3,7 +3,7 @@ import {
   Request, Response, decode, encode, frame, subsystemOf, unframer,
   LOCKED, UNLOCKED, META_ERRORS,
 } from "./studio.js";
-import { ALL_CHOICES, CHOICE_GROUPS, MOUSE_CHOICES, usageName, usageShort } from "./keycodes.js";
+import { ALL_CHOICES, CHOICE_GROUPS, usageName, usageShort } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 
 // The keymap editor: layers, key positions and bindings, read and written over
@@ -153,7 +153,7 @@ export function paramKind(name) {
 }
 
 /** Bindings come back as ids and numbers; make them a sentence. */
-function describe(binding, behaviors) {
+function describe(binding, behaviors, layers) {
   if (!binding || Object.keys(binding).length === 0) return { name: "—", full: "Unbound", detail: null };
   const id = binding.behavior_id ?? 0;
   const b = behaviors.get(id);
@@ -167,22 +167,25 @@ function describe(binding, behaviors) {
   // which page the usage is on, which usageName already knows.
   const kind = paramKind(name);
   const meta = b?.metadata?.[0] ?? {};
-  // The board names its own parameters, so a two-parameter binding can say
-  // which is which instead of printing "1, 29" and leaving you to guess.
-  const named = (descs, value, fallback) => {
-    if (!descs?.length) return null;
-    const label = descs.find((d) => d.name)?.name ?? fallback;
-    return `${label}: ${usageName(value, kind) ?? value}`;
-  };
-  const parts = [named(meta.param1, p1, "first"), named(meta.param2, p2, "second")]
-    .filter(Boolean);
+  const i1 = paramInfo(meta.param1);
+  const i2 = paramInfo(meta.param2);
 
-  // A single-parameter key that sends something reads as the thing it sends.
-  if (p1 && kind && !meta.param2?.length) {
+  // A key that only sends one thing reads as that thing. Mouse buttons are the
+  // exception worth making: the board calls them MB1, and "Left Click" is what
+  // the key actually does.
+  if (p1 && kind && i2.kind === "none") {
     return { name: usageShort(p1, kind), full: usageName(p1, kind), detail: name };
   }
+
+  // Two parameters: say which is which, using each parameter's own type.
+  const holdTap = /hold\s*[\/-]?\s*tap/i.test(name);
+  const part = (info, value, fallback) => (info.kind === "none" ? null
+    : `${fallback}: ${paramValueName(info, value, layers)}`);
+  const parts = [
+    part(i1, p1, holdTap ? "hold" : "first"),
+    part(i2, p2, holdTap ? "tap" : "then"),
+  ].filter(Boolean);
   if (parts.length) return { name, full: `${name} — ${parts.join(", ")}`, detail: null };
-  if (p1 || p2) return { name, full: name, detail: p2 ? `${p1}, ${p2}` : String(p1) };
   return { name, full: name, detail: null };
 }
 
@@ -398,7 +401,7 @@ export default function Studio({ onNote }) {
       {layout ? (
         <div className="kmap" style={{ aspectRatio: `${extentX} / ${extentY}` }}>
           {keys.map((k, position) => {
-            const b = describe(current?.bindings?.[position], behaviors);
+            const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
             return (
               <button
                 key={position}
@@ -428,7 +431,7 @@ export default function Studio({ onNote }) {
       {!layout && (
         <ol className="kmap__list">
           {(current?.bindings ?? []).map((binding, position) => {
-            const b = describe(binding, behaviors);
+            const b = describe(binding, behaviors, keymap?.layers);
             return (
               <li key={position}>
                 <button className="pill" onClick={() => setPicking(position)}>
@@ -447,6 +450,7 @@ export default function Studio({ onNote }) {
           behaviors={behaviors}
           binding={current?.bindings?.[picking]}
           busy={busy}
+          layers={keymap?.layers}
           onCancel={() => setPicking(null)}
           onPick={(binding) => setBinding(picking, binding)}
         />
@@ -470,25 +474,56 @@ export default function Studio({ onNote }) {
 
 /** Choose what one key does: a behavior, and whatever parameters it takes. */
 /**
- * One parameter, rendered as whatever the board says it accepts.
+ * What one parameter actually is, read from its own descriptors.
  *
- * The metadata is a list of descriptions, each naming a kind: a layer index, a
- * HID usage, a numeric range, or a fixed constant. A behavior that takes a
- * layer and a keycode says exactly that, so the control and its label both
- * come from the board rather than from a guess about the behavior's name.
+ * This has to be per parameter, not per behavior. "Hold/tap (layer/mouse key)"
+ * takes a layer first and a button second, and deciding from the behavior's
+ * name made the app read the layer as a mouse button and print
+ * "Layer: Right Click".
  */
-function ParamField({ id, label, descs, kind, value, onChange }) {
-  if (!descs?.length) return null;
-
-  // Named constants are a closed set of choices — the clearest case there is.
+export function paramInfo(descs) {
+  if (!descs?.length) return { kind: "none" };
   const constants = descs.filter((d) => d.constant !== undefined);
-  if (constants.length === descs.length && constants.length > 0) {
+  // A closed set of named values. Their names are the choices — MB1, MB2 —
+  // and emphatically not the name of the parameter itself.
+  if (constants.length === descs.length) return { kind: "constant", options: constants };
+  if (descs.some((d) => d.layer_id)) return { kind: "layer" };
+  if (descs.some((d) => d.hid_usage)) return { kind: "usage" };
+  const range = descs.find((d) => d.range)?.range;
+  if (range) return { kind: "range", range };
+  return { kind: "usage" };
+}
+
+const TYPE_WORD = {
+  layer: "a layer", usage: "a key", constant: "one of a fixed set",
+  range: "a number", none: "nothing",
+};
+
+/** Render one parameter's current value the way its own type reads. */
+export function paramValueName(info, value, layers) {
+  if (info.kind === "none") return null;
+  if (info.kind === "layer") {
+    const l = layers?.[value];
+    return l?.name ? `${value} — ${l.name}` : `Layer ${value}`;
+  }
+  if (info.kind === "constant") {
+    return info.options.find((o) => o.constant === value)?.name ?? String(value);
+  }
+  if (info.kind === "range") return String(value);
+  return usageName(value) ?? String(value);
+}
+
+/** One parameter, as whatever control its own description calls for. */
+function ParamField({ id, label, info, value, onChange, layers }) {
+  if (info.kind === "none") return null;
+
+  if (info.kind === "constant") {
     return (
       <div className="ctl ctl--inline">
         <label className="ctl__label" htmlFor={id}>{label}</label>
         <select id={id} className="search search--slim" value={value}
                 onChange={(e) => onChange(Number(e.target.value))}>
-          {constants.map((c) => (
+          {info.options.map((c) => (
             <option key={c.constant} value={c.constant}>{c.name || c.constant}</option>
           ))}
         </select>
@@ -496,21 +531,39 @@ function ParamField({ id, label, descs, kind, value, onChange }) {
     );
   }
 
-  const wantsLayer = descs.some((d) => d.layer_id);
-  const range = descs.find((d) => d.range)?.range;
-
-  if (wantsLayer) {
+  // A layer is an index into this keymap, so offer the layers by name rather
+  // than asking for a number and hoping you remember which one is which.
+  if (info.kind === "layer") {
     return (
       <div className="ctl ctl--inline">
         <label className="ctl__label" htmlFor={id}>{label}</label>
-        <input id={id} type="number" className="search search--slim" min={0}
-               value={value} onChange={(e) => onChange(Number(e.target.value))} />
+        {layers?.length ? (
+          <select id={id} className="search search--slim" value={value}
+                  onChange={(e) => onChange(Number(e.target.value))}>
+            {layers.map((l, i) => (
+              <option key={l.id ?? i} value={i}>{i} — {l.name || `Layer ${i}`}</option>
+            ))}
+          </select>
+        ) : (
+          <input id={id} type="number" className="search search--slim" min={0}
+                 value={value} onChange={(e) => onChange(Number(e.target.value))} />
+        )}
       </div>
     );
   }
 
-  const choices = kind === "mouse" ? MOUSE_CHOICES : null;
-  const known = (choices ?? ALL_CHOICES).some((c) => c.param === value);
+  if (info.kind === "range") {
+    return (
+      <div className="ctl ctl--inline">
+        <label className="ctl__label" htmlFor={id}>{label}</label>
+        <input id={id} type="number" className="search search--slim"
+               min={info.range.min} max={info.range.max} value={value}
+               onChange={(e) => onChange(Number(e.target.value))} />
+      </div>
+    );
+  }
+
+  const known = ALL_CHOICES.some((c) => c.param === value);
   return (
     <>
       <div className="ctl ctl--inline">
@@ -518,30 +571,29 @@ function ParamField({ id, label, descs, kind, value, onChange }) {
         <select id={id} className="search search--slim" value={known ? value : ""}
                 onChange={(e) => onChange(Number(e.target.value))}>
           <option value="">{known ? "—" : `custom (${value})`}</option>
-          {choices
-            ? choices.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)
-            : CHOICE_GROUPS.map((g) => (
-              <optgroup key={g.group} label={g.group}>
-                {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
-              </optgroup>
-            ))}
+          {CHOICE_GROUPS.map((g) => (
+            <optgroup key={g.group} label={g.group}>
+              {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
+            </optgroup>
+          ))}
         </select>
       </div>
-      <div className="ctl ctl--inline">
-        <label className="ctl__label" htmlFor={`${id}-raw`}>{label} — raw value</label>
-        <input id={`${id}-raw`} type="number" className="search search--slim"
-               min={range?.min} max={range?.max} value={value}
-               onChange={(e) => onChange(Number(e.target.value))} />
-      </div>
+      {!known && value !== 0 && (
+        <div className="ctl ctl--inline">
+          <label className="ctl__label" htmlFor={`${id}-raw`}>{label} — raw value</label>
+          <input id={`${id}-raw`} type="number" className="search search--slim" value={value}
+                 onChange={(e) => onChange(Number(e.target.value))} />
+        </div>
+      )}
     </>
   );
 }
 
 /** Choose what one key does: a behavior, and whatever parameters it takes. */
-function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
+function Picker({ position, behaviors, binding, busy, onCancel, onPick, layers }) {
   // Sorted by name, because the board's own order is its internal table and
-  // hunting for "Key Press" in twenty unsorted entries is what made binding a
-  // volume key feel impossible.
+  // hunting for "Key Press" through sixty-six unsorted entries is what made
+  // binding a volume key feel impossible.
   const list = [...behaviors.values()]
     .sort((a, b) => (a.display_name || "").localeCompare(b.display_name || ""));
   const [filter, setFilter] = useState("");
@@ -554,24 +606,25 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
     : list;
 
   const chosen = behaviors.get(id);
-  const kind = paramKind(chosen?.display_name);
   const set = chosen?.metadata?.[0] ?? {};
-  const p1 = set.param1 ?? [];
-  const p2 = set.param2 ?? [];
+  const i1 = paramInfo(set.param1);
+  const i2 = paramInfo(set.param2);
 
-  // The board names its parameters — "layer", "keycode" — and for a hold-tap
-  // that naming is the whole answer to "what happens when I hold it".
-  const nameOf = (descs, fallback) => {
-    const named = descs.find((d) => d.name)?.name;
+  // A hold-tap's two halves are "held" and "tapped" whatever they hold. Any
+  // other behavior takes the parameter's own name when it has one — but never
+  // a constant's name, which is a value like MB1 rather than a label.
+  const holdTap = /hold\s*[/-]?\s*tap/i.test(chosen?.display_name ?? "");
+  const nameFor = (descs, info, fallback) => {
+    if (info.kind === "constant") return fallback;
+    const named = descs?.find((d) => d.name)?.name;
     return named ? named[0].toUpperCase() + named.slice(1) : fallback;
   };
-  const holdTap = /hold\s*[/-]?\s*tap/i.test(chosen?.display_name ?? "");
-  const label1 = nameOf(p1, holdTap ? "When held" : "Sends");
-  const label2 = nameOf(p2, holdTap ? "When tapped" : "Second value");
+  const label1 = holdTap ? "When held" : nameFor(set.param1, i1, "Sends");
+  const label2 = holdTap ? "When tapped" : nameFor(set.param2, i2, "Then");
 
   const preview = [
-    p1.length ? `${label1}: ${usageName(param1, kind) ?? param1}` : null,
-    p2.length ? `${label2}: ${usageName(param2, kind) ?? param2}` : null,
+    i1.kind !== "none" ? `${label1}: ${paramValueName(i1, param1, layers)}` : null,
+    i2.kind !== "none" ? `${label2}: ${paramValueName(i2, param2, layers)}` : null,
   ].filter(Boolean).join(" · ");
 
   return (
@@ -601,12 +654,19 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
         </select>
       </div>
 
-      <ParamField id="pick-p1" label={label1} descs={p1} kind={kind}
+      <ParamField id="pick-p1" label={label1} info={i1} layers={layers}
                   value={param1} onChange={setParam1} />
-      <ParamField id="pick-p2" label={label2} descs={p2} kind={kind}
+      <ParamField id="pick-p2" label={label2} info={i2} layers={layers}
                   value={param2} onChange={setParam2} />
 
-      {p1.length === 0 && p2.length === 0 && (
+      {holdTap && (
+        <p className="ctl__hint">
+          This one holds {TYPE_WORD[i1.kind]} and taps {TYPE_WORD[i2.kind]}. To
+          hold or tap a different kind of thing, choose another hold/tap
+          behavior — the firmware fixes the pairing, not this app.
+        </p>
+      )}
+      {i1.kind === "none" && i2.kind === "none" && (
         <p className="ctl__hint">This behavior takes no parameters — it does one thing.</p>
       )}
       {preview && <p className="ctl__hint">{preview}</p>}
