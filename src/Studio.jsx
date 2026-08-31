@@ -3,7 +3,7 @@ import {
   Request, Response, decode, encode, frame, subsystemOf, unframer,
   LOCKED, UNLOCKED, META_ERRORS,
 } from "./studio.js";
-import { ALL_CHOICES, CHOICE_GROUPS, usageName, usageShort } from "./keycodes.js";
+import { ALL_CHOICES, CHOICE_GROUPS, MOUSE_BUTTONS, usageName, usageShort } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 
 // The keymap editor: layers, key positions and bindings, read and written over
@@ -472,7 +472,6 @@ export default function Studio({ onNote }) {
   );
 }
 
-/** Choose what one key does: a behavior, and whatever parameters it takes. */
 /**
  * What one parameter actually is, read from its own descriptors.
  *
@@ -495,9 +494,41 @@ export function paramInfo(descs) {
 }
 
 const TYPE_WORD = {
-  layer: "a layer", usage: "a key", constant: "one of a fixed set",
+  layer: "a layer", usage: "any key", constant: "one of a fixed set",
   range: "a number", none: "nothing",
 };
+
+/**
+ * Every two-parameter behavior the board has, with what each half accepts.
+ *
+ * A behavior's parameter types are fixed in the firmware — "Hold/tap
+ * (layer/mouse key)" holds a layer and taps a button, and no amount of UI
+ * changes that. What the UI can do is show which pairings the board actually
+ * offers, so "I want to hold Shift and tap a number" becomes a question with a
+ * visible answer instead of a dead end.
+ */
+export function pairings(behaviors) {
+  return [...behaviors.values()]
+    .map((b) => {
+      const set = b.metadata?.[0] ?? {};
+      const i1 = paramInfo(set.param1);
+      const i2 = paramInfo(set.param2);
+      return { id: b.id, name: b.display_name || `#${b.id}`, i1, i2 };
+    })
+    .filter((p) => p.i1.kind !== "none" && p.i2.kind !== "none")
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * "MB5" is the firmware's own shorthand and means nothing on its own, so say
+ * what it does as well. Only where the translation is certain: a constant
+ * named MB<n> whose value is a known button mask.
+ */
+export function constantLabel(option) {
+  const friendly = MOUSE_BUTTONS[option.constant];
+  if (friendly && /^mb\d/i.test(option.name ?? "")) return `${option.name} — ${friendly}`;
+  return option.name || String(option.constant);
+}
 
 /** Render one parameter's current value the way its own type reads. */
 export function paramValueName(info, value, layers) {
@@ -507,7 +538,8 @@ export function paramValueName(info, value, layers) {
     return l?.name ? `${value} — ${l.name}` : `Layer ${value}`;
   }
   if (info.kind === "constant") {
-    return info.options.find((o) => o.constant === value)?.name ?? String(value);
+    const found = info.options.find((o) => o.constant === value);
+    return found ? constantLabel(found) : String(value);
   }
   if (info.kind === "range") return String(value);
   return usageName(value) ?? String(value);
@@ -524,7 +556,7 @@ function ParamField({ id, label, info, value, onChange, layers }) {
         <select id={id} className="search search--slim" value={value}
                 onChange={(e) => onChange(Number(e.target.value))}>
           {info.options.map((c) => (
-            <option key={c.constant} value={c.constant}>{c.name || c.constant}</option>
+            <option key={c.constant} value={c.constant}>{constantLabel(c)}</option>
           ))}
         </select>
       </div>
@@ -609,6 +641,7 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick, layers }
   const set = chosen?.metadata?.[0] ?? {};
   const i1 = paramInfo(set.param1);
   const i2 = paramInfo(set.param2);
+  const pairs = pairings(behaviors);
 
   // A hold-tap's two halves are "held" and "tapped" whatever they hold. Any
   // other behavior takes the parameter's own name when it has one — but never
@@ -659,12 +692,27 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick, layers }
       <ParamField id="pick-p2" label={label2} info={i2} layers={layers}
                   value={param2} onChange={setParam2} />
 
-      {holdTap && (
-        <p className="ctl__hint">
-          This one holds {TYPE_WORD[i1.kind]} and taps {TYPE_WORD[i2.kind]}. To
-          hold or tap a different kind of thing, choose another hold/tap
-          behavior — the firmware fixes the pairing, not this app.
-        </p>
+      {i1.kind !== "none" && i2.kind !== "none" && (
+        <>
+          <p className="ctl__hint">
+            This one {holdTap ? "holds" : "takes"} {TYPE_WORD[i1.kind]} and{" "}
+            {holdTap ? "taps" : "then"} {TYPE_WORD[i2.kind]}. Those types are
+            fixed in the firmware. To pair different ones, use a behavior that
+            offers them:
+          </p>
+          <div className="row row--wrap">
+            {pairs.map((p) => (
+              <button
+                key={p.id}
+                className={"pill" + (p.id === id ? " is-active" : "")}
+                title={`${p.name}: ${TYPE_WORD[p.i1.kind]} then ${TYPE_WORD[p.i2.kind]}`}
+                onClick={() => { setId(p.id); setParam1(0); setParam2(0); }}
+              >
+                {TYPE_WORD[p.i1.kind]} + {TYPE_WORD[p.i2.kind]}
+              </button>
+            ))}
+          </div>
+        </>
       )}
       {i1.kind === "none" && i2.kind === "none" && (
         <p className="ctl__hint">This behavior takes no parameters — it does one thing.</p>
