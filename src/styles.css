@@ -1851,6 +1851,50 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- keymap ----------
+   Keys are placed by the board's own physical layout, in hundredths of a key
+   unit, so the container carries the aspect ratio and every key is a
+   percentage inside it. That way one rule renders any board's shape. */
+
+.kmap {
+  position: relative;
+  width: 100%;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--glass-bg-2);
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
+}
+
+.kmap__key {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0.25rem;
+  min-height: 0;                 /* the shared 44px floor would break the grid */
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-3);
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 1.1;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.kmap__key:hover { border-color: color-mix(in srgb, var(--text) 34%, transparent); }
+.kmap__key.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--glass-bg-3));
+}
+
+.kmap__list { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.75rem 0; padding: 0; list-style: none; }
+
+/* The picker is a card, not a modal: on a panel this narrow a dialog would
+   cover the very keys you are choosing between. */
+.picker { margin: 0.75rem 0; }
+
 /* ---------- numbered steps ----------
    Used by the flash flow, where the order is the instruction. The marker sits
    in its own column so a step's controls wrap under its text, not under its

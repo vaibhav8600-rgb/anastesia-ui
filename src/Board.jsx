@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { device } from "./device.js";
 import Loading from "./Loading.jsx";
+import Studio from "./Studio.jsx";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const DEMO_LATENCY_MS = 450;
@@ -239,7 +240,7 @@ export function Surface({ live, onNote, active = true }) {
   );
 }
 
-export function Keymap({ live, onNote, onDisconnect }) {
+export function Keymap({ live, onNote }) {
   const [slots, setSlots] = useState([]);
   const [assign, setAssign] = useState({});
   const [changed, setChanged] = useState(false);
@@ -445,60 +446,7 @@ export function Keymap({ live, onNote, onDisconnect }) {
         </button>
       </div>
 
-      <StudioHandoff live={live} onDisconnect={onDisconnect} onNote={onNote} />
-    </>
-  );
-}
-
-/**
- * Individual key bindings are not reachable from this shell. The firmware
- * exposes profiles — save, overwrite, assign to a connection — and layer names,
- * and nothing that reads or writes a single binding. Editing those is what ZMK
- * Studio is for, and this board's build enables it.
- *
- * So this hands over rather than reimplementing. Rebuilding Studio would mean
- * speaking its protobuf RPC, whose schema lives in the ZMK source and moves
- * with it; getting that subtly wrong writes a bad keymap to your board. The one
- * thing worth automating is the part that trips people up: Web Serial holds the
- * port exclusively, so Studio cannot open it until this app lets go.
- */
-function StudioHandoff({ live, onDisconnect, onNote }) {
-  const [going, setGoing] = useState(false);
-
-  const open = async () => {
-    setGoing(true);
-    try {
-      if (live && onDisconnect) {
-        await onDisconnect();
-        onNote?.("Disconnected so ZMK Studio can take the port. Pick the same device there.");
-      }
-      window.open("https://zmk.studio/", "_blank", "noopener,noreferrer");
-    } finally {
-      setGoing(false);
-    }
-  };
-
-  return (
-    <>
-      <h3 className="sec">Key bindings</h3>
-      <p className="ctl__hint">
-        This tab covers profiles — saving them, naming them, choosing which
-        connection uses which. Individual key bindings are not in this
-        firmware's shell at all, so they are edited in ZMK Studio, which your
-        build enables.
-      </p>
-      <div className="row row--wrap">
-        <button className="btn" onClick={open} disabled={going}>
-          {live ? "Disconnect and open ZMK Studio" : "Open ZMK Studio"}
-        </button>
-      </div>
-      <p className="ctl__hint">
-        {live
-          ? "Only one page can hold the serial port, so this app has to let go first — that is what the button does before opening Studio."
-          : "Nothing holds the port right now, so Studio can connect straight away."}
-        {" "}If Studio says the device is locked, press the studio-unlock key on the
-        board. Come back here afterwards for sensor, pointer and lighting settings.
-      </p>
+      <Studio onNote={onNote} />
     </>
   );
 }

@@ -394,6 +394,25 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
                                     0x12, 0x02, 0x61, 0x62]);   // tag 2, string "ab"
   eq(decode({ a: [1, "uint32"] }, withExtra), { a: 5 }, "unknown fields are skipped");
 
+  // The whole wire path, in the direction a board sends it: a response
+  // envelope, framed, split across two reads, unframed and decoded. If this
+  // passes, the only thing left to be wrong is the board.
+  const reply = encode(Response, {
+    request_response: {
+      request_id: 7,
+      keymap: { get_keymap: { layers: [{ id: 3, name: "nav", bindings: [{ behavior_id: -3, param1: 0x00070004 }] }] } },
+    },
+  });
+  const wire = frame(reply);
+  const rx = unframer();
+  eq(rx(wire.subarray(0, 5)).length, 0, "half a reply is not a reply");
+  const [payload] = rx(wire.subarray(5));
+  const got = decode(Response, payload);
+  eq(got.request_response.request_id, 7, "reply carries its request id back");
+  const layers = got.request_response.keymap.get_keymap.layers;
+  eq(layers[0].name, "nav", "layer name arrives");
+  eq(layers[0].bindings[0].param1, 0x00070004, "a key usage arrives intact");
+
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");
 
