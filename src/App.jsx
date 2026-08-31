@@ -295,7 +295,7 @@ export default function App() {
 
           <div className={"panel" + (tab === "logs" ? " panel--flush" : "")} role="tabpanel">
             <Pane active={tab === "keymap"} visited={visited.has("keymap")}>
-              <Keymap live={live} onNote={setNote} />
+              <Keymap live={live} onNote={setNote} onDisconnect={disconnect} />
             </Pane>
 
             <Pane active={tab === "acceleration"} visited={visited.has("acceleration")}>

@@ -1872,6 +1872,13 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   font-size: var(--fs-body);
   color: var(--muted);
 }
+/* Every real child goes in the second column. The counter is a pseudo-element,
+   so it is auto-placed into the first and everything else stacks beside it —
+   without this, a step with two children puts the second one back in column
+   one, which is 1.5rem wide, and a warning renders as a vertical strip of
+   single letters. */
+.steps > li > * { grid-column: 2; }
+
 .steps > li::before {
   counter-increment: step;
   content: counter(step);
