@@ -1851,6 +1851,43 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- numbered steps ----------
+   Used by the flash flow, where the order is the instruction. The marker sits
+   in its own column so a step's controls wrap under its text, not under its
+   number. */
+
+.steps {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.steps > li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  font-size: var(--fs-body);
+  color: var(--muted);
+}
+.steps > li::before {
+  counter-increment: step;
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--pill);
+  border: 1px solid var(--line);
+  background: var(--glass);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  color: var(--text);
+}
+.steps .warn--inline { margin-top: 0.5rem; }
+
 /* ---------- advanced sub-groups ---------- */
 
 .advgroup + .advgroup { margin-top: 1rem; }

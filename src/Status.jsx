@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { device } from "./device.js";
-import { parseBoardStatus, parseOutput } from "./protocol.js";
+import { parseBoardStatus, parseFirmware, parseOutput } from "./protocol.js";
 
 // Live device readout for the header: which endpoint is carrying the pointer,
 // firmware version, and battery. Polled in the background like the original —
@@ -96,6 +96,7 @@ export default function Status({ live, transport, onFirmware }) {
   // for any live connection, so a BLE session whose kind had not been read yet
   // — or had been cleared by a drop — still announced itself as USB.
   const link = kind === "ble" ? "BLE" : kind === "usb" ? "USB" : null;
+  const fw = parseFirmware(info.version);
 
   return (
     <div className="status" role="status" aria-label="Device status">
@@ -117,7 +118,17 @@ ${outputRaw}` : "")
         <Endpoint icon="esb" label="Dongle" on={output === "ESB"} />
       </span>
 
-      {info.version && <span className="status__ver" title="Firmware version">v{info.version}</span>}
+      {/* The board encodes its sensor in the major: 101.4.4 is 1.4.4 on a
+          PAW3395. Printing it raw put this board a hundred versions ahead of
+          anything its config repo has ever released. */}
+      {fw && (
+        <span
+          className="status__ver"
+          title={`Firmware ${fw.version}${fw.paw3395 ? " · PAW3395 sensor" : ""} (reported as ${fw.raw})`}
+        >
+          v{fw.version}
+        </span>
+      )}
 
       {info.battery !== null && <Battery level={info.battery} raw={info.raw} />}
 

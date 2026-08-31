@@ -8,6 +8,7 @@ import Trackball, { hasWebGL } from "./Trackball.jsx";
 import Control from "./Control.jsx";
 import Curves from "./Curves.jsx";
 import Effects from "./Effects.jsx";
+import Firmware from "./Firmware.jsx";
 import Logs from "./Logs.jsx";
 import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Heatmap from "./Heatmap.jsx";
@@ -29,6 +30,7 @@ const TABS = [
   { id: "sensors", label: "Sensor(s)" },
   { id: "effects", label: "Effects" },
   { id: "io", label: "Import/Export" },
+  { id: "firmware", label: "Firmware" },
   { id: "raw", label: "Raw settings" },
   { id: "logs", label: "Logs" },
 ];
@@ -338,6 +340,10 @@ export default function App() {
 
             <Pane active={tab === "io"} visited={visited.has("io")}>
               <ImportExport live={live} onNote={setNote} rtcfg={state.rtcfg} firmware={firmware} />
+            </Pane>
+
+            <Pane active={tab === "firmware"} visited={visited.has("firmware")}>
+              <Firmware live={live} firmware={firmware} onNote={setNote} />
             </Pane>
 
             <Pane active={tab === "raw"} visited={visited.has("raw")}>
