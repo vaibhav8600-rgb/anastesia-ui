@@ -3,7 +3,7 @@ import {
   Request, Response, decode, encode, frame, subsystemOf, unframer,
   LOCKED, UNLOCKED, META_ERRORS,
 } from "./studio.js";
-import { KEY_CHOICES, MEDIA_CHOICES, usageName } from "./keycodes.js";
+import { ALL_CHOICES, CHOICE_GROUPS, usageName, usageShort } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 
 // The keymap editor: layers, key positions and bindings, read and written over
@@ -132,16 +132,21 @@ class Link {
 
 /** Bindings come back as ids and numbers; make them a sentence. */
 function describe(binding, behaviors) {
-  if (!binding || binding.behavior_id === undefined) return { name: "—", detail: null };
+  if (!binding || binding.behavior_id === undefined) return { name: "—", full: "Unbound", detail: null };
   const b = behaviors.get(binding.behavior_id);
   const name = b?.display_name ?? `#${binding.behavior_id}`;
   const p1 = binding.param1 ?? 0;
   const p2 = binding.param2 ?? 0;
   // A key press is by far the most common binding, and showing "Key Press
   // 458756" for it would defeat the point of drawing a keymap at all.
-  if (/key ?press|kp/i.test(name) && p1) return { name: usageName(p1), detail: name };
-  if (p1 || p2) return { name, detail: p2 ? `${p1}, ${p2}` : String(p1) };
-  return { name, detail: null };
+  // Anything carrying a HID usage reads as the key it sends. That is key
+  // press, mouse button press and consumer keys alike — they differ only in
+  // which page the usage is on, which usageName already knows.
+  if (p1 && /press|kp|mkp|mouse|consumer/i.test(name)) {
+    return { name: usageShort(p1), full: usageName(p1), detail: name };
+  }
+  if (p1 || p2) return { name, full: name, detail: p2 ? `${p1}, ${p2}` : String(p1) };
+  return { name, full: name, detail: null };
 }
 
 export default function Studio({ onNote }) {
@@ -361,7 +366,7 @@ export default function Studio({ onNote }) {
                   height: `${((k.height ?? 100) / extentY) * 100}%`,
                   transform: k.r ? `rotate(${k.r / 100}deg)` : undefined,
                 }}
-                title={b.detail ? `${b.name} · ${b.detail}` : b.name}
+                title={b.detail ? `${b.full} · ${b.detail}` : b.full}
                 onClick={() => setPicking(picking === position ? null : position)}
               >
                 {b.name}
@@ -420,14 +425,24 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
   const list = [...behaviors.values()];
   const [id, setId] = useState(binding?.behavior_id ?? list[0]?.id ?? 0);
   const [param1, setParam1] = useState(binding?.param1 ?? 0);
+  // Whether the current value is one this app can name. A keymap written
+  // elsewhere can hold usages the tables do not list, and the picker must show
+  // that rather than silently snapping it to the first entry.
+  const known = ALL_CHOICES.some((c) => c.param === param1);
 
   const chosen = behaviors.get(id);
   // The first parameter set is the common case; a behavior with none takes no
   // parameters at all, which is most of them.
   const wants = chosen?.metadata?.[0]?.param1 ?? [];
-  const takesKey = wants.some((w) => w.hid_usage);
   const takesLayer = wants.some((w) => w.layer_id);
   const range = wants.find((w) => w.range)?.range;
+  const takesNothing = wants.length === 0;
+  // Everything that is not explicitly a layer gets the usage list. A behavior
+  // that describes its parameter as a plain range still wants a usage on this
+  // firmware — mouse button press is exactly that — and hiding the list
+  // because the metadata was vague is how "I cannot find right click"
+  // happens. The number field stays beside it for anything unlisted.
+  const takesUsage = !takesLayer && !takesNothing;
 
   return (
     <div className="surface picker">
@@ -446,24 +461,29 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
         </select>
       </div>
 
-      {takesKey && (
-        <div className="ctl ctl--inline">
-          <label className="ctl__label" htmlFor="pick-key">Key</label>
-          <select
-            id="pick-key"
-            className="search search--slim"
-            value={param1}
-            onChange={(e) => setParam1(Number(e.target.value))}
-          >
-            <option value={0}>—</option>
-            <optgroup label="Keyboard">
-              {KEY_CHOICES.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
-            </optgroup>
-            <optgroup label="Media">
-              {MEDIA_CHOICES.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
-            </optgroup>
-          </select>
-        </div>
+      {takesUsage && (
+        <>
+          <div className="ctl ctl--inline">
+            <label className="ctl__label" htmlFor="pick-key">Sends</label>
+            <select
+              id="pick-key"
+              className="search search--slim"
+              value={known ? param1 : ""}
+              onChange={(e) => setParam1(Number(e.target.value))}
+            >
+              <option value="">{known ? "—" : `custom (${param1})`}</option>
+              {CHOICE_GROUPS.map((g) => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <p className="ctl__hint">
+            Currently {usageName(param1) ?? "nothing"}
+            {range ? `. This behavior accepts ${range.min} to ${range.max}.` : "."}
+          </p>
+        </>
       )}
 
       {takesLayer && (
@@ -477,12 +497,12 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
         </div>
       )}
 
-      {range && !takesKey && !takesLayer && (
+      {takesUsage && (
         <div className="ctl ctl--inline">
-          <label className="ctl__label" htmlFor="pick-num">Value</label>
+          <label className="ctl__label" htmlFor="pick-num">Or a raw value</label>
           <input
             id="pick-num" type="number" className="search search--slim"
-            min={range.min} max={range.max} value={param1}
+            min={range?.min} max={range?.max} value={param1}
             onChange={(e) => setParam1(Number(e.target.value))}
           />
         </div>
