@@ -323,9 +323,12 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 @media (min-width: 900px), (min-width: 620px) and (max-height: 560px) {
   .stage {
     grid-template-rows: minmax(0, 1fr);
-    /* A share of the stage rather than a fixed cap: capping the panel at
-       27rem made the split 77/23 on a 1920 screen and worse beyond that. */
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
+    /* A share of the stage, but only up to what the content can fill. 40% with
+       no ceiling meant the panel kept growing past the 600px measure — 142px of
+       dead panel at 1920 and 400 at 2560 — while the one thing on screen that
+       can always use more width sat next to it. Past ~1600 the extra goes to
+       the model instead. Below that nothing moves: 40% is still under the cap. */
+    grid-template-columns: minmax(0, 1fr) minmax(360px, min(40%, 640px));
     align-items: stretch;
   }
 }
@@ -1153,7 +1156,7 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 /* A 40% panel is 770px at 1920 and wider again beyond that, which put a
    toggle most of a screen away from the label it answers to. Content stops at
    a readable measure and stays left, where the eye already is. */
-.panel > div { max-width: 600px; }
+.panel > div { max-width: 600px; margin-inline: auto; }
 
 .panel > div > * + * { margin-top: 1rem; }
 
