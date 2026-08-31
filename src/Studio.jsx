@@ -166,9 +166,22 @@ function describe(binding, behaviors) {
   // press, mouse button press and consumer keys alike — they differ only in
   // which page the usage is on, which usageName already knows.
   const kind = paramKind(name);
-  if (p1 && kind) {
+  const meta = b?.metadata?.[0] ?? {};
+  // The board names its own parameters, so a two-parameter binding can say
+  // which is which instead of printing "1, 29" and leaving you to guess.
+  const named = (descs, value, fallback) => {
+    if (!descs?.length) return null;
+    const label = descs.find((d) => d.name)?.name ?? fallback;
+    return `${label}: ${usageName(value, kind) ?? value}`;
+  };
+  const parts = [named(meta.param1, p1, "first"), named(meta.param2, p2, "second")]
+    .filter(Boolean);
+
+  // A single-parameter key that sends something reads as the thing it sends.
+  if (p1 && kind && !meta.param2?.length) {
     return { name: usageShort(p1, kind), full: usageName(p1, kind), detail: name };
   }
+  if (parts.length) return { name, full: `${name} — ${parts.join(", ")}`, detail: null };
   if (p1 || p2) return { name, full: name, detail: p2 ? `${p1}, ${p2}` : String(p1) };
   return { name, full: name, detail: null };
 }
@@ -456,105 +469,153 @@ export default function Studio({ onNote }) {
 }
 
 /** Choose what one key does: a behavior, and whatever parameters it takes. */
+/**
+ * One parameter, rendered as whatever the board says it accepts.
+ *
+ * The metadata is a list of descriptions, each naming a kind: a layer index, a
+ * HID usage, a numeric range, or a fixed constant. A behavior that takes a
+ * layer and a keycode says exactly that, so the control and its label both
+ * come from the board rather than from a guess about the behavior's name.
+ */
+function ParamField({ id, label, descs, kind, value, onChange }) {
+  if (!descs?.length) return null;
+
+  // Named constants are a closed set of choices — the clearest case there is.
+  const constants = descs.filter((d) => d.constant !== undefined);
+  if (constants.length === descs.length && constants.length > 0) {
+    return (
+      <div className="ctl ctl--inline">
+        <label className="ctl__label" htmlFor={id}>{label}</label>
+        <select id={id} className="search search--slim" value={value}
+                onChange={(e) => onChange(Number(e.target.value))}>
+          {constants.map((c) => (
+            <option key={c.constant} value={c.constant}>{c.name || c.constant}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  const wantsLayer = descs.some((d) => d.layer_id);
+  const range = descs.find((d) => d.range)?.range;
+
+  if (wantsLayer) {
+    return (
+      <div className="ctl ctl--inline">
+        <label className="ctl__label" htmlFor={id}>{label}</label>
+        <input id={id} type="number" className="search search--slim" min={0}
+               value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      </div>
+    );
+  }
+
+  const choices = kind === "mouse" ? MOUSE_CHOICES : null;
+  const known = (choices ?? ALL_CHOICES).some((c) => c.param === value);
+  return (
+    <>
+      <div className="ctl ctl--inline">
+        <label className="ctl__label" htmlFor={id}>{label}</label>
+        <select id={id} className="search search--slim" value={known ? value : ""}
+                onChange={(e) => onChange(Number(e.target.value))}>
+          <option value="">{known ? "—" : `custom (${value})`}</option>
+          {choices
+            ? choices.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)
+            : CHOICE_GROUPS.map((g) => (
+              <optgroup key={g.group} label={g.group}>
+                {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
+              </optgroup>
+            ))}
+        </select>
+      </div>
+      <div className="ctl ctl--inline">
+        <label className="ctl__label" htmlFor={`${id}-raw`}>{label} — raw value</label>
+        <input id={`${id}-raw`} type="number" className="search search--slim"
+               min={range?.min} max={range?.max} value={value}
+               onChange={(e) => onChange(Number(e.target.value))} />
+      </div>
+    </>
+  );
+}
+
+/** Choose what one key does: a behavior, and whatever parameters it takes. */
 function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
-  const list = [...behaviors.values()];
+  // Sorted by name, because the board's own order is its internal table and
+  // hunting for "Key Press" in twenty unsorted entries is what made binding a
+  // volume key feel impossible.
+  const list = [...behaviors.values()]
+    .sort((a, b) => (a.display_name || "").localeCompare(b.display_name || ""));
+  const [filter, setFilter] = useState("");
   const [id, setId] = useState(binding?.behavior_id ?? list[0]?.id ?? 0);
   const [param1, setParam1] = useState(binding?.param1 ?? 0);
+  const [param2, setParam2] = useState(binding?.param2 ?? 0);
+
+  const shown = filter
+    ? list.filter((b) => (b.display_name || "").toLowerCase().includes(filter.toLowerCase()))
+    : list;
 
   const chosen = behaviors.get(id);
   const kind = paramKind(chosen?.display_name);
-  // Whether the current value is one this app can name. A keymap written
-  // elsewhere can hold values the tables do not list, and the picker must show
-  // that rather than silently snapping it to the first entry.
-  const known = (kind === "mouse" ? MOUSE_CHOICES : ALL_CHOICES).some((c) => c.param === param1);
-  // The first parameter set is the common case; a behavior with none takes no
-  // parameters at all, which is most of them.
-  const wants = chosen?.metadata?.[0]?.param1 ?? [];
-  const takesLayer = wants.some((w) => w.layer_id);
-  const range = wants.find((w) => w.range)?.range;
-  const takesNothing = wants.length === 0;
-  // Everything that is not explicitly a layer gets the usage list. A behavior
-  // that describes its parameter as a plain range still wants a usage on this
-  // firmware — mouse button press is exactly that — and hiding the list
-  // because the metadata was vague is how "I cannot find right click"
-  // happens. The number field stays beside it for anything unlisted.
-  const takesUsage = !takesLayer && !takesNothing;
+  const set = chosen?.metadata?.[0] ?? {};
+  const p1 = set.param1 ?? [];
+  const p2 = set.param2 ?? [];
+
+  // The board names its parameters — "layer", "keycode" — and for a hold-tap
+  // that naming is the whole answer to "what happens when I hold it".
+  const nameOf = (descs, fallback) => {
+    const named = descs.find((d) => d.name)?.name;
+    return named ? named[0].toUpperCase() + named.slice(1) : fallback;
+  };
+  const holdTap = /hold\s*[/-]?\s*tap/i.test(chosen?.display_name ?? "");
+  const label1 = nameOf(p1, holdTap ? "When held" : "Sends");
+  const label2 = nameOf(p2, holdTap ? "When tapped" : "Second value");
+
+  const preview = [
+    p1.length ? `${label1}: ${usageName(param1, kind) ?? param1}` : null,
+    p2.length ? `${label2}: ${usageName(param2, kind) ?? param2}` : null,
+  ].filter(Boolean).join(" · ");
 
   return (
     <div className="surface picker">
       <h4 className="advgroup__title">Key {position}</h4>
+
+      <div className="ctl ctl--inline">
+        <label className="ctl__label" htmlFor="pick-filter">Find a behavior</label>
+        <input
+          id="pick-filter" type="search" className="search search--slim"
+          placeholder={`${list.length} available`}
+          value={filter} onChange={(e) => setFilter(e.target.value)}
+        />
+      </div>
+
       <div className="ctl ctl--inline">
         <label className="ctl__label" htmlFor="pick-behavior">Behavior</label>
         <select
           id="pick-behavior"
           className="search search--slim"
           value={id}
-          onChange={(e) => { setId(Number(e.target.value)); setParam1(0); }}
+          onChange={(e) => { setId(Number(e.target.value)); setParam1(0); setParam2(0); }}
         >
-          {list.map((b) => (
+          {shown.map((b) => (
             <option key={b.id} value={b.id}>{b.display_name || `#${b.id}`}</option>
           ))}
         </select>
       </div>
 
-      {takesUsage && (
-        <>
-          <div className="ctl ctl--inline">
-            <label className="ctl__label" htmlFor="pick-key">Sends</label>
-            <select
-              id="pick-key"
-              className="search search--slim"
-              value={known ? param1 : ""}
-              onChange={(e) => setParam1(Number(e.target.value))}
-            >
-              <option value="">{known ? "—" : `custom (${param1})`}</option>
-              {kind === "mouse"
-                ? MOUSE_CHOICES.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)
-                : CHOICE_GROUPS.map((g) => (
-                  <optgroup key={g.group} label={g.group}>
-                    {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
-                  </optgroup>
-                ))}
-            </select>
-          </div>
-          <p className="ctl__hint">
-            Currently {usageName(param1, kind) ?? "nothing"}
-            {range ? `. This behavior accepts ${range.min} to ${range.max}.` : "."}
-          </p>
-        </>
-      )}
+      <ParamField id="pick-p1" label={label1} descs={p1} kind={kind}
+                  value={param1} onChange={setParam1} />
+      <ParamField id="pick-p2" label={label2} descs={p2} kind={kind}
+                  value={param2} onChange={setParam2} />
 
-      {takesLayer && (
-        <div className="ctl ctl--inline">
-          <label className="ctl__label" htmlFor="pick-layer">Layer</label>
-          <input
-            id="pick-layer" type="number" className="search search--slim"
-            min={0} value={param1}
-            onChange={(e) => setParam1(Number(e.target.value))}
-          />
-        </div>
+      {p1.length === 0 && p2.length === 0 && (
+        <p className="ctl__hint">This behavior takes no parameters — it does one thing.</p>
       )}
-
-      {takesUsage && (
-        <div className="ctl ctl--inline">
-          <label className="ctl__label" htmlFor="pick-num">Or a raw value</label>
-          <input
-            id="pick-num" type="number" className="search search--slim"
-            min={range?.min} max={range?.max} value={param1}
-            onChange={(e) => setParam1(Number(e.target.value))}
-          />
-        </div>
-      )}
-
-      {wants.length === 0 && (
-        <p className="ctl__hint">This behavior takes no parameters.</p>
-      )}
+      {preview && <p className="ctl__hint">{preview}</p>}
 
       <div className="row row--wrap">
         <button
           className="btn btn--primary"
           disabled={busy}
-          onClick={() => onPick({ behavior_id: id, param1, param2: 0 })}
+          onClick={() => onPick({ behavior_id: id, param1, param2 })}
         >
           {busy ? "Writing…" : "Set key"}
         </button>
