@@ -3,7 +3,7 @@ import {
   Request, Response, decode, encode, frame, subsystemOf, unframer,
   LOCKED, UNLOCKED, META_ERRORS,
 } from "./studio.js";
-import { ALL_CHOICES, CHOICE_GROUPS, usageName, usageShort } from "./keycodes.js";
+import { ALL_CHOICES, CHOICE_GROUPS, MOUSE_CHOICES, usageName, usageShort } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 
 // The keymap editor: layers, key positions and bindings, read and written over
@@ -141,6 +141,17 @@ class Link {
   }
 }
 
+/**
+ * Which namespace a behavior's first parameter lives in. Mouse buttons are
+ * bitmasks, HID usages are page-encoded, and the number alone cannot tell you
+ * which — a bare 4 is both the letter A and the middle button.
+ */
+export function paramKind(name) {
+  if (/mouse|mkp|mb|click/i.test(name ?? "")) return "mouse";
+  if (/press|kp|consumer|key/i.test(name ?? "")) return "usage";
+  return null;
+}
+
 /** Bindings come back as ids and numbers; make them a sentence. */
 function describe(binding, behaviors) {
   if (!binding || Object.keys(binding).length === 0) return { name: "—", full: "Unbound", detail: null };
@@ -154,8 +165,9 @@ function describe(binding, behaviors) {
   // Anything carrying a HID usage reads as the key it sends. That is key
   // press, mouse button press and consumer keys alike — they differ only in
   // which page the usage is on, which usageName already knows.
-  if (p1 && /press|kp|mkp|mouse|consumer/i.test(name)) {
-    return { name: usageShort(p1), full: usageName(p1), detail: name };
+  const kind = paramKind(name);
+  if (p1 && kind) {
+    return { name: usageShort(p1, kind), full: usageName(p1, kind), detail: name };
   }
   if (p1 || p2) return { name, full: name, detail: p2 ? `${p1}, ${p2}` : String(p1) };
   return { name, full: name, detail: null };
@@ -270,8 +282,14 @@ export default function Studio({ onNote }) {
         next.layers[layer].bindings[position] = binding;
         return next;
       });
-      setDirty(true);
       setPicking(null);
+      // Ask rather than assume: the board is the authority on whether anything
+      // is pending, and one missed notification should not strand a change.
+      try {
+        const unsaved = await link.current.call("keymap", { check_unsaved_changes: true });
+        setDirty(!!unsaved.check_unsaved_changes);
+      } catch { setDirty(true); }
+      onNote?.("Key set. It is live on the board now; Save writes it to storage.");
     } catch (err) {
       onNote?.(String(err?.message ?? err));
     } finally { setBusy(false); }
@@ -422,10 +440,14 @@ export default function Studio({ onNote }) {
       )}
 
       <div className="actions">
-        <button className="btn btn--primary" onClick={save} disabled={!dirty || busy}>
-          {dirty ? "Save to board" : "Saved"}
+        {/* Not gated on `dirty`. That flag is this app's belief about the
+            board, and a board that has unsaved changes we did not make — or a
+            notification we missed — would leave the only way to commit them
+            greyed out. The board is the one that knows; let it decide. */}
+        <button className="btn btn--primary" onClick={save} disabled={busy}>
+          {dirty ? "Save to board" : "Save to board"}
         </button>
-        <button className="btn" onClick={discard} disabled={!dirty || busy}>Discard</button>
+        <button className="btn" onClick={discard} disabled={busy}>Discard</button>
         <span className="actions__gap" />
         <button className="btn btn--ghost" onClick={load} disabled={busy}>Re-read</button>
       </div>
@@ -438,12 +460,13 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
   const list = [...behaviors.values()];
   const [id, setId] = useState(binding?.behavior_id ?? list[0]?.id ?? 0);
   const [param1, setParam1] = useState(binding?.param1 ?? 0);
-  // Whether the current value is one this app can name. A keymap written
-  // elsewhere can hold usages the tables do not list, and the picker must show
-  // that rather than silently snapping it to the first entry.
-  const known = ALL_CHOICES.some((c) => c.param === param1);
 
   const chosen = behaviors.get(id);
+  const kind = paramKind(chosen?.display_name);
+  // Whether the current value is one this app can name. A keymap written
+  // elsewhere can hold values the tables do not list, and the picker must show
+  // that rather than silently snapping it to the first entry.
+  const known = (kind === "mouse" ? MOUSE_CHOICES : ALL_CHOICES).some((c) => c.param === param1);
   // The first parameter set is the common case; a behavior with none takes no
   // parameters at all, which is most of them.
   const wants = chosen?.metadata?.[0]?.param1 ?? [];
@@ -485,15 +508,17 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick }) {
               onChange={(e) => setParam1(Number(e.target.value))}
             >
               <option value="">{known ? "—" : `custom (${param1})`}</option>
-              {CHOICE_GROUPS.map((g) => (
-                <optgroup key={g.group} label={g.group}>
-                  {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
-                </optgroup>
-              ))}
+              {kind === "mouse"
+                ? MOUSE_CHOICES.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)
+                : CHOICE_GROUPS.map((g) => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
+                  </optgroup>
+                ))}
             </select>
           </div>
           <p className="ctl__hint">
-            Currently {usageName(param1) ?? "nothing"}
+            Currently {usageName(param1, kind) ?? "nothing"}
             {range ? `. This behavior accepts ${range.min} to ${range.max}.` : "."}
           </p>
         </>
