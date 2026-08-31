@@ -1937,10 +1937,6 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 }
 .kmap__key--tiny.is-active .kmap__dot { background: var(--accent); }
 
-/* Tall and narrow — an encoder key. Reading down its length fits "Volume Down"
-   where reading across it fits "Vol". */
-.kmap__key--tall { writing-mode: vertical-rl; }
-.kmap__key--tall .kmap__sub { margin: 0.25rem 0 0; }
 .kmap__sub {
   display: block;
   margin-top: 0.25rem;

@@ -505,10 +505,21 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
     // The model's keys, ordered by where they sit rather than by the order
     // they happened to be built in. The keymap is sorted the same way, so the
     // two line up without either side knowing the other's indices.
+    // Where a key actually is, which is not where its mesh is. These are
+    // extruded shapes whose vertices carry the position, so every button's
+    // own transform sits at the origin and getWorldPosition returns the middle
+    // of the ball for all eight of them. The centre of the geometry is the
+    // real answer; cached in local space so the render loop can transform it
+    // each frame as the key presses in and out.
+    for (const b of buttons) {
+      b.geometry.computeBoundingBox();
+      b.userData.centre = b.geometry.boundingBox.getCenter(new THREE.Vector3());
+    }
+
     const ringed = buttons
       .map((b) => {
-        const p = new THREE.Vector3();
-        b.getWorldPosition(p);
+        const p = b.userData.centre.clone();
+        b.localToWorld(p);
         // Same normalisation as the layout side: a key on the pi boundary
         // must not swap ends of the ring on the sign of a zero.
         return { mesh: b, angle: (Math.atan2(p.z, p.x) + Math.PI * 2) % (Math.PI * 2) };
@@ -819,7 +830,8 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
           if (!el) return;
           const text = labels.current[i];
           if (!text) { el.hidden = true; return; }
-          mesh.getWorldPosition(v);
+          v.copy(mesh.userData.centre);
+          mesh.localToWorld(v);
           v.project(camera);
           // Behind the camera, or off the frame: hide rather than smear it
           // against an edge.

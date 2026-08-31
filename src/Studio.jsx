@@ -496,9 +496,7 @@ export default function Studio({ onNote, onKeyLabels }) {
                 className={"kmap__key"
                   + (picking === position ? " is-active" : "")
                   + (tiny ? " kmap__key--tiny" : "")
-                  // A tall, narrow key reads down its length instead of being
-                  // cut off across it — which is exactly the encoder keys.
-                  + (h > w * 1.8 ? " kmap__key--tall" : "")}
+}
                 style={{
                   left: `${((k.x ?? 0) - bounds.minX + PAD) / spanX * 100}%`,
                   top: `${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}%`,
