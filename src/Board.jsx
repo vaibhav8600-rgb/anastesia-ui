@@ -319,6 +319,10 @@ export function Keymap({ live, onNote }) {
 
   return (
     <>
+      {/* The editor first: bindings are what people open this tab for, and
+          profiles are the housekeeping around them. */}
+      <Studio onNote={onNote} />
+
       <p className="panel__blurb">
         Save the live keymap into a slot, then point each connection at the slot it should use.
       </p>
@@ -446,7 +450,6 @@ export function Keymap({ live, onNote }) {
         </button>
       </div>
 
-      <Studio onNote={onNote} />
     </>
   );
 }

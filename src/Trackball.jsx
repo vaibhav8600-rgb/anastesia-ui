@@ -107,7 +107,11 @@ export default function Trackball({ values, onScrollTick, tools = true }) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Not PCFSoftShadowMap: three deprecates it and substitutes this anyway,
+    // warning once per frame while it does. A comment here said exactly that
+    // and I removed it after finding the constant still exported — the export
+    // survives, the behaviour does not.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     // Only the ball and the wheels move, and both are surfaces of revolution
     // turning about their own axis — their shadows never change. So the shadow
     // pass runs once and is then frozen, which is most of the per-frame cost.

@@ -35,6 +35,10 @@ const PROBE_MS = 2500;
  */
 async function findRpcPort(onTry) {
   for (const port of await navigator.serial.getPorts()) {
+    // Already open with a reader on it means something else in this page has
+    // it — the settings connection. That is the shell port by definition, and
+    // trying to read it throws rather than failing politely.
+    if (port.readable?.locked || port.writable?.locked) continue;
     const link = new Link();
     try {
       onTry?.();
@@ -74,7 +78,14 @@ class Link {
 
   async read() {
     const push = unframer();
-    this.reader = this.port.readable.getReader();
+    try {
+      this.reader = this.port.readable.getReader();
+    } catch {
+      // Someone else holds this stream. Nothing to read, and throwing from an
+      // un-awaited call would surface as an unhandled rejection.
+      this.onClose?.();
+      return;
+    }
     try {
       for (;;) {
         const { value, done } = await this.reader.read();
@@ -132,9 +143,10 @@ class Link {
 
 /** Bindings come back as ids and numbers; make them a sentence. */
 function describe(binding, behaviors) {
-  if (!binding || binding.behavior_id === undefined) return { name: "—", full: "Unbound", detail: null };
-  const b = behaviors.get(binding.behavior_id);
-  const name = b?.display_name ?? `#${binding.behavior_id}`;
+  if (!binding || Object.keys(binding).length === 0) return { name: "—", full: "Unbound", detail: null };
+  const id = binding.behavior_id ?? 0;
+  const b = behaviors.get(id);
+  const name = b?.display_name ?? `#${id}`;
   const p1 = binding.param1 ?? 0;
   const p2 = binding.param2 ?? 0;
   // A key press is by far the most common binding, and showing "Key Press
@@ -243,7 +255,8 @@ export default function Studio({ onNote }) {
     try {
       const l = keymap.layers[layer];
       const res = await link.current.call("keymap", {
-        set_layer_binding: { layer_id: l.id, key_position: position, binding },
+        // proto3 leaves a zero out, so layer 0 arrives without an id.
+        set_layer_binding: { layer_id: l.id ?? 0, key_position: position, binding },
       });
       const code = res.set_layer_binding ?? 0;
       if (code !== 0) {
@@ -342,7 +355,7 @@ export default function Studio({ onNote }) {
       <div className="row row--wrap">
         {(keymap?.layers ?? []).map((l, i) => (
           <button
-            key={l.id}
+            key={l.id ?? i}
             className={"pill" + (i === layer ? " is-active" : "")}
             onClick={() => { setLayer(i); setPicking(null); }}
           >
