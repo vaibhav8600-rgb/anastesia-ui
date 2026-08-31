@@ -709,6 +709,21 @@ keeps whichever answers `get_device_info`. A port the settings tabs are holding
 fails to open and is skipped, which is the right answer, since that one is the
 shell by definition.
 
+## A reply is not finished just because the board went quiet
+
+`awaitPrompt` ends a reply on a known prompt, or on the device having stopped
+talking for `QUIET_MS`. That second rule needs the buffer to hold actual
+content, not whitespace, and the difference is not academic: `keymap status`
+reads every slot out of flash before it prints anything, the shell emits a bare
+newline first, and the read takes about 1.2 seconds. A buffer holding only that
+newline, quiet for longer than the threshold, was being called a finished and
+empty reply — so the listing arrived after we had stopped listening, and a
+board with saved profiles reported none.
+
+Any command that thinks before it speaks would have hit this. The rule is now
+that a reply is complete when a prompt is seen, or when there is non-whitespace
+content that has gone quiet.
+
 ## Profiles need starting before they can be listed
 
 `keymap status` answers with nothing at all on a board whose slots subsystem
