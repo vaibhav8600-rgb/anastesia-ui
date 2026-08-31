@@ -1858,6 +1858,9 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 .kmap {
   position: relative;
+  /* Keys size their type against the board, not the viewport, so a narrow key
+     in a narrow panel still gets type in proportion to itself. */
+  container-type: inline-size;
   width: 100%;
   margin: 0.75rem 0;
   border: 1px solid var(--line-soft);
@@ -1877,9 +1880,10 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   border-radius: var(--radius-sm);
   background: var(--glass-bg-3);
   color: var(--text);
-  font-size: var(--fs-body);
   line-height: 1.1;
   text-align: center;
+  /* A long binding name breaks rather than being clipped mid-word. */
+  overflow-wrap: anywhere;
   cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease;
 }
@@ -1893,6 +1897,11 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    takes the cap; hold sits under it, smaller and muted, labelled so the two
    are never read as one. */
 .kmap__cap { display: block; }
+
+/* Tall and narrow — an encoder key. Reading down its length fits "Volume Down"
+   where reading across it fits "Vol". */
+.kmap__key--tall { writing-mode: vertical-rl; }
+.kmap__key--tall .kmap__sub { margin: 0.25rem 0 0; }
 .kmap__sub {
   display: block;
   margin-top: 0.25rem;

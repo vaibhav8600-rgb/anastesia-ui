@@ -376,10 +376,20 @@ export default function Studio({ onNote }) {
   const layout = layouts?.layouts?.[layouts.active_layout_index ?? 0];
   const current = keymap?.layers?.[layer];
   const keys = layout?.keys ?? [];
-  // Physical layouts are in hundredths of a key unit. Normalise to the widest
-  // row so the board fills whatever width the panel gives it.
-  const extentX = Math.max(...keys.map((k) => (k.x ?? 0) + (k.width ?? 100)), 100);
-  const extentY = Math.max(...keys.map((k) => (k.y ?? 0) + (k.height ?? 100)), 100);
+  // Physical layouts are in hundredths of a key unit, and nothing says they
+  // start at the origin — a board can place keys at negative coordinates, and
+  // measuring only the far edge then pushes those off the box entirely. Take
+  // both ends, and leave a margin so an edge key is not flush against the
+  // frame with its label touching the border.
+  const PAD = 8;
+  const bounds = keys.reduce((a, k) => ({
+    minX: Math.min(a.minX, k.x ?? 0),
+    minY: Math.min(a.minY, k.y ?? 0),
+    maxX: Math.max(a.maxX, (k.x ?? 0) + (k.width ?? 100)),
+    maxY: Math.max(a.maxY, (k.y ?? 0) + (k.height ?? 100)),
+  }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  const spanX = Math.max(1, (bounds.maxX - bounds.minX) + PAD * 2);
+  const spanY = Math.max(1, (bounds.maxY - bounds.minY) + PAD * 2);
 
   return (
     <>
@@ -412,18 +422,29 @@ export default function Studio({ onNote }) {
       </div>
 
       {layout ? (
-        <div className="kmap" style={{ aspectRatio: `${extentX} / ${extentY}` }}>
+        <div className="kmap" style={{ aspectRatio: `${spanX} / ${spanY}` }}>
           {keys.map((k, position) => {
             const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
+            const w = k.width ?? 100;
+            const h = k.height ?? 100;
+            // Type scaled to the key it sits in, in container units so it
+            // follows the board's own width. A narrow encoder key gets small
+            // type rather than a clipped label.
+            const size = ((w / spanX) * 100 * 0.13).toFixed(2);
             return (
               <button
                 key={position}
-                className={"kmap__key" + (picking === position ? " is-active" : "")}
+                className={"kmap__key"
+                  + (picking === position ? " is-active" : "")
+                  // A tall, narrow key reads down its length instead of being
+                  // cut off across it — which is exactly the encoder keys.
+                  + (h > w * 1.8 ? " kmap__key--tall" : "")}
                 style={{
-                  left: `${((k.x ?? 0) / extentX) * 100}%`,
-                  top: `${((k.y ?? 0) / extentY) * 100}%`,
-                  width: `${((k.width ?? 100) / extentX) * 100}%`,
-                  height: `${((k.height ?? 100) / extentY) * 100}%`,
+                  left: `${((k.x ?? 0) - bounds.minX + PAD) / spanX * 100}%`,
+                  top: `${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}%`,
+                  width: `${(w / spanX) * 100}%`,
+                  height: `${(h / spanY) * 100}%`,
+                  fontSize: `clamp(7px, ${size}cqw, 13px)`,
                   transform: k.r ? `rotate(${k.r / 100}deg)` : undefined,
                 }}
                 title={b.detail ? `${b.full} · ${b.detail}` : b.full}
