@@ -81,8 +81,11 @@ const reducedMotion = () =>
 export default function Trackball({ values, onScrollTick, tools = true, keyLabels }) {
   const host = useRef(null);
   const tags = useRef(null);
+  // Shown by default — the whole point is seeing what the keys do — with a way
+  // to clear them off when you would rather just look at the device.
+  const [showTags, setShowTags] = useState(true);
   const labels = useRef(keyLabels);
-  labels.current = keyLabels;
+  labels.current = showTags ? keyLabels : null;
   const api = useRef(null);
   const dot = useRef(null);
   const rpm = useRef(null);
@@ -963,7 +966,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       {/* One span per key on the model, moved to its key every frame. Hidden
           until something gives it a label, so the model is uncluttered unless
           the keymap editor is open with a keymap read. */}
-      {supported && keyLabels?.length > 0 && (
+      {supported && showTags && keyLabels?.length > 0 && (
         <div className="keytags" ref={tags} aria-hidden="true">
           {keyLabels.map((_, i) => <span key={i} className="keytag" hidden />)}
         </div>
@@ -981,6 +984,15 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
 
       {supported && tools && (
         <div className="viewport__tools">
+          {keyLabels?.length > 0 && (
+            <button
+              className={"vbtn" + (showTags ? " is-on" : "")}
+              onClick={() => setShowTags((v) => !v)}
+              aria-pressed={showTags}
+            >
+              Keys
+            </button>
+          )}
           <button className="vbtn" onClick={() => api.current?.setView("home")}>Reset</button>
           <button className="vbtn" onClick={() => api.current?.setView("top")}>Top</button>
           <button className="vbtn" onClick={() => api.current?.setView("port")}>Port</button>

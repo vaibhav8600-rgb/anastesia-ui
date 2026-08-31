@@ -641,13 +641,44 @@ button, input[type="range"], input[type="search"], input[type="number"] {
 
 /* ---------- misc ---------- */
 
+/* A card in the corner, not a strip along the bottom. As a full-width bar of
+   muted text on a dark ground it read as chrome, and "the board is locked" —
+   the one message that stops a keypress doing anything — went unnoticed. */
 .toast {
+  position: fixed;
+  right: var(--pad);
+  bottom: var(--pad);
+  z-index: 20;
+  max-width: min(30rem, calc(100vw - 2 * var(--pad)));
   margin: 0;
-  padding: 0.5rem var(--pad);
+  padding: 0.75rem 1rem;
   font-size: var(--fs-body);
-  color: var(--muted);
-  border-top: 1px solid var(--line);
-  background: var(--bg-soft);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--glass-bg-3);
+  backdrop-filter: var(--glass-filter-3);
+  -webkit-backdrop-filter: var(--glass-filter-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
+  animation: toast-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(0.5rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
+/* The welcome screen has room for it in the flow and no corner to spare. */
+.toast--inline {
+  position: static;
+  max-width: none;
+  border-left-width: 1px;
+  animation: none;
 }
 .toast--inline { border: 0; padding: 0; background: none; }
 

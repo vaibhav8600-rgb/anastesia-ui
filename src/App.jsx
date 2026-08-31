@@ -225,6 +225,14 @@ export default function App() {
     el._t = setTimeout(() => { el.dataset.live = "0"; }, 600);
   }, []);
 
+  // A card in the corner has to leave on its own. Errors stay put — being told
+  // the board is locked and then having it vanish is worse than not being told.
+  useEffect(() => {
+    if (!note || /lock|fail|error|could not|refus|did not/i.test(note)) return undefined;
+    const t = setTimeout(() => setNote(null), 6000);
+    return () => clearTimeout(t);
+  }, [note]);
+
   const startDemo = useCallback(() => { seed(DEMO_STATE); setStatus("demo"); }, [seed]);
   useEffect(() => { if (status === "demo") startDemo(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -360,7 +368,11 @@ export default function App() {
         </section>
       </main>
 
-      {note && <p className="toast" role="status">{note}</p>}
+      {note && (
+        <p className="toast" role="status" onClick={() => setNote(null)}>
+          {note}
+        </p>
+      )}
     </div>
   );
 }

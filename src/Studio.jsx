@@ -336,6 +336,34 @@ export default function Studio({ onNote, onKeyLabels }) {
 
   useEffect(() => () => { link.current?.close(); }, []);
 
+  // Open the editor when the tab is opened. The ports are already granted, so
+  // this is a probe rather than a prompt — no chooser appears, and if nothing
+  // answers it simply stays on the connect button without an error, because
+  // "you have not plugged anything in" is not a failure worth announcing.
+  const tried = useRef(false);
+  useEffect(() => {
+    if (tried.current) return;
+    tried.current = true;
+    let cancelled = false;
+    (async () => {
+      if (!("serial" in navigator)) return;
+      try {
+        const found = await findRpcPort();
+        if (!found || cancelled) { await found?.link.close(); return; }
+        link.current = wire(found.link);
+        setDevice(found.info);
+        setState("opening");
+        await load();
+        setState("ready");
+      } catch {
+        await link.current?.close();
+        link.current = null;
+        setState("idle");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [load]);
+
   // Hand the model the same bindings, ordered its way. Cleared on unmount so
   // the labels do not outlive the tab that meant them.
   const labelKeys = layouts?.layouts?.[layouts.active_layout_index ?? 0]?.keys;
