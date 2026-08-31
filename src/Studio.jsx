@@ -530,8 +530,19 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
 
       {locked && !lockSeen && (
         <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="lock-title">
-          <div className="modal__card">
-            <h3 className="modal__title" id="lock-title">The board is locked</h3>
+          <div className="modal__card modal__card--warn">
+            <div className="modal__head">
+              {/* The triangle carries the meaning before the words do, which is
+                  the point of it — and it is the shape people already read as
+                  "stop and look" without having to. */}
+              <svg className="modal__icon" viewBox="0 0 24 24" role="img"
+                   aria-label="Warning" focusable="false">
+                <path d="M12 2.6 22.4 20.4a1.2 1.2 0 0 1-1.04 1.8H2.64a1.2 1.2 0 0 1-1.04-1.8Z" />
+                <rect className="modal__bang" x="11" y="8.4" width="2" height="6.4" rx="1" />
+                <circle className="modal__bang" cx="12" cy="17.8" r="1.25" />
+              </svg>
+              <h3 className="modal__title" id="lock-title">The board is locked</h3>
+            </div>
             <p className="modal__body">
               ZMK Studio locks the keymap until you say otherwise, so the board
               will refuse every change while this is on. Press the

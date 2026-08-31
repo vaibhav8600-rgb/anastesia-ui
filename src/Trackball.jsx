@@ -559,7 +559,21 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       .sort((a, b) => a.x - b.x)
       .map((w) => w.mesh);
 
-    const tagTargets = [...ringed, ...ringedWheels];
+    // Keys are labelled where they are; encoders are labelled on the shell
+    // just above them. A wheel spins when you click it, and a label pinned to
+    // a spinning mesh has no business being a label — this anchor is a fixed
+    // point in the rig's own space, worked out once, so the tag sits on the
+    // body and stays there however the wheel turns.
+    const tagTargets = [
+      ...ringed.map((mesh) => ({ mesh })),
+      ...ringedWheels.map((wheel) => {
+        const at = new THREE.Vector3();
+        wheel.getWorldPosition(at);
+        at.y += WHEEL_R + 0.55;          // clear of the tread, onto the shell
+        at.z -= WHEEL_R * 0.5;           // and a little back from the edge
+        return { mesh: wheel, fixed: at };
+      }),
+    ];
 
     // ---------------------------------------------------------- camera
     const bounds = new THREE.Box3().setFromObject(rig);
@@ -860,13 +874,14 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         const box = renderer.domElement.getBoundingClientRect();
         const v = new THREE.Vector3();
         const c = new THREE.Vector3();
-        tagTargets.forEach((mesh, i) => {
+        tagTargets.forEach((target, i) => {
           const el = tags.current.children[i];
           if (!el) return;
           const text = labels.current[i];
           if (!text) { el.hidden = true; return; }
-          v.copy(mesh.userData.centre);
-          mesh.localToWorld(v);
+          const mesh = target.mesh;
+          if (target.fixed) v.copy(target.fixed);
+          else { v.copy(mesh.userData.centre); mesh.localToWorld(v); }
           v.project(camera);
           // Behind the camera, or off the frame: hide rather than smear it
           // against an edge.

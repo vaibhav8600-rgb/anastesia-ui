@@ -1913,6 +1913,32 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
 }
 
+/* A warning, and it should look like one before it is read: amber edge, amber
+   rule under the heading, and the triangle everyone already knows. */
+.modal__card--warn {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3),
+    inset 0 3px 0 0 var(--warn);
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.modal__icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  fill: var(--warn);
+}
+
+/* Punched out of the triangle, so the mark reads at any size. */
+.modal__bang { fill: var(--bg); }
+
 .modal__title {
   margin: 0;
   font-size: var(--fs-title);
