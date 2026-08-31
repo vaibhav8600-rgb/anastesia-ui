@@ -263,9 +263,11 @@ export default function App() {
   return (
     <div className="app">
       <header className="bar">
+        {/* The byline lives on the landing page, where there is room for it
+            and a reason to read it. In the working header it was competing for
+            width with the device status on every screen. */}
         <span className="brand">
           <strong>Anastasia</strong>
-          <em>by Vaibhav Rajput</em>
         </span>
         {!live && <span className="chip">Demo</span>}
         <div className="bar__spacer" />

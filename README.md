@@ -25,15 +25,16 @@ attached.
 
 ## What is in it
 
-Seven tabs, matching the original's shape:
+Eight tabs. Seven match the original's shape; Firmware is ours.
 
 | Tab | What it covers |
 | --- | --- |
-| Keymap | Profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
+| Keymap | A live key binding editor over ZMK Studio's RPC, plus profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
 | Acceleration | Curve editor — a draggable Bezier graph per device, log scales, import/export |
 | Sensor(s) | Surface quality with a trend strip, pointer feel, twist scroll, Bluetooth polling, per-OS scaling, rotary encoder, roll-quality map, live sensor image |
 | Effects | Global lighting and battery warnings, plus per-event colour including each Bluetooth profile |
 | Import/Export | Settings as .json, plus full device backup, restore and erase |
+| Firmware | What the board runs against what your config repo has released, which .uf2 belongs to your sensor, and a guided write to the bootloader |
 | Raw settings | Every runtime parameter, with its description, range and default |
 | Logs | Console with SEND/RECEIVE, millisecond timestamps, download, and a command prompt |
 
@@ -52,6 +53,11 @@ Seven tabs, matching the original's shape:
 | `src/Curves.jsx` | acceleration curve editor and its SVG chart |
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles, import/export, storage backup, surface quality |
+| `src/Studio.jsx` | the key binding editor: layers, key positions, the picker |
+| `src/studio.js` | ZMK Studio's RPC — framing, protobuf and the message set, with a runnable self-check |
+| `src/keycodes.js` | HID usages and mouse masks, so a binding reads as a key |
+| `src/Firmware.jsx` | release check, the right .uf2 for this board, and the bootloader write |
+| `src/ripple.js` | the droplet on press: one delegated listener, no per-button handlers |
 | `src/Heatmap.jsx` | the live sensor image |
 | `src/RollMap.jsx` | tracking quality by roll direction and speed |
 | `src/Loading.jsx` | the one spinner, shared by every panel that waits |
@@ -656,6 +662,77 @@ driver branch that enumerates under another id. **Not listed? Show every serial
 port** on the connect screen drops the filter — the original calls the same
 thing "show only supported devices".
 
+## Firmware
+
+The Firmware tab reads the board's version and its sensor variant — the
+firmware encodes the sensor in the major, so 101.4.4 is 1.4.4 on a PAW3395 —
+then asks a GitHub repo for its latest release and names the one `.uf2` that
+belongs to this board. Picking the wrong one of the two a release ships is the
+actual failure mode, and the board is the only thing that knows which is yours.
+
+The download is a link rather than a fetch, and the reason is in the file so
+nobody tries to "fix" it: release assets redirect to
+`release-assets.githubusercontent.com`, which sends no
+`Access-Control-Allow-Origin`, and every response in a redirect chain has to
+pass. A proxy would mean a server, would break the single-file offline build,
+and would route firmware through a third party.
+
+Everything around the download is automated. The write goes through the File
+System Access API with two guards, because a bootloader takes whatever it is
+handed: the chosen directory must contain `INFO_UF2.TXT`, and the file must
+carry all three UF2 magic words and be a whole number of 512-byte blocks. A
+variant mismatch warns rather than blocks — it is recoverable, and saying so is
+more use than refusing.
+
+## The keymap editor
+
+Key bindings are not in this firmware's shell. `zmk-keymap-shell` registers
+init, status, save, overwrite, activate, destroy, restore, free and assign, and
+every one of them works on a whole keymap slot; `output_keymap.c` turns out to
+be endpoint-to-slot assignment rather than a binding dump. Bindings live behind
+ZMK Studio's RPC, so `src/studio.js` speaks it.
+
+It is smaller than it sounds. The framing is three bytes and an escape rule
+(`zmk/app/src/studio/msg_framing.h`), and the schema is five `.proto` files
+totalling 8KB, pinned by ZMK v0.3.0 at `zmk-studio-messages` 6cb4c28. Proto3 on
+that message set needs only varints, length-delimited fields and zigzag — no
+fixed32, no fixed64, no maps — so the codec is about a hundred lines and the
+messages are data tables declared in upstream's order. No generator, no
+dependency, no build step. Twenty-six assertions run without a board.
+
+The editor takes its own port, because the RPC is a second CDC-ACM interface on
+the same USB device. Both interfaces share a vendor and product id, so
+`requestPort()` filters cannot separate them — it asks instead, opening each
+granted port and keeping whichever answers `get_device_info`. A port the
+settings tabs are holding fails to open and is skipped, which is the right
+answer: that one is the shell by definition.
+
+Three things about reading a binding are worth knowing, because each was a bug
+first:
+
+- **Implicit modifiers ride in the top byte.** A usage is
+  `(mods << 24) | (page << 16) | id`, so Ctrl+C is `0x01070006`. Reading the
+  page as sixteen bits swallows the modifier and prints "107:6".
+- **Mouse buttons are not HID usages.** ZMK's `dt-bindings/zmk/mouse.h` makes
+  them bitmasks — MB1 is 1, MB2 is 2, MB3 is 4 — which collides with the
+  keyboard page, where a bare 4 is the letter A. The behavior decides which
+  namespace a value is in.
+- **Each parameter answers for itself.** "Hold/tap (layer/mouse key)" takes a
+  layer first and a button second; deciding from the behavior's name made the
+  layer read as a mouse button and print "Layer: Right Click".
+
+The picker is built from the board's own metadata: a parameter that declares a
+layer gets this keymap's layers by name, one that declares a fixed set gets
+those names, one that declares a usage gets the grouped list of 172. Labels
+come from the metadata too — except for a fixed set, where the names are the
+values (MB1, MB5) and not a name for the parameter.
+
+Bindings are drawn on the 3D model as well. Neither side is told the other's
+indices: both sort their keys by angle around the centre, which is a property
+of the board rather than of two build orders. Encoders are dropped from that
+ring — the model has wheels there, not keys — and are labelled on the shell
+beside each wheel, on a face that hides itself when you look down at the board.
+
 ## Original vs this app
 
 `reference/marshmellow-ui.html` is the app this replaces, kept in the tree as
@@ -671,6 +748,8 @@ original that is missing here.
 | Unknown or renamed keys | Vanish | Still shown, filled in from `rtcfg list` under the owning section |
 | Acceleration curves | Bezier editor | Same |
 | Keymap profiles, assignment, autoswitch | Yes | Same |
+| **Key bindings** | Links out to ZMK Studio | Edited here. The RPC is spoken directly: layers, key positions drawn from the board's own physical layout, a behavior picker driven by each parameter's declared type, save and discard |
+| Firmware updates | Notifies, links to the releases page | Same check, plus it names the one `.uf2` that matches your sensor and writes it to the bootloader for you |
 | Per-OS scaling (`bst/…`) | 3 fixed cards: Snipe, Twist, Dragscroll | Grouped from the device's own listing, so *whatever* profiles a firmware defines appear |
 | Per-event RGB / vibration | Yes | Same, plus a colour swatch per Bluetooth profile |
 | Layer names on RGB events | By array position | By the number the board reports |
@@ -682,6 +761,8 @@ original that is missing here.
 | Settings as `.json` | — | Export, import, edit or paste |
 | Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |
 | 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |
+| Bindings shown on the device | — | Each key's binding printed on that key in the 3D view, encoders labelled on the shell beside them |
+| Themes | One | Glass and flat, one attribute apart |
 | Demo mode without hardware | — | Every tab, including a synthetic sensor image |
 | Offline | Yes | Single self-contained HTML file |
 
@@ -714,3 +795,17 @@ the original that we do not reproduce:
 Nothing from the original. The one thing neither app has is per-encoder-ID
 behaviour screens (step, min/max step, wrap, feedback pattern); those keys are
 editable under Raw settings, just without a dedicated editor.
+
+Two limits are worth stating plainly, because both are the firmware's rather
+than ours:
+
+- **A behavior's parameter types are fixed.** "Hold/tap (layer/mouse key)"
+  holds a layer and taps a button because it was built that way, and no editor
+  can offer a modifier in that first slot. The picker lists every other pairing
+  the board has, so the way to hold something else is visible rather than
+  absent.
+- **The firmware cannot be downloaded by the page.** GitHub serves release
+  assets without an `Access-Control-Allow-Origin` header, so a browser cannot
+  read the bytes — the API's own redirect carries CORS but the asset host does
+  not, and every response in a redirect chain has to pass. The original stops
+  at the same wall. Everything either side of the download is automated.
