@@ -26,9 +26,10 @@ const PROBE_MS = 2500;
  * The board exposes two CDC-ACM interfaces from the same USB device — one for
  * the Zephyr shell, one for Studio's RPC — so they share a vendor and product
  * id and requestPort() filters cannot separate them. On this hardware they
- * come up as two COM ports with the same name, and which is which is not
- * something a person should have to know. So: try each port the user has
- * already granted, ask it who it is, and keep the one that answers.
+ * appear as two ports with the same name — which numbers or paths they get is
+ * up to the machine and changes between one computer and the next, so it is
+ * not something to hard-code or to ask a person to know. Try each port already
+ * granted, ask it who it is, and keep the one that answers.
  *
  * A port the settings tabs are holding fails to open and is skipped, which is
  * exactly the behaviour wanted — that is the shell port by definition.

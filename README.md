@@ -702,10 +702,22 @@ dependency, no build step. Twenty-six assertions run without a board.
 
 The editor takes its own port, because the RPC is a second CDC-ACM interface on
 the same USB device. Both interfaces share a vendor and product id, so
-`requestPort()` filters cannot separate them — it asks instead, opening each
-granted port and keeping whichever answers `get_device_info`. A port the
-settings tabs are holding fails to open and is skipped, which is the right
-answer: that one is the shell by definition.
+`requestPort()` filters cannot separate them, and which port numbers or paths
+they get is up to the machine — it differs between computers and between
+boards. So the editor asks rather than assumes: it opens each granted port and
+keeps whichever answers `get_device_info`. A port the settings tabs are holding
+fails to open and is skipped, which is the right answer, since that one is the
+shell by definition.
+
+## Profiles need starting before they can be listed
+
+`keymap status` answers with nothing at all on a board whose slots subsystem
+has not been initialised, while `keymap assign` on the same board will happily
+name the profile assigned to USB. Empty is therefore not "this firmware has no
+profiles" — it is "not started yet", and the shell registers `init` for exactly
+that. An empty reply runs `keymap init` once and asks again; only a
+`command not found` means the feature is genuinely absent. Reading the two as
+the same thing is what made a board with a saved profile report none.
 
 Three things about reading a binding are worth knowing, because each was a bug
 first:
