@@ -11,7 +11,13 @@ const STATUS_POLL_MS = 300000;
 
 export default function Status({ live, transport, onFirmware }) {
   const [info, setInfo] = useState({ version: null, battery: undefined });
+  // The parsed endpoint, and the reply it came from. The battery gauge already
+  // carries its raw `board status` in a tooltip; the icons need the same,
+  // because "the USB icon is lit while I am on Bluetooth" has two causes that
+  // look identical — the board really is sending HID over the cable, which ZMK
+  // prefers whenever one is plugged in, or we misread its answer.
   const [output, setOutput] = useState(null);
+  const [outputRaw, setOutputRaw] = useState(null);
   // Seeded from the transport App opened and corrected by the poll, which is
   // what catches a link dropping underneath us. Neither alone is enough: the
   // prop cannot see a drop, and the poll cannot see a new session until its
@@ -33,6 +39,7 @@ export default function Status({ live, transport, onFirmware }) {
     // Last session's answer is not this session's. Clearing it means the icons
     // go dark until the first poll rather than showing the old endpoint.
     setOutput(null);
+    setOutputRaw(null);
     let stop = false;
     const timers = [];
 
@@ -71,8 +78,10 @@ export default function Status({ live, transport, onFirmware }) {
 
     poll(async () => {
       try {
-        const o = parseOutput(await device.send("board output"));
+        const reply = await device.send("board output");
+        const o = parseOutput(reply);
         if (stop) return;
+        setOutputRaw(reply.trim());
         if (o) setOutput(o);
         // Re-read every cycle: a dropped BLE link clears device.kind, and the
         // label has to follow it rather than keep claiming a live connection.
@@ -92,7 +101,15 @@ export default function Status({ live, transport, onFirmware }) {
     <div className="status" role="status" aria-label="Device status">
       <span
         className="status__eps"
-        title="Where the board is sending the pointer. Not the same as the link this app is configuring over."
+        title={
+          'Where the board is sending the pointer — not the link this app is '
+          + 'configuring over. A board with a cable plugged in reports USB here '
+          + 'even while you configure it over Bluetooth.'
+          + (outputRaw ? `
+
+From "board output":
+${outputRaw}` : "")
+        }
         aria-label="Pointer output"
       >
         <Endpoint icon="usb" label="USB" on={output === "USB"} />
