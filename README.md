@@ -1,7 +1,6 @@
 # Anastasia-UI
 
 Web-based configuration interface for ZMK trackballs / mice.
-By **Vaibhav Rajput**.
 
 Tune the device by feel: a 3D trackball sits at the centre of the app and
 behaves the way your settings say it will, so you can try a sensitivity or a
