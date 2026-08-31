@@ -240,7 +240,7 @@ export function Surface({ live, onNote, active = true }) {
   );
 }
 
-export function Keymap({ live, onNote, onKeyLabels }) {
+export function Keymap({ live, onNote, onKeyLabels, onWheelLabels }) {
   const [slots, setSlots] = useState([]);
   const [assign, setAssign] = useState({});
   const [changed, setChanged] = useState(false);
@@ -321,7 +321,7 @@ export function Keymap({ live, onNote, onKeyLabels }) {
     <>
       {/* The editor first: bindings are what people open this tab for, and
           profiles are the housekeeping around them. */}
-      <Studio onNote={onNote} onKeyLabels={onKeyLabels} />
+      <Studio onNote={onNote} onKeyLabels={onKeyLabels} onWheelLabels={onWheelLabels} />
 
       <p className="panel__blurb">
         Save the live keymap into a slot, then point each connection at the slot it should use.

@@ -247,7 +247,28 @@ export function ringOrder(keys, count = 8) {
     .map((c) => c.position);
 }
 
-export default function Studio({ onNote, onKeyLabels }) {
+/**
+ * The keys the ring left behind, gathered per encoder.
+ *
+ * A wheel turns two ways, so its two directions are two key positions in the
+ * layout. Splitting the leftovers by which side of the board they sit on pairs
+ * them with the wheel that is physically there, and joining each pair gives a
+ * wheel one label rather than two labels fighting for the same spot.
+ */
+export function wheelOrder(keys, count = 8) {
+  if (!keys?.length) return [];
+  const kept = new Set(ringOrder(keys, count));
+  const rest = keys
+    .map((k, position) => ({ position, mid: (k.x ?? 0) + (k.width ?? 100) / 2 }))
+    .filter((k) => !kept.has(k.position))
+    .sort((a, b) => a.mid - b.mid);
+  if (!rest.length) return [];
+  const half = Math.ceil(rest.length / 2);
+  return [rest.slice(0, half).map((k) => k.position),
+    rest.slice(half).map((k) => k.position)];
+}
+
+export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   const link = useRef(null);
   const [state, setState] = useState("idle");   // idle | opening | ready
   const [device, setDevice] = useState(null);
@@ -259,6 +280,9 @@ export default function Studio({ onNote, onKeyLabels }) {
   const [picking, setPicking] = useState(null);   // key position being edited
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The lock is not a note in a corner. Until it is cleared nothing you press
+  // has any effect, so it gets stated in the middle and waits to be read.
+  const [lockSeen, setLockSeen] = useState(false);
 
   const load = useCallback(async () => {
     const l = link.current;
@@ -294,6 +318,9 @@ export default function Studio({ onNote, onKeyLabels }) {
       }
       if (n.core?.lock_state_changed !== undefined) {
         setLocked(n.core.lock_state_changed === LOCKED);
+        // Unlocking clears the dialog, and locking again brings it back rather
+        // than staying dismissed from the last time.
+        setLockSeen(false);
       }
     };
     l.onClose = () => { setState("idle"); };
@@ -377,6 +404,18 @@ export default function Studio({ onNote, onKeyLabels }) {
     }));
     return () => onKeyLabels([]);
   }, [onKeyLabels, labelKeys, shownLayer, behaviors, keymap]);
+
+  // And the encoders, which the ring drops because the model has no keys for
+  // them — it has wheels.
+  useEffect(() => {
+    if (!onWheelLabels) return undefined;
+    if (!labelKeys?.length || !shownLayer) { onWheelLabels([]); return undefined; }
+    onWheelLabels(wheelOrder(labelKeys).map((group) => group
+      .map((position) => describe(shownLayer.bindings?.[position], behaviors, keymap?.layers).name)
+      .filter((n) => n && n !== "—")
+      .join(" / ")));
+    return () => onWheelLabels([]);
+  }, [onWheelLabels, labelKeys, shownLayer, behaviors, keymap]);
 
   const setBinding = async (position, binding) => {
     setBusy(true);
@@ -489,10 +528,32 @@ export default function Studio({ onNote, onKeyLabels }) {
         <button className="btn btn--ghost" onClick={disconnect}>Disconnect editor</button>
       </div>
 
-      {locked && (
+      {locked && !lockSeen && (
+        <div className="modal" role="alertdialog" aria-modal="true" aria-labelledby="lock-title">
+          <div className="modal__card">
+            <h3 className="modal__title" id="lock-title">The board is locked</h3>
+            <p className="modal__body">
+              ZMK Studio locks the keymap until you say otherwise, so the board
+              will refuse every change while this is on. Press the
+              <strong> studio-unlock </strong> key on the device — this clears
+              itself the moment it does, without you coming back here.
+            </p>
+            <p className="modal__body">
+              You can look around while it is locked. Only saving and setting a
+              key will be refused.
+            </p>
+            <div className="row row--wrap">
+              <button className="btn btn--primary" onClick={() => setLockSeen(true)}>
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {locked && lockSeen && (
         <p className="warn warn--inline">
-          The board is locked, so it will refuse changes. Press the
-          studio-unlock key on the board — the lock clears here on its own.
+          Still locked — press the studio-unlock key on the board.
         </p>
       )}
 

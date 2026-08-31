@@ -78,14 +78,17 @@ export function hasWebGL() {
 const reducedMotion = () =>
   typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export default function Trackball({ values, onScrollTick, tools = true, keyLabels }) {
+export default function Trackball({ values, onScrollTick, tools = true, keyLabels, wheelLabels }) {
   const host = useRef(null);
   const tags = useRef(null);
   // Shown by default — the whole point is seeing what the keys do — with a way
   // to clear them off when you would rather just look at the device.
   const [showTags, setShowTags] = useState(true);
-  const labels = useRef(keyLabels);
-  labels.current = showTags ? keyLabels : null;
+  // Keys first, then the two encoder wheels, which is the order the render
+  // loop walks its targets in.
+  const labels = useRef(null);
+  labels.current = showTags ? [...(keyLabels ?? []), ...(wheelLabels ?? [])] : null;
+  const anyLabels = (keyLabels?.length ?? 0) + (wheelLabels?.length ?? 0) > 0;
   const api = useRef(null);
   const dot = useRef(null);
   const rpm = useRef(null);
@@ -514,7 +517,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
     // of the ball for all eight of them. The centre of the geometry is the
     // real answer; cached in local space so the render loop can transform it
     // each frame as the key presses in and out.
-    for (const b of buttons) {
+    for (const b of [...buttons, ...wheels]) {
       b.geometry.computeBoundingBox();
       const box = b.geometry.boundingBox;
       b.userData.centre = box.getCenter(new THREE.Vector3());
@@ -543,6 +546,20 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       })
       .sort((a, b) => a.angle - b.angle)
       .map((k) => k.mesh);
+
+    // The encoders, left to right. Their bindings come through as two labels in
+    // the same order, so a wheel is named by where it is rather than by which
+    // one happened to be built first.
+    const ringedWheels = wheels
+      .map((w) => {
+        const p = new THREE.Vector3();
+        w.getWorldPosition(p);
+        return { mesh: w, x: p.x };
+      })
+      .sort((a, b) => a.x - b.x)
+      .map((w) => w.mesh);
+
+    const tagTargets = [...ringed, ...ringedWheels];
 
     // ---------------------------------------------------------- camera
     const bounds = new THREE.Box3().setFromObject(rig);
@@ -843,7 +860,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         const box = renderer.domElement.getBoundingClientRect();
         const v = new THREE.Vector3();
         const c = new THREE.Vector3();
-        ringed.forEach((mesh, i) => {
+        tagTargets.forEach((mesh, i) => {
           const el = tags.current.children[i];
           if (!el) return;
           const text = labels.current[i];
@@ -966,9 +983,11 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       {/* One span per key on the model, moved to its key every frame. Hidden
           until something gives it a label, so the model is uncluttered unless
           the keymap editor is open with a keymap read. */}
-      {supported && showTags && keyLabels?.length > 0 && (
+      {supported && showTags && anyLabels && (
         <div className="keytags" ref={tags} aria-hidden="true">
-          {keyLabels.map((_, i) => <span key={i} className="keytag" hidden />)}
+          {[...(keyLabels ?? []), ...(wheelLabels ?? [])].map((_, i) => (
+            <span key={i} className="keytag" hidden />
+          ))}
         </div>
       )}
 
@@ -984,13 +1003,16 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
 
       {supported && tools && (
         <div className="viewport__tools">
-          {keyLabels?.length > 0 && (
+          {/* "Labels", not "Keys": beside Top, Port and Wheels, which are all
+              camera views, "Keys" read as a fourth one rather than a switch. */}
+          {anyLabels && (
             <button
               className={"vbtn" + (showTags ? " is-on" : "")}
               onClick={() => setShowTags((v) => !v)}
               aria-pressed={showTags}
+              title={showTags ? "Hide the key bindings" : "Show the key bindings"}
             >
-              Keys
+              Labels
             </button>
           )}
           <button className="vbtn" onClick={() => api.current?.setView("home")}>Reset</button>

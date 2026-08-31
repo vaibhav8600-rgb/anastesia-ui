@@ -1882,6 +1882,56 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- modal ----------
+   For the one thing that stops everything else working. A corner card can be
+   missed; this cannot, and it dims what is behind it so it is clear that the
+   board — not the app — is waiting on you. */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: var(--pad);
+  background: rgba(8, 6, 22, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: modal-in 180ms ease;
+}
+
+.modal__card {
+  width: min(30rem, 100%);
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--glass-bg-3);
+  backdrop-filter: var(--glass-filter-3);
+  -webkit-backdrop-filter: var(--glass-filter-3);
+  box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
+}
+
+.modal__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: var(--fw-title);
+  letter-spacing: var(--ls-title);
+  color: var(--warn-text);
+}
+
+.modal__body { margin: 0; font-size: var(--fs-body); color: var(--muted); }
+
+@keyframes modal-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal { animation: none; }
+}
+
 /* ---------- key tags on the model ----------
    One label per key, moved to its key in the render loop. Pointer-events off
    throughout: the model underneath stays draggable, and a tag never eats a
