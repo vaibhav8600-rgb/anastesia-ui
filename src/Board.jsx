@@ -460,7 +460,7 @@ export function ImportExport({ live, onNote, rtcfg, firmware }) {
       catch { /* fall back to the snapshot rather than exporting nothing */ }
     }
     return JSON.stringify({
-      app: "anastesia-ui",
+      app: "anastasia-ui",
       exported: new Date().toISOString(),
       firmware: firmware ?? null,
       rtcfg: current,
@@ -478,7 +478,7 @@ export function ImportExport({ live, onNote, rtcfg, firmware }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `anastesia-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `anastasia-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     onNote("Settings file downloaded.");
@@ -610,8 +610,8 @@ function StorageBackup({ live, onNote }) {
       // The .bak is the restorable artefact; the .dat is the raw image, for
       // anyone who wants to look inside it.
       const between = out.slice(out.indexOf("BACKUP START"), out.indexOf("BACKUP END") + 10);
-      saveFile(`anastesia-backup-${stamp()}.bak`, new Blob([between], { type: "text/plain" }));
-      saveFile(`anastesia-backup-${stamp()}.dat`, new Blob([b.bytes], { type: "application/octet-stream" }));
+      saveFile(`anastasia-backup-${stamp()}.bak`, new Blob([between], { type: "text/plain" }));
+      saveFile(`anastasia-backup-${stamp()}.dat`, new Blob([b.bytes], { type: "application/octet-stream" }));
       onNote(`Backed up ${b.bytes.length} bytes in ${b.lines} chunks — every checksum verified.`);
     } catch (err) {
       onNote(err.message);

@@ -9,14 +9,15 @@ import { parseBoardStatus, parseOutput } from "./protocol.js";
 const OUTPUT_POLL_MS = 3000;
 const STATUS_POLL_MS = 300000;
 
-export default function Status({ live, onFirmware }) {
+export default function Status({ live, transport, onFirmware }) {
   const [info, setInfo] = useState({ version: null, battery: undefined });
   const [output, setOutput] = useState(null);
-  // Which transport we are configuring over. Kept in state because device.kind
-  // is a mutable singleton: read during render it can be stale for as long as
-  // nothing else re-renders this component, and if the output poll never
-  // returns a value, that is forever.
-  const [kind, setKind] = useState(null);
+  // Seeded from the transport App opened and corrected by the poll, which is
+  // what catches a link dropping underneath us. Neither alone is enough: the
+  // prop cannot see a drop, and the poll cannot see a new session until its
+  // next tick — which is how a BLE session spent its first seconds labelled
+  // USB after a USB one.
+  const [kind, setKind] = useState(transport ?? null);
 
   useEffect(() => {
     if (!live) {
@@ -28,7 +29,10 @@ export default function Status({ live, onFirmware }) {
       onFirmware?.(null);
       return;
     }
-    setKind(device.kind);
+    setKind(transport ?? device.kind);
+    // Last session's answer is not this session's. Clearing it means the icons
+    // go dark until the first poll rather than showing the old endpoint.
+    setOutput(null);
     let stop = false;
     const timers = [];
 
@@ -77,7 +81,7 @@ export default function Status({ live, onFirmware }) {
     }, OUTPUT_POLL_MS);
 
     return () => { stop = true; timers.forEach(clearTimeout); };
-  }, [live, onFirmware]);
+  }, [live, transport, onFirmware]);
 
   // Only ever what the transport actually is. The old form fell back to "USB"
   // for any live connection, so a BLE session whose kind had not been read yet
@@ -103,9 +107,13 @@ export default function Status({ live, onFirmware }) {
       {link && (
         <span
           className="status__link"
-          title={`This app is configuring the device over ${link}`}
+          title={`This app is configuring the device over ${link}. The icons to the left are where the board sends the pointer, which is a separate setting.`}
         >
-          {link}
+          {/* "via" is doing real work: a bare "USB" beside three endpoint icons
+              reads as a fourth endpoint, and the two answer different
+              questions — this is the link we configure over, those are where
+              the pointer goes. */}
+          via {link}
         </span>
       )}
     </div>

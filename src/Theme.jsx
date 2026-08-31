@@ -4,14 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 // this project wore before it. Both are pure token sets in styles.css, so the
 // switch only has to set an attribute — no component knows which is on.
 
-const KEY = "anastesia-theme";
+const KEY = "anastasia-theme";
+// Same correction as the colour store: fall back to the misspelled key once,
+// so nobody's chosen theme resets because we fixed our own spelling.
+const KEY_WAS = "anastesia-theme";
 const THEMES = ["glass", "flat"];
 
 export function useTheme() {
   const [theme, setTheme] = useState(() => {
     // A private window, or a browser with site data blocked, throws on read.
     try {
-      const saved = localStorage.getItem(KEY);
+      const saved = localStorage.getItem(KEY) ?? localStorage.getItem(KEY_WAS);
       return THEMES.includes(saved) ? saved : THEMES[0];
     } catch {
       return THEMES[0];

@@ -32,11 +32,14 @@ export const DEFAULT_COLOURS = {
   keys: ["#ef6b6b", "#eceae4", "#ef6b6b", "#eceae4", "#eceae4", "#ef6b6b", "#eceae4", "#ef6b6b"],
 };
 
-const STORE = "anastesia-colours";
+const STORE = "anastasia-colours";
+// The name was misspelled until now. Read the old key when the new one is
+// empty, so a palette someone already picked survives the correction.
+const STORE_WAS = "anastesia-colours";
 
 const loadColours = () => {
   try {
-    const v = JSON.parse(localStorage.getItem(STORE) || "null");
+    const v = JSON.parse(localStorage.getItem(STORE) || localStorage.getItem(STORE_WAS) || "null");
     if (!v) return DEFAULT_COLOURS;
     return {
       body: v.body ?? DEFAULT_COLOURS.body,

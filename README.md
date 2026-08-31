@@ -1,4 +1,4 @@
-# Anastesia-UI
+# Anastasia-UI
 
 Web-based configuration interface for ZMK trackballs / mice.
 By **Vaibhav Rajput**.
