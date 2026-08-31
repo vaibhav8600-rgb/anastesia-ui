@@ -177,7 +177,9 @@ function describe(binding, behaviors, layers) {
     return { name: usageShort(p1, kind), full: usageName(p1, kind), detail: name };
   }
 
-  // Two parameters: say which is which, using each parameter's own type.
+  // Two parameters: the cap shows the values, not the behavior's name. Knowing
+  // a key is a hold/tap without knowing which layer or which key it holds and
+  // taps is the least useful thing the cap could say.
   const holdTap = /hold\s*[\/-]?\s*tap/i.test(name);
   const part = (info, value, fallback) => (info.kind === "none" ? null
     : `${fallback}: ${paramValueName(info, value, layers)}`);
@@ -185,6 +187,17 @@ function describe(binding, behaviors, layers) {
     part(i1, p1, holdTap ? "hold" : "first"),
     part(i2, p2, holdTap ? "tap" : "then"),
   ].filter(Boolean);
+
+  if (i1.kind !== "none" && i2.kind !== "none") {
+    // Tap is what an ordinary press does, so it gets the cap; hold sits under
+    // it in smaller type, prefixed so the two are never mistaken for each other.
+    return {
+      name: paramShort(i2, p2, layers),
+      sub: `hold ${paramShort(i1, p1, layers)}`,
+      full: `${name} — ${parts.join(", ")}`,
+      detail: null,
+    };
+  }
   if (parts.length) return { name, full: `${name} — ${parts.join(", ")}`, detail: null };
   return { name, full: name, detail: null };
 }
@@ -416,7 +429,8 @@ export default function Studio({ onNote }) {
                 title={b.detail ? `${b.full} · ${b.detail}` : b.full}
                 onClick={() => setPicking(picking === position ? null : position)}
               >
-                {b.name}
+                <span className="kmap__cap">{b.name}</span>
+                {b.sub && <span className="kmap__sub">{b.sub}</span>}
               </button>
             );
           })}
@@ -528,6 +542,18 @@ export function constantLabel(option) {
   const friendly = MOUSE_BUTTONS[option.constant];
   if (friendly && /^mb\d/i.test(option.name ?? "")) return `${option.name} — ${friendly}`;
   return option.name || String(option.constant);
+}
+
+/** The same value, short enough to sit on a key cap. */
+export function paramShort(info, value, layers) {
+  if (info.kind === "none") return null;
+  if (info.kind === "layer") return layers?.[value]?.name || `L${value}`;
+  if (info.kind === "constant") {
+    const found = info.options.find((o) => o.constant === value);
+    return MOUSE_BUTTONS[value] ?? found?.name ?? String(value);
+  }
+  if (info.kind === "range") return String(value);
+  return usageShort(value) ?? String(value);
 }
 
 /** Render one parameter's current value the way its own type reads. */

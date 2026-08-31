@@ -327,7 +327,13 @@ export function Keymap({ live, onNote }) {
         Save the live keymap into a slot, then point each connection at the slot it should use.
       </p>
 
-      {changed && <p className="notice">The live keymap has unsaved changes.</p>}
+      {/* The board says "your current keymap has changes" whenever the live
+          keymap differs from the last saved slot — which, with no slot saved,
+          is always and forever. Comparing against a profile that does not
+          exist is not information, so it waits until there is one. */}
+      {changed && slots.some((s) => s.occupied) && (
+        <p className="notice">The live keymap differs from your saved profiles.</p>
+      )}
 
       <h3 className="sec">Profiles</h3>
       <ul className="slots">

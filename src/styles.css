@@ -1889,6 +1889,20 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   background: color-mix(in srgb, var(--accent) 18%, var(--glass-bg-3));
 }
 
+/* A hold-tap carries two answers. Tap is what an ordinary press does, so it
+   takes the cap; hold sits under it, smaller and muted, labelled so the two
+   are never read as one. */
+.kmap__cap { display: block; }
+.kmap__sub {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--muted-dim);
+}
+
 .kmap__list { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.75rem 0; padding: 0; list-style: none; }
 
 /* The picker is a card, not a modal: on a panel this narrow a dialog would
