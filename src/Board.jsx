@@ -275,12 +275,20 @@ export function Keymap({ live, onNote, onKeyLabels, onWheelLabels }) {
       // assign` happily names one. So an empty reply is not "no support", it is
       // "not started yet": run init once and ask again.
       let status = await device.send("keymap status");
+      let started = true;
       if (!unsupported(status) && !status.trim()) {
-        await device.send("keymap init");
-        status = await device.send("keymap status");
+        started = !unsupported(await device.send("keymap init"));
+        if (started) status = await device.send("keymap status");
       }
       if (unsupported(status)) { onNote("Profiles are not available on this firmware."); setSlots([]); return; }
-      if (!status.trim()) { onNote("The board reported no keymap slots, even after starting the slots subsystem."); setSlots([]); return; }
+      if (!status.trim()) {
+        // Three different silences, and they mean different things.
+        onNote(started
+          ? "The board started its slots subsystem but still lists no profiles."
+          : "This firmware lists no profiles and has no way to start them.");
+        setSlots([]);
+        return;
+      }
       const k = parseKeymap(status);
       setSlots(k.slots);
       setChanged(k.changed);
