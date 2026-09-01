@@ -14,7 +14,10 @@ import Loading from "./Loading.jsx";
 // party. So the user downloads; the app does everything around it.
 
 const REPO_KEY = "anastasia-firmware-repo";
-const DEFAULT_REPO = "vaibhav8600-rgb/endgame-trackball-config";
+// Upstream, not a fork. This is where the firmware people actually run comes
+// from, and it is the right answer for anyone opening the app for the first
+// time; the field is editable for anyone building their own.
+const DEFAULT_REPO = "efogtech/endgame-trackball-config";
 
 const canPickDirectory = () => typeof window !== "undefined" && "showDirectoryPicker" in window;
 
@@ -124,8 +127,8 @@ export default function Firmware({ live, firmware, onNote }) {
     <section className="knobs">
       <h3 className="sec">Firmware</h3>
       <p className="panel__blurb">
-        What this board runs, what your config repo has built, and a way to put
-        one on the other.
+        What this board runs, what the firmware repo has released, and a way to
+        put one on the other. Point it at your own fork if you build your own.
       </p>
 
       <dl className="facts">
