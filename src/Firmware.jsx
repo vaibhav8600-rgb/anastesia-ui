@@ -18,12 +18,24 @@ const REPO_KEY = "anastasia-firmware-repo";
 // from, and it is the right answer for anyone opening the app for the first
 // time; the field is editable for anyone building their own.
 const DEFAULT_REPO = "efogtech/endgame-trackball-config";
+// The fork this shipped with before upstream became the default. Anyone who
+// opened the tab back then has it saved, and a stored value beats a new
+// default — so that one string is treated as "never chosen" rather than as a
+// preference worth keeping. Any other stored repo is a real choice and stays.
+const SUPERSEDED_REPO = "vaibhav8600-rgb/endgame-trackball-config";
 
 const canPickDirectory = () => typeof window !== "undefined" && "showDirectoryPicker" in window;
 
 export default function Firmware({ live, firmware, onNote }) {
   const [repo, setRepo] = useState(() => {
-    try { return localStorage.getItem(REPO_KEY) || DEFAULT_REPO; } catch { return DEFAULT_REPO; }
+    try {
+      const saved = localStorage.getItem(REPO_KEY);
+      if (!saved || saved === SUPERSEDED_REPO) {
+        localStorage.removeItem(REPO_KEY);
+        return DEFAULT_REPO;
+      }
+      return saved;
+    } catch { return DEFAULT_REPO; }
   });
   const [release, setRelease] = useState(null);
   const [checking, setChecking] = useState(false);
@@ -171,7 +183,15 @@ export default function Firmware({ live, firmware, onNote }) {
           <p className="ctl__hint">
             {asset
               ? <>For {board?.paw3395 ? "a PAW3395 board" : "this board"} that is <strong>{asset.name}</strong> ({Math.round(asset.size / 1024)} KB).</>
-              : <>This release has no .uf2 matching {board?.paw3395 ? "a PAW3395 board" : "the default sensor"}.</>}
+              : (
+                <>
+                  This release has no .uf2 matching{" "}
+                  {board?.paw3395 ? "a PAW3395 board" : "the default sensor"}
+                  {release.assets.length === 0
+                    ? " — in fact it carries no files at all, which is what a fork looks like when its tags were synced from upstream: GitHub copies the tag and not the build. Try the repo that publishes the firmware."
+                    : "."}
+                </>
+              )}
           </p>
 
           <div className="row row--wrap">
