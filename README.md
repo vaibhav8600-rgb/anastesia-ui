@@ -666,7 +666,9 @@ thing "show only supported devices".
 The Firmware tab reads the board's version and its sensor variant — the
 firmware encodes the sensor in the major, so 101.4.4 is 1.4.4 on a PAW3395 —
 then asks a GitHub repo for its latest release and names the one `.uf2` that
-belongs to this board. Picking the wrong one of the two a release ships is the
+belongs to this board. It points at `efogtech/endgame-trackball-config` by
+default, which is where the firmware people actually run comes from; the field
+is editable for anyone building their own. Picking the wrong one of the two a release ships is the
 actual failure mode, and the board is the only thing that knows which is yours.
 
 The download is a link rather than a fetch, and the reason is in the file so
