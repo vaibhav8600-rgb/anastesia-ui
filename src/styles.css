@@ -1882,6 +1882,44 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- keymap editor on its own ----------
+   No stage, no model, no tabs — one column at a readable measure. The editor
+   is the whole page here rather than a panel beside something else. */
+
+.app--studio { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 100%; }
+
+.studio-only {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--gap) var(--pad);
+}
+
+.studio-only > * {
+  max-width: 900px;
+  margin-inline: auto;
+}
+
+/* A button that reads as a link, for an aside rather than an action. */
+.linkish {
+  padding: 0;
+  border: 0;
+  min-height: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linkish:hover { color: var(--text); }
+
+.welcome__aside {
+  margin: 0.75rem 0 0;
+  font-size: var(--fs-body);
+  color: var(--muted);
+}
+
 /* ---------- modal ----------
    For the one thing that stops everything else working. A corner card can be
    missed; this cannot, and it dims what is behind it so it is clear that the

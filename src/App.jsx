@@ -9,6 +9,7 @@ import Control from "./Control.jsx";
 import Curves from "./Curves.jsx";
 import Effects from "./Effects.jsx";
 import Firmware from "./Firmware.jsx";
+import Studio from "./Studio.jsx";
 import Logs from "./Logs.jsx";
 import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Heatmap from "./Heatmap.jsx";
@@ -235,7 +236,42 @@ export default function App() {
   }, [note]);
 
   const startDemo = useCallback(() => { seed(DEMO_STATE); setStatus("demo"); }, [seed]);
+
+  /**
+   * Keymap editor on its own, for any ZMK device.
+   *
+   * The editor never needed this app's board: it draws whatever the device
+   * reports through Studio's RPC, and everything Endgame-specific — the sensor
+   * tabs, the trackball, the labels painted on its keys — sits outside it. So
+   * a keyboard gets the editor without the twelve tabs of settings its
+   * firmware has never heard of, and without a trackball on screen pretending
+   * to be the thing you are editing.
+   */
+  const [studioOnly, setStudioOnly] = useState(false);
+
   useEffect(() => { if (status === "demo") startDemo(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (studioOnly) {
+    return (
+      <div className="app app--studio">
+        <header className="bar">
+          <span className="brand"><strong>Anastasia</strong></span>
+          <span className="chip">Keymap editor</span>
+          <div className="bar__spacer" />
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          <button className="btn btn--ghost" onClick={() => { setStudioOnly(false); setNote(null); }}>
+            Back
+          </button>
+        </header>
+        <main className="studio-only">
+          <Studio onNote={setNote} />
+        </main>
+        {note && (
+          <p className="toast" role="status" onClick={() => setNote(null)}>{note}</p>
+        )}
+      </div>
+    );
+  }
 
   if (!state) {
     return (
@@ -244,6 +280,7 @@ export default function App() {
         note={note}
         log={log}
         onConnect={connect}
+        onStudio={() => { setNote(null); setStudioOnly(true); }}
         onDemo={startDemo}
         onClearLog={() => setLog([])}
         theme={theme}
@@ -476,7 +513,7 @@ function KnobSection({ section, state, values, busy, onChange }) {
   );
 }
 
-function Welcome({ status, note, log, onConnect, onDemo, onClearLog, theme, onToggleTheme }) {
+function Welcome({ status, note, log, onConnect, onStudio, onDemo, onClearLog, theme, onToggleTheme }) {
   const none = !supported.usb && !supported.ble;
   return (
     <div className="welcome">
@@ -511,6 +548,18 @@ function Welcome({ status, note, log, onConnect, onDemo, onClearLog, theme, onTo
             )}
           </div>
         )}
+        {/* A second way in, for a device this app has nothing else to say
+            about. The editor is firmware-generic; the rest of the app is not. */}
+        {supported.usb && (
+          <p className="welcome__aside">
+            Not a trackball?{" "}
+            <button className="linkish" onClick={onStudio}>
+              Open the keymap editor on its own
+            </button>{" "}
+            — it works with any ZMK device that has Studio enabled.
+          </p>
+        )}
+
         <div className="row row--wrap">
           <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
