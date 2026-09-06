@@ -918,14 +918,18 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                 // a figure tuned on a wide board put "None" on two lines on a
                 // narrow one. The slack is that difference.
                 //
-                // The hold line counts too, at the 0.78em it is actually drawn
-                // at. Budgeting for the cap alone left "F12" full size over a
-                // "hold Ctrl+Shift+F12" that needed three lines, and the two
-                // were drawn through each other.
-                const longest = Math.max((b.name ?? "").length, (b.sub ?? "").length * 0.78);
-                const chars = Math.max(2, Math.min(longest, 11));
+                // The hold line is sized separately rather than as a fraction
+                // of the cap. Sharing one size meant "hold Ctrl+V" — eleven
+                // characters — decided the size of the "V" above it, so the
+                // letter you actually press was drawn small on a key with room
+                // to spare. They are two different pieces of information at two
+                // different sizes; the tap is the one you read.
+                const chars = Math.max(2, Math.min((b.name ?? "").length, 11));
                 const size = ((w / spanX) * 100
-                  * Math.min(b.sub ? 0.23 : 0.30, 1 / (chars * 0.78))).toFixed(2);
+                  * Math.min(b.sub ? 0.28 : 0.30, 1 / (chars * 0.78))).toFixed(2);
+                const subChars = Math.max(4, Math.min((b.sub ?? "").length, 16));
+                const subSize = ((w / spanX) * 100
+                  * Math.min(0.13, 1 / (subChars * 0.72))).toFixed(2);
                 const tiny = tinies.has(position);
                 return (
                   <button
@@ -958,7 +962,12 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                       <>
                         {b.action && <span className="kmap__action">{b.action}</span>}
                         <span className="kmap__cap">{b.name}</span>
-                        {b.sub && <span className="kmap__sub">{b.sub}</span>}
+                        {b.sub && (
+                          <span className="kmap__sub"
+                                style={{ fontSize: `clamp(6px, ${subSize}cqw, 13px)` }}>
+                            {b.sub}
+                          </span>
+                        )}
                       </>
                     )}
                     {tiny && <span className="sr-only">{b.full}</span>}

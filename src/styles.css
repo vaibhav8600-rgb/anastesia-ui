@@ -2148,6 +2148,8 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    the whole board's type shrink to accommodate one key. The full binding is
    on the key's title and in the picker. */
 .kmap__cap {
+  /* The thing you press. It carries the weight. */
+  font-weight: 650;
   /* Break a word only when it cannot fit a line on its own. `anywhere` split
      "Volume Up" into "Volum" and "e Up"; `normal` let "Backspace" run past the
      keycap. This breaks the second and not the first. */
@@ -2187,7 +2189,8 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   overflow: hidden;
   overflow-wrap: break-word;
   margin-top: 0.15em;
-  font-size: 0.78em;
+  /* Sized inline, from its own length. `0.78em` tied it to the cap, which is
+     what made a long hold line shrink the tap letter above it. */
   color: var(--muted-dim);
 }
 
