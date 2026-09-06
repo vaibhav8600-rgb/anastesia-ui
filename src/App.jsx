@@ -264,7 +264,9 @@ export default function App() {
           </button>
         </header>
         <main className="studio-only">
-          <Studio onNote={setNote} />
+          <div className="studio-only__col">
+            <Studio onNote={setNote} />
+          </div>
         </main>
         {note && (
           <p className="toast" role="status" onClick={() => setNote(null)}>{note}</p>

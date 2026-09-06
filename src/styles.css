@@ -1895,20 +1895,26 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   padding: var(--gap) var(--pad);
 }
 
-.studio-only > * {
-  max-width: 900px;
-  margin-inline: auto;
-}
+/* One column, one left edge.
+   Everything the editor draws — heading, chips, layer pills, the board, the
+   picker, the save row — is a direct child of this, so sizing the container
+   is what makes them agree. Sizing the children instead did not: each brought
+   its own margin, `.kmap` and `.picker` both carry `margin: 0.75rem 0`, and a
+   later rule of equal specificity wins — so the board sat 1400 wide, the prose
+   900, and the picker pinned itself to the far left of the window. Three
+   widths and no shared edge is what "scattered" looks like. */
+.studio-only__col { width: min(100%, 1400px); margin-inline: auto; }
 
-/* Prose reads best at 900px; a keyboard does not. A sixty-key split board in
-   that column draws keys about thirty pixels wide, which is how the caps ended
-   up wrapping "hold Ctrl+Z" onto three lines. The board is the thing being
-   edited — it gets the width, and centres over the column rather than pinning
-   left, which is what `.kmap`'s own `margin: 0.75rem 0` was doing to it. */
-.studio-only .kmap {
-  max-width: min(100%, 1400px);
-  margin: 0.75rem auto;
-}
+/* A keyboard wants the width. A sentence does not, and neither does a form:
+   `.ctl--inline` puts the label at one edge and the control at the other, which
+   is a pairing at panel width and two unrelated things at 1400px. Both keep the
+   column's left edge, so narrowing them costs no alignment. */
+.studio-only__col > p { max-width: 70ch; }
+.studio-only .picker { max-width: 42rem; }
+
+/* Separation, not exile. `.actions__gap` grows to fill, which reads as one
+   toolbar at 900px and as two unrelated things at 1400. */
+.studio-only .actions__gap { flex: 0 0 1.5rem; }
 
 /* A button that reads as a link, for an aside rather than an action. */
 .linkish {
