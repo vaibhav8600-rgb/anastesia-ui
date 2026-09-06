@@ -173,6 +173,71 @@ export function usageShort(param, kind) {
 }
 
 /**
+ * What kind of thing a usage is, for colour and for the word on a key.
+ *
+ * Built from the same group tables that name it, so a key can never be
+ * coloured as one thing and named as another — and adding a usage to a group
+ * types it without a second edit anywhere.
+ *
+ * The groups are finer than the types on purpose: Keypad, System and
+ * International all read as "system" on a keycap, but they stay separate in
+ * the picker where you are hunting for one specific key.
+ */
+const TYPE_OF_GROUP = {
+  Letters: "letter", Numbers: "number",
+  Editing: "edit", Punctuation: "edit",
+  Navigation: "nav", Function: "system", Keypad: "system",
+  System: "system", International: "system", Modifiers: "mod",
+  Volume: "media", Media: "media", Display: "media",
+  Browser: "media", Launch: "media", Power: "system",
+};
+
+const groupIndex = (groups) => {
+  const m = new Map();
+  for (const [group, ids] of Object.entries(groups)) {
+    for (const id of Object.keys(ids)) m.set(Number(id), group);
+  }
+  return m;
+};
+const KEYBOARD_GROUP = groupIndex(KEYBOARD_GROUPS);
+const CONSUMER_GROUP = groupIndex(CONSUMER_GROUPS);
+
+/** The group a usage belongs to, or null. Exported for the key detail card. */
+export function usageGroup(param, kind) {
+  if (kind === "mouse") return MOUSE_BUTTONS[param] ? "Mouse" : null;
+  const page = (param >>> 16) & 0xff;
+  const id = param & 0xffff;
+  if (page === PAGE_CONSUMER) return CONSUMER_GROUP.get(id) ?? null;
+  if (page === PAGE_KEY || page === 0) return KEYBOARD_GROUP.get(id) ?? null;
+  if (page === PAGE_BUTTON) return "Mouse";
+  return null;
+}
+
+/**
+ * One of a small set of slugs, which is all a colour can carry.
+ *
+ * A key that holds implicit modifiers is a modifier key first — Ctrl+C is
+ * something you reach for as a chord, and colouring it as a letter would put
+ * it in with the plain C next door.
+ */
+export function keyType(param, kind) {
+  if (!param) return "none";
+  if (kind === "mouse") return "mouse";
+  if ((param >>> 24) & 0xff) return "mod";
+  const group = usageGroup(param, kind);
+  if (group === "Mouse") return "mouse";
+  return TYPE_OF_GROUP[group] ?? "other";
+}
+
+/** The types a board can show, in the order a legend should list them. */
+export const KEY_TYPES = [
+  ["letter", "Letter"], ["number", "Number"], ["mod", "Modifier"],
+  ["layer", "Layer"], ["nav", "Navigation"], ["edit", "Editing"],
+  ["media", "Media"], ["mouse", "Mouse"], ["system", "System"],
+  ["other", "Other"],
+];
+
+/**
  * Everything bindable, grouped for a picker. Built from the same tables that
  * name a binding, so the list and the label can never disagree.
  */
@@ -294,6 +359,30 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("keycodes.js")
   eq(usageFromEvent({ code: "MediaPlayPause" }), null, "a key with no usage here says so");
   eq(usageFromEvent({}), null, "an event with no code");
   eq(usageFromEvent(null), null, "no event at all");
+
+  // Typing. Every group must map to a type, or a key colours as "other" while
+  // its name says otherwise — the one failure this table can have.
+  const K = (id) => (PAGE_KEY << 16) | id;
+  const C = (id) => (PAGE_CONSUMER << 16) | id;
+  const untyped = CHOICE_GROUPS.filter((g) => !TYPE_OF_GROUP[g.group]).map((g) => g.group);
+  console.assert(untyped.length === 0, `groups with no type: ${untyped.join(", ")}`);
+  const knownTypes = new Set(KEY_TYPES.map(([slug]) => slug));
+  const strayTypes = [...new Set(Object.values(TYPE_OF_GROUP))].filter((t) => !knownTypes.has(t));
+  console.assert(strayTypes.length === 0, `types with no legend entry: ${strayTypes.join(", ")}`);
+  eq(keyType(K(0x04)), "letter", "A is a letter");
+  eq(keyType(K(0x1e)), "number", "1 is a number");
+  eq(keyType(K(0xe1)), "mod", "Left Shift is a modifier");
+  eq(keyType(K(0x50)), "nav", "an arrow is navigation");
+  eq(keyType(K(0x2a)), "edit", "Backspace edits");
+  eq(keyType(C(0x00e9)), "media", "Volume Up is media");
+  eq(keyType(1, "mouse"), "mouse", "a button mask is a mouse button");
+  // The one that would otherwise mis-colour: implicit mods sit above the page.
+  eq(keyType(0x01070006), "mod", "Ctrl+C is a chord, not a letter");
+  eq(keyType(K(0x06)), "letter", "while a bare C is still a letter");
+  eq(keyType(0), "none", "an unbound key has no type");
+  eq(keyType(K(0x0fff)), "other", "a usage in no group falls through");
+  eq(usageGroup(K(0x04)), "Letters", "the group is named for the detail card");
+  eq(usageGroup(0xdead0001), null, "an unknown page has no group");
 
   const mouseWrong = MOUSE_CHOICES.filter((c) => usageName(c.param, "mouse") !== c.name);
   console.assert(mouseWrong.length === 0, `mouse choices that do not round-trip: ${JSON.stringify(mouseWrong)}`);

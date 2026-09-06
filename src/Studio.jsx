@@ -3,7 +3,10 @@ import {
   Request, Response, decode, encode, frame, subsystemOf, tinyKeys, unframer,
   LOCKED, UNLOCKED, META_ERRORS,
 } from "./studio.js";
-import { ALL_CHOICES, CHOICE_GROUPS, MOUSE_BUTTONS, usageName, usageShort } from "./keycodes.js";
+import {
+  ALL_CHOICES, CHOICE_GROUPS, KEY_TYPES, MOUSE_BUTTONS,
+  keyType, usageGroup, usageName, usageShort,
+} from "./keycodes.js";
 import Loading from "./Loading.jsx";
 
 // The keymap editor: layers, key positions and bindings, read and written over
@@ -146,9 +149,19 @@ class Link {
 
 /** UNLOCK_REQUIRED from zmk/meta.proto. */
 const ERR_LOCKED = 1;
-/** Bindings come back as ids and numbers; make them a sentence. */
+/**
+ * A binding, as everything the UI needs to say about it.
+ *
+ * One pass, because the cap, the colour, the tooltip and the accessible name
+ * all have to agree, and they can only be guaranteed to agree if one function
+ * decides them together from the same parameter metadata.
+ */
 function describe(binding, behaviors, layers) {
-  if (!binding || Object.keys(binding).length === 0) return { name: "—", full: "Unbound", detail: null };
+  const nothing = {
+    name: "—", action: null, type: "none", full: "Unbound", detail: null,
+    rows: [["Action", "Unbound"]],
+  };
+  if (!binding || Object.keys(binding).length === 0) return nothing;
   const id = binding.behavior_id ?? 0;
   const b = behaviors.get(id);
   const name = b?.display_name ?? `#${id}`;
@@ -158,16 +171,42 @@ function describe(binding, behaviors, layers) {
   const i1 = paramInfo(meta.param1);
   const i2 = paramInfo(meta.param2);
 
+  // A colour is one word, so a parameter's kind decides it before its value
+  // does — a layer is a layer whatever number it holds, and a constant is a
+  // mouse button only when its value is a button mask.
+  const typeOf = (info, value) => {
+    if (info.kind === "none") return "none";
+    if (info.kind === "layer") return "layer";
+    if (info.kind === "constant") return MOUSE_BUTTONS[value] ? "mouse" : "other";
+    if (info.kind === "range") return "other";
+    return keyType(value);
+  };
+  const groupOf = (info, value) => {
+    if (info.kind === "layer") return "Layer";
+    if (info.kind === "constant") return MOUSE_BUTTONS[value] ? "Mouse" : null;
+    if (info.kind === "usage") return usageGroup(value);
+    return null;
+  };
+  const typeWord = (slug) => KEY_TYPES.find(([t]) => t === slug)?.[1] ?? null;
+
   // A key that sends one thing reads as that thing — and what that thing is
   // comes from the parameter's own declaration, never from the behavior's
   // name. Matching names is a guess about one firmware's naming habits dressed
   // up as a rule, and it is how "Hold/tap (layer/mouse key)" got its layer read
   // as a mouse button.
   if (p1 && i1.kind !== "none" && i2.kind === "none") {
+    const type = typeOf(i1, p1);
     return {
       name: paramShort(i1, p1, layers),
+      action: name,
+      type,
       full: paramValueName(i1, p1, layers),
       detail: name,
+      rows: [
+        ["Action", name],
+        ["Sends", paramValueName(i1, p1, layers)],
+        ["Type", groupOf(i1, p1) ?? typeWord(type)],
+      ],
     };
   }
 
@@ -188,15 +227,28 @@ function describe(binding, behaviors, layers) {
   if (i1.kind !== "none" && i2.kind !== "none") {
     // Tap is what an ordinary press does, so it gets the cap; hold sits under
     // it in smaller type, prefixed so the two are never mistaken for each other.
+    // The colour follows the cap for the same reason.
+    const type = typeOf(i2, p2);
     return {
       name: paramShort(i2, p2, layers),
       sub: `hold ${paramShort(i1, p1, layers)}`,
+      action: name,
+      type,
       full: `${name} — ${parts.join(", ")}`,
       detail: null,
+      rows: [
+        ["Action", name],
+        [holdTap ? "Tap" : "Then", paramValueName(i2, p2, layers)],
+        [holdTap ? "Hold" : "First", paramValueName(i1, p1, layers)],
+        ["Type", groupOf(i2, p2) ?? typeWord(type)],
+      ],
     };
   }
-  if (parts.length) return { name, full: `${name} — ${parts.join(", ")}`, detail: null };
-  return { name, full: name, detail: null };
+  const rows = [["Action", name], ...(parts.length ? [["Sends", parts.join(", ")]] : [])];
+  if (parts.length) return { name, action: name, type: "other", full: `${name} — ${parts.join(", ")}`, detail: null, rows };
+  // No parameters at all: the behavior's name is the whole story, so it is the
+  // cap rather than a caption above an empty one.
+  return { name, action: null, type: "other", full: name, detail: null, rows };
 }
 
 /**
@@ -281,6 +333,15 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   // has any effect, so it gets stated in the middle and waits to be read.
   const [lockSeen, setLockSeen] = useState(false);
   const [layerName, setLayerName] = useState("");
+  // Which key the pointer is over, for the detail card. Kept out of `picking`
+  // deliberately: hovering must not disturb what you are part-way through
+  // editing, and the card has to be able to appear over a key while a
+  // different one is open in the picker.
+  const [hover, setHover] = useState(null);
+  // A board is drawn to fit by default. Zoom is for the boards that fit badly
+  // — forty keys on a wide screen leave a lot of room, and a hundred-key board
+  // on a laptop leaves none.
+  const [zoom, setZoom] = useState(1);
 
   const load = useCallback(async () => {
     const l = link.current;
@@ -680,196 +741,307 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   // had just drawn them, legibly, right above the claim.
   const tinies = tinyKeys(keys);
 
+  const activeLayout = layouts?.active_layout_index ?? 0;
+  // Only the types this layer actually uses. A legend listing ten colours
+  // where the board shows three is decoration; one that matches what is on
+  // screen is a key to it.
+  const typesHere = new Set((current?.bindings ?? [])
+    .map((binding) => describe(binding, behaviors, keymap?.layers).type)
+    .filter((t) => t !== "none"));
+
+  const hovered = hover !== null ? keys[hover] : null;
+  const hoverInfo = hover !== null
+    ? describe(current?.bindings?.[hover], behaviors, keymap?.layers) : null;
+  // Near the top of the board there is no room above the key, so the card
+  // drops below it instead of hanging off the frame.
+  const cardBelow = hovered ? ((hovered.y ?? 0) - bounds.minY) / spanY < 0.28 : false;
+
   return (
-    <>
-      <h3 className="sec">Key bindings</h3>
-      <div className="row row--wrap">
-        <span className="chip chip--live">{device?.name || "connected"}</span>
-        {locked && <span className="chip">locked</span>}
-        {dirty && <span className="chip">unsaved</span>}
-        <span className="actions__gap" />
-        <button className="btn btn--ghost" onClick={disconnect}>Disconnect editor</button>
-      </div>
+    <div className="editor">
+      <aside className="editor__rail">
+        <h3 className="sec">Layouts</h3>
+        <ul className="rail__list">
+          {(layouts?.layouts ?? []).map((l, i) => (
+            <li key={i}>
+              <span className={"rail__item" + (i === activeLayout ? " is-active" : "")}>
+                <span className="rail__name">{l.name || `Layout ${i}`}</span>
+                <span className="rail__meta">{l.keys?.length ?? 0} keys</span>
+              </span>
+            </li>
+          ))}
+          {!layouts?.layouts?.length && (
+            <li><span className="rail__item"><span className="rail__meta">none reported</span></span></li>
+          )}
+        </ul>
 
-      {lockDialog}
-
-      {locked && lockSeen && (
-        <p className="warn warn--inline">
-          Still locked — press the studio-unlock key on the board.
-        </p>
-      )}
-
-      <div className="row row--wrap">
-        {(keymap?.layers ?? []).map((l, i) => (
-          <button
-            key={l.id ?? i}
-            className={"pill" + (i === layer ? " is-active" : "")}
-            onClick={() => { setLayer(i); setPicking(null); }}
-          >
-            {l.name || `Layer ${i}`}
-          </button>
-        ))}
+        <h3 className="sec">Layers</h3>
+        <ul className="rail__list">
+          {(keymap?.layers ?? []).map((l, i) => (
+            <li key={l.id ?? i}>
+              <button
+                className={"rail__item" + (i === layer ? " is-active" : "")}
+                onClick={() => { setLayer(i); setPicking(null); }}
+              >
+                <span className="rail__name">{l.name || `Layer ${i}`}</span>
+                <span className="rail__meta">L{i}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
         {/* The board says how many it can hold, so the button goes when there
             is no room rather than offering something that will be refused. */}
         {(keymap?.available_layers ?? 0) > 0 && (
-          <button className="pill" onClick={addLayer} disabled={busy} title="Add a layer">+</button>
+          <button className="rail__add" onClick={addLayer} disabled={busy}>+ Add layer</button>
         )}
-      </div>
 
-      <div className="row row--wrap">
-        <label className="ctl__label" htmlFor="layer-name">Layer name</label>
-        <input
-          id="layer-name"
-          className="search search--slim"
-          value={layerName}
-          maxLength={keymap?.max_layer_name_length || undefined}
-          placeholder={current?.name || `Layer ${layer}`}
-          onChange={(e) => setLayerName(e.target.value)}
-        />
-        <button
-          className="btn"
-          disabled={busy || !layerName.trim() || layerName.trim() === (current?.name ?? "")}
-          onClick={() => renameLayer(layerName.trim())}
-        >
-          Rename
-        </button>
-        <span className="actions__gap" />
-        <button
-          className="btn btn--danger"
-          disabled={busy || (keymap?.layers?.length ?? 0) < 2}
-          onClick={removeLayer}
-          title={(keymap?.layers?.length ?? 0) < 2
-            ? "A keymap needs at least one layer"
-            : `Remove ${current?.name || `layer ${layer}`}`}
-        >
-          Remove layer
-        </button>
-      </div>
-
-      {layout ? (
-        <div className="kmap" style={{ aspectRatio: `${spanX} / ${spanY}` }}>
-          {keys.map((k, position) => {
-            const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
-            const w = k.width ?? 100;
-            const h = k.height ?? 100;
-            // Type scaled to the key it sits in, in container units so it
-            // follows the board's own width. A narrow encoder key gets small
-            // type rather than a clipped label. The factor is read directly:
-            // container units cancel the board's width out, so 0.26 is 26% of
-            // this key's own width, whatever size the board is drawn at.
-            const size = ((w / spanX) * 100 * 0.26).toFixed(2);
-            // An encoder key is a sliver of the board. No type size fits
-            // "Volume Down" inside it, so it carries a dot and its binding is
-            // listed under the board instead of being shrunk into illegibility.
-            const tiny = tinies.has(position);
-            return (
-              <button
-                key={position}
-                className={"kmap__key"
-                  + (picking === position ? " is-active" : "")
-                  + (tiny ? " kmap__key--tiny" : "")
-}
-                style={{
-                  left: `${((k.x ?? 0) - bounds.minX + PAD) / spanX * 100}%`,
-                  top: `${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}%`,
-                  width: `${(w / spanX) * 100}%`,
-                  height: `${(h / spanY) * 100}%`,
-                  fontSize: `clamp(8px, ${size}cqw, 22px)`,
-                  transform: k.r ? `rotate(${k.r / 100}deg)` : undefined,
-                }}
-                title={b.detail ? `${b.full} · ${b.detail}` : b.full}
-                onClick={() => setPicking(picking === position ? null : position)}
-              >
-                {tiny ? <span className="kmap__dot" aria-hidden="true" /> : (
-                  <>
-                    <span className="kmap__cap">{b.name}</span>
-                    {b.sub && <span className="kmap__sub">{b.sub}</span>}
-                  </>
-                )}
-                {tiny && <span className="sr-only">{b.full}</span>}
-              </button>
-            );
-          })}
+        <div className="rail__form">
+          <label className="ctl__label" htmlFor="layer-name">Layer name</label>
+          <input
+            id="layer-name"
+            className="search search--slim"
+            value={layerName}
+            maxLength={keymap?.max_layer_name_length || undefined}
+            placeholder={current?.name || `Layer ${layer}`}
+            onChange={(e) => setLayerName(e.target.value)}
+          />
+          <div className="row row--wrap">
+            <button
+              className="btn"
+              disabled={busy || !layerName.trim() || layerName.trim() === (current?.name ?? "")}
+              onClick={() => renameLayer(layerName.trim())}
+            >
+              Rename
+            </button>
+            <button
+              className="btn btn--danger"
+              disabled={busy || (keymap?.layers?.length ?? 0) < 2}
+              onClick={removeLayer}
+              title={(keymap?.layers?.length ?? 0) < 2
+                ? "A keymap needs at least one layer"
+                : "Remove this layer"}
+            >
+              Remove
+            </button>
+          </div>
         </div>
-      ) : (
-        <p className="ctl__hint">
-          This board reports no physical layout, so its keys cannot be drawn in
-          position. The bindings are still listed below.
-        </p>
-      )}
 
-      {layout && (() => {
-        // Grouped by encoder, not by layout order. Listing them in raw position
-        // order put Volume Up, then the other wheel, then Volume Down — the two
-        // halves of one encoder split by an unrelated key.
-        const small = wheelOrder(keys).flat()
-          .filter((position) => tinies.has(position))
-          .map((position) => ({ position }));
-        if (!small.length) return null;
-        return (
+        {typesHere.size > 1 && (
           <>
-            <p className="ctl__hint">
-              Marked with a dot on the board — too small to label in place:
-            </p>
-            <div className="row row--wrap">
-              {small.map(({ position }) => {
+            <h3 className="sec">Key types</h3>
+            <ul className="legend">
+              {/* Letters are deliberately uncoloured, so listing them here
+                  would be a blank swatch beside a word. */}
+              {KEY_TYPES.filter(([slug]) => slug !== "letter" && typesHere.has(slug))
+                .map(([slug, label]) => (
+                <li key={slug} className="legend__item">
+                  <span className="legend__swatch" data-type={slug} />
+                  {label}
+                </li>
+                ))}
+            </ul>
+          </>
+        )}
+
+        <div className="rail__foot">
+          <div className="row row--wrap">
+            <span className="chip chip--live">{device?.name || "connected"}</span>
+            {locked && <span className="chip">locked</span>}
+            {dirty && <span className="chip">unsaved</span>}
+          </div>
+          <button className="btn btn--ghost" onClick={disconnect}>Disconnect editor</button>
+        </div>
+      </aside>
+
+      <div className="editor__main">
+        {lockDialog}
+
+        {locked && lockSeen && (
+          <p className="warn warn--inline">
+            Still locked — press the studio-unlock key on the board.
+          </p>
+        )}
+
+        <div className="kmap__bar">
+          <h3 className="sec sec--flush">Key bindings</h3>
+          <span className="actions__gap" />
+          <div className="zoom" role="group" aria-label="Board size">
+            <button
+              className="zoom__btn"
+              onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(2)))}
+              disabled={zoom <= 0.6}
+              aria-label="Smaller"
+            >
+              &minus;
+            </button>
+            <button className="zoom__now" onClick={() => setZoom(1)} title="Back to fit">
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              className="zoom__btn"
+              onClick={() => setZoom((z) => Math.min(3, +(z + 0.2).toFixed(2)))}
+              disabled={zoom >= 3}
+              aria-label="Bigger"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {layout ? (
+          <div className="kmap__wrap">
+            <div className="kmap" style={{ aspectRatio: `${spanX} / ${spanY}`, width: `${zoom * 100}%` }}>
+              {keys.map((k, position) => {
                 const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
+                const w = k.width ?? 100;
+                const h = k.height ?? 100;
+                // Type scaled to the key it sits in, in container units so it
+                // follows the board's own width. A narrow encoder key gets small
+                // type rather than a clipped label. The factor is read directly:
+                // container units cancel the board's width out, so 0.26 is 26% of
+                // this key's own width, whatever size the board is drawn at.
+                const size = ((w / spanX) * 100 * 0.26).toFixed(2);
+                const tiny = tinies.has(position);
                 return (
                   <button
                     key={position}
-                    className={"pill" + (picking === position ? " is-active" : "")}
+                    className={"kmap__key"
+                      + (picking === position ? " is-active" : "")
+                      + (tiny ? " kmap__key--tiny" : "")}
+                    data-type={b.type}
+                    style={{
+                      left: `${((k.x ?? 0) - bounds.minX + PAD) / spanX * 100}%`,
+                      top: `${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}%`,
+                      width: `${(w / spanX) * 100}%`,
+                      height: `${(h / spanY) * 100}%`,
+                      fontSize: `clamp(8px, ${size}cqw, 22px)`,
+                      transform: k.r ? `rotate(${k.r / 100}deg)` : undefined,
+                    }}
+                    title={b.detail ? `${b.full} · ${b.detail}` : b.full}
                     onClick={() => setPicking(picking === position ? null : position)}
+                    onMouseEnter={() => setHover(position)}
+                    onMouseLeave={() => setHover((at) => (at === position ? null : at))}
+                    onFocus={() => setHover(position)}
+                    onBlur={() => setHover((at) => (at === position ? null : at))}
                   >
-                    {b.name}{b.sub ? ` · ${b.sub}` : ""}
+                    {tiny ? <span className="kmap__dot" aria-hidden="true" /> : (
+                      <>
+                        {b.action && <span className="kmap__action">{b.action}</span>}
+                        <span className="kmap__cap">{b.name}</span>
+                        {b.sub && <span className="kmap__sub">{b.sub}</span>}
+                      </>
+                    )}
+                    {tiny && <span className="sr-only">{b.full}</span>}
                   </button>
                 );
               })}
+
+              {/* What the key is, spelled out. The cap has room for a glyph and
+                  a hold line; everything else — which behavior, which of its
+                  halves is which, what kind of key it sends — lives here. */}
+              {hovered && hoverInfo && (
+                <div
+                  className="keycard"
+                  role="presentation"
+                  data-below={cardBelow ? "" : undefined}
+                  style={{
+                    left: `${((hovered.x ?? 0) - bounds.minX + PAD + (hovered.width ?? 100) / 2) / spanX * 100}%`,
+                    top: `${((hovered.y ?? 0) - bounds.minY + PAD
+                      + (cardBelow ? (hovered.height ?? 100) : 0)) / spanY * 100}%`,
+                  }}
+                >
+                  <dl className="keycard__rows">
+                    {hoverInfo.rows.filter(([, v]) => v).map(([label, value]) => (
+                      <div className="keycard__row" key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
             </div>
-          </>
-        );
-      })()}
+          </div>
+        ) : (
+          <p className="ctl__hint">
+            This board reports no physical layout, so its keys cannot be drawn in
+            position. The bindings are still listed below.
+          </p>
+        )}
 
-      {!layout && (
-        <ol className="kmap__list">
-          {(current?.bindings ?? []).map((binding, position) => {
-            const b = describe(binding, behaviors, keymap?.layers);
-            return (
-              <li key={position}>
-                <button className="pill" onClick={() => setPicking(position)}>
-                  {position}: {b.name}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      )}
+        {layout && (() => {
+          // Grouped by encoder, not by layout order. Listing them in raw position
+          // order put Volume Up, then the other wheel, then Volume Down — the two
+          // halves of one encoder split by an unrelated key.
+          const small = wheelOrder(keys).flat()
+            .filter((position) => tinies.has(position))
+            .map((position) => ({ position }));
+          if (!small.length) return null;
+          return (
+            <>
+              <p className="ctl__hint">
+                Marked with a dot on the board — too small to label in place:
+              </p>
+              <div className="row row--wrap">
+                {small.map(({ position }) => {
+                  const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
+                  return (
+                    <button
+                      key={position}
+                      className={"pill" + (picking === position ? " is-active" : "")}
+                      data-type={b.type}
+                      onClick={() => setPicking(picking === position ? null : position)}
+                    >
+                      {b.name}{b.sub ? ` · ${b.sub}` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
 
-      {picking !== null && (
-        <Picker
-          key={picking}
-          position={picking}
-          behaviors={behaviors}
-          binding={current?.bindings?.[picking]}
-          busy={busy}
-          layers={keymap?.layers}
-          onCancel={() => setPicking(null)}
-          onPick={(binding) => setBinding(picking, binding)}
-        />
-      )}
+        {!layout && (
+          <ol className="kmap__list">
+            {(current?.bindings ?? []).map((binding, position) => {
+              const b = describe(binding, behaviors, keymap?.layers);
+              return (
+                <li key={position}>
+                  <button className="pill" data-type={b.type} onClick={() => setPicking(position)}>
+                    {position}: {b.name}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        )}
 
-      <div className="actions">
-        {/* Not gated on `dirty`. That flag is this app's belief about the
-            board, and a board that has unsaved changes we did not make — or a
-            notification we missed — would leave the only way to commit them
-            greyed out. The board is the one that knows; let it decide. */}
-        <button className="btn btn--primary" onClick={save} disabled={busy}>
-          {dirty ? "Save to board" : "Save to board"}
-        </button>
-        <button className="btn" onClick={discard} disabled={busy}>Discard</button>
-        <span className="actions__gap" />
-        <button className="btn btn--ghost" onClick={load} disabled={busy}>Re-read</button>
+        {picking !== null && (
+          <Picker
+            key={picking}
+            position={picking}
+            behaviors={behaviors}
+            binding={current?.bindings?.[picking]}
+            busy={busy}
+            layers={keymap?.layers}
+            onCancel={() => setPicking(null)}
+            onPick={(binding) => setBinding(picking, binding)}
+          />
+        )}
+
+        <div className="actions">
+          {/* Not gated on `dirty`. That flag is this app's belief about the
+              board, and a board that has unsaved changes we did not make — or a
+              notification we missed — would leave the only way to commit them
+              greyed out. The board is the one that knows; let it decide. */}
+          <button className="btn btn--primary" onClick={save} disabled={busy}>
+            Save to board
+          </button>
+          <button className="btn" onClick={discard} disabled={busy}>Discard</button>
+          <span className="actions__gap" />
+          <button className="btn btn--ghost" onClick={load} disabled={busy}>Re-read</button>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 
