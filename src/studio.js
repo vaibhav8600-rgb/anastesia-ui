@@ -413,6 +413,21 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
   eq(layers[0].name, "nav", "layer name arrives");
   eq(layers[0].bindings[0].param1, 0x00070004, "a key usage arrives intact");
 
+  // The layer requests, which restructure a keymap rather than edit one key.
+  const layerReq = (body) => decode(Request, encode(Request, { request_id: 1, keymap: body }));
+  eq(layerReq({ add_layer: {} }).keymap.add_layer, {}, "add_layer is an empty message, not a bool");
+  eq(layerReq({ remove_layer: { layer_index: 3 } }).keymap.remove_layer.layer_index, 3, "remove names an index");
+  // Zero is written rather than omitted. proto3 would normally leave a default
+  // out, but an explicit 0 is valid on the wire, decodes to 0, and removes any
+  // question about which member of the oneof was meant — which matters most
+  // for layer 0, the one people remove by accident.
+  eq(layerReq({ remove_layer: { layer_index: 0 } }).keymap.remove_layer.layer_index, 0, "removing layer 0 says so explicitly");
+  const props = layerReq({ set_layer_props: { layer_id: 2, name: "Nav" } }).keymap.set_layer_props;
+  eq(props.layer_id, 2, "rename carries the layer id");
+  eq(props.name, "Nav", "and the new name");
+  eq(layerReq({ set_layer_props: { layer_id: 1, name: "Ünïcøde" } }).keymap.set_layer_props.name,
+     "Ünïcøde", "a name outside ASCII survives the wire");
+
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");
 

@@ -280,6 +280,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   // The lock is not a note in a corner. Until it is cleared nothing you press
   // has any effect, so it gets stated in the middle and waits to be read.
   const [lockSeen, setLockSeen] = useState(false);
+  const [layerName, setLayerName] = useState("");
 
   const load = useCallback(async () => {
     const l = link.current;
@@ -403,6 +404,12 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
 
   useEffect(() => () => { link.current?.close(); }, []);
 
+  // Follow the selected layer, so the field never offers to rename one layer
+  // with another's name still sitting in it.
+  useEffect(() => {
+    setLayerName(keymap?.layers?.[layer]?.name ?? "");
+  }, [keymap, layer]);
+
   // Open the editor when the tab is opened. The ports are already granted, so
   // this is a probe rather than a prompt — no chooser appears, and if nothing
   // answers it simply stays on the connect button without an error, because
@@ -489,6 +496,74 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
     } catch (err) {
       if (err?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
       else onNote?.(String(err?.message ?? err));
+    } finally { setBusy(false); }
+  };
+
+  /**
+   * Layers: add, rename, remove.
+   *
+   * The RPC has had these all along and the editor only ever read layers. A
+   * keymap you can edit but not restructure is half a tool — and every one of
+   * these goes through the same unsaved-changes flow as a binding, so nothing
+   * reaches storage until Save.
+   */
+  const addLayer = async () => {
+    setBusy(true);
+    try {
+      const res = await link.current.call("keymap", { add_layer: {} });
+      const err = res.add_layer?.err;
+      if (err) {
+        onNote?.(err === 2 ? "The board has no room for another layer." : "The board could not add a layer.");
+        return;
+      }
+      await load();
+      const at = res.add_layer?.ok?.index;
+      if (at !== undefined) setLayer(at);
+      onNote?.("Layer added. Save writes it to the board.");
+    } catch (e) {
+      if (e?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
+      else onNote?.(String(e?.message ?? e));
+    } finally { setBusy(false); }
+  };
+
+  const renameLayer = async (name) => {
+    const l = keymap?.layers?.[layer];
+    if (!l) return;
+    setBusy(true);
+    try {
+      const res = await link.current.call("keymap", {
+        set_layer_props: { layer_id: l.id ?? 0, name },
+      });
+      if (res.set_layer_props) { onNote?.("The board refused that name."); return; }
+      await load();
+      onNote?.(`Layer renamed to "${name}". Save writes it to the board.`);
+    } catch (e) {
+      if (e?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
+      else onNote?.(String(e?.message ?? e));
+    } finally { setBusy(false); }
+  };
+
+  const removeLayer = async () => {
+    if (!keymap?.layers?.length) return;
+    setBusy(true);
+    try {
+      const res = await link.current.call("keymap", {
+        remove_layer: { layer_index: layer },
+      });
+      const err = res.remove_layer?.err;
+      if (err) {
+        onNote?.(err === 2 ? "That layer index is not one the board knows." : "The board could not remove that layer.");
+        return;
+      }
+      // The list just got shorter under us, so step back rather than pointing
+      // at a layer that is no longer there.
+      setLayer((i) => Math.max(0, i - 1));
+      setPicking(null);
+      await load();
+      onNote?.("Layer removed. Save writes it to the board.");
+    } catch (e) {
+      if (e?.code === ERR_LOCKED) { setLocked(true); setLockSeen(false); }
+      else onNote?.(String(e?.message ?? e));
     } finally { setBusy(false); }
   };
 
@@ -626,6 +701,41 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
             {l.name || `Layer ${i}`}
           </button>
         ))}
+        {/* The board says how many it can hold, so the button goes when there
+            is no room rather than offering something that will be refused. */}
+        {(keymap?.available_layers ?? 0) > 0 && (
+          <button className="pill" onClick={addLayer} disabled={busy} title="Add a layer">+</button>
+        )}
+      </div>
+
+      <div className="row row--wrap">
+        <label className="ctl__label" htmlFor="layer-name">Layer name</label>
+        <input
+          id="layer-name"
+          className="search search--slim"
+          value={layerName}
+          maxLength={keymap?.max_layer_name_length || undefined}
+          placeholder={current?.name || `Layer ${layer}`}
+          onChange={(e) => setLayerName(e.target.value)}
+        />
+        <button
+          className="btn"
+          disabled={busy || !layerName.trim() || layerName.trim() === (current?.name ?? "")}
+          onClick={() => renameLayer(layerName.trim())}
+        >
+          Rename
+        </button>
+        <span className="actions__gap" />
+        <button
+          className="btn btn--danger"
+          disabled={busy || (keymap?.layers?.length ?? 0) < 2}
+          onClick={removeLayer}
+          title={(keymap?.layers?.length ?? 0) < 2
+            ? "A keymap needs at least one layer"
+            : `Remove ${current?.name || `layer ${layer}`}`}
+        >
+          Remove layer
+        </button>
       </div>
 
       {layout ? (
