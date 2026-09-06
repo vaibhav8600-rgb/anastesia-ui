@@ -1900,6 +1900,16 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   margin-inline: auto;
 }
 
+/* Prose reads best at 900px; a keyboard does not. A sixty-key split board in
+   that column draws keys about thirty pixels wide, which is how the caps ended
+   up wrapping "hold Ctrl+Z" onto three lines. The board is the thing being
+   edited — it gets the width, and centres over the column rather than pinning
+   left, which is what `.kmap`'s own `margin: 0.75rem 0` was doing to it. */
+.studio-only .kmap {
+  max-width: min(100%, 1400px);
+  margin: 0.75rem auto;
+}
+
 /* A button that reads as a link, for an aside rather than an action. */
 .linkish {
   padding: 0;
@@ -2074,7 +2084,17 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 /* A hold-tap carries two answers. Tap is what an ordinary press does, so it
    takes the cap; hold sits under it, smaller and muted, labelled so the two
    are never read as one. */
-.kmap__cap { display: block; }
+/* Two lines, then an ellipsis. A macro called `tap_dance_lower` will not fit
+   on a keycap at any size worth reading, and wrapping it to four lines made
+   the whole board's type shrink to accommodate one key. The full binding is
+   on the key's title and in the picker. */
+.kmap__cap {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
 
 /* A key too small for any label. It still shows where it is and stays
    clickable; what it does is listed under the board. */
@@ -2087,13 +2107,15 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 }
 .kmap__key--tiny.is-active .kmap__dot { background: var(--accent); }
 
+/* Relative to the cap, never absolute. This was `--fs-micro`, a fixed rem,
+   while the cap scales with the board — so on a narrow board the hold line
+   rendered bigger than the tap it belongs under. And it is a value, not a
+   label, so it loses the micro-caps treatment: "HOLD CTRL+Z" letter-spaced is
+   most of why these caps wrapped. */
 .kmap__sub {
   display: block;
-  margin-top: 0.25rem;
-  font-size: var(--fs-micro);
-  font-weight: var(--fw-micro);
-  letter-spacing: var(--ls-micro);
-  text-transform: uppercase;
+  margin-top: 0.15em;
+  font-size: 0.78em;
   color: var(--muted-dim);
 }
 

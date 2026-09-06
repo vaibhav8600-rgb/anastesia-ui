@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Request, Response, decode, encode, frame, subsystemOf, unframer,
+  Request, Response, decode, encode, frame, subsystemOf, tinyKeys, unframer,
   LOCKED, UNLOCKED, META_ERRORS,
 } from "./studio.js";
 import { ALL_CHOICES, CHOICE_GROUPS, MOUSE_BUTTONS, usageName, usageShort } from "./keycodes.js";
@@ -671,6 +671,14 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
   const spanX = Math.max(1, (bounds.maxX - bounds.minX) + PAD * 2);
   const spanY = Math.max(1, (bounds.maxY - bounds.minY) + PAD * 2);
+  // Both the board and the list under it ask which keys are too small to
+  // label, and they used to ask it differently: the board measured the key
+  // against the board's width, the list took whatever the ring left over. On a
+  // trackball those agree, because the leftovers are the encoder slivers. On a
+  // keyboard where every key is the same size the ring keeps eight and the
+  // list claimed the other fifty-two were too small to draw — while the board
+  // had just drawn them, legibly, right above the claim.
+  const tinies = tinyKeys(keys);
 
   return (
     <>
@@ -746,12 +754,14 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
             const h = k.height ?? 100;
             // Type scaled to the key it sits in, in container units so it
             // follows the board's own width. A narrow encoder key gets small
-            // type rather than a clipped label.
-            const size = ((w / spanX) * 100 * 0.13).toFixed(2);
+            // type rather than a clipped label. The factor is read directly:
+            // container units cancel the board's width out, so 0.26 is 26% of
+            // this key's own width, whatever size the board is drawn at.
+            const size = ((w / spanX) * 100 * 0.26).toFixed(2);
             // An encoder key is a sliver of the board. No type size fits
             // "Volume Down" inside it, so it carries a dot and its binding is
             // listed under the board instead of being shrunk into illegibility.
-            const tiny = (w / spanX) < 0.055 || (h / spanY) < 0.055;
+            const tiny = tinies.has(position);
             return (
               <button
                 key={position}
@@ -764,7 +774,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                   top: `${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}%`,
                   width: `${(w / spanX) * 100}%`,
                   height: `${(h / spanY) * 100}%`,
-                  fontSize: `clamp(7px, ${size}cqw, 13px)`,
+                  fontSize: `clamp(8px, ${size}cqw, 22px)`,
                   transform: k.r ? `rotate(${k.r / 100}deg)` : undefined,
                 }}
                 title={b.detail ? `${b.full} · ${b.detail}` : b.full}
@@ -792,7 +802,9 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
         // Grouped by encoder, not by layout order. Listing them in raw position
         // order put Volume Up, then the other wheel, then Volume Down — the two
         // halves of one encoder split by an unrelated key.
-        const small = wheelOrder(keys).flat().map((position) => ({ position }));
+        const small = wheelOrder(keys).flat()
+          .filter((position) => tinies.has(position))
+          .map((position) => ({ position }));
         if (!small.length) return null;
         return (
           <>

@@ -331,6 +331,29 @@ export const META_ERRORS = {
   4: "The board could not encode its reply.",
 };
 
+/**
+ * The keys too small to carry a label, as a set of positions.
+ *
+ * Measured against the other keys on this board, not against the board's
+ * width. A fraction-of-span rule works on a trackball — eight keys and four
+ * encoder slivers — and falls apart on a keyboard, where a sixty-key split
+ * board sits within a rounding error of the threshold and could drop every
+ * one of its keys into the "too small to draw" list the board had just drawn.
+ *
+ * A sliver is a sliver relative to its neighbours. Median rather than mean, so
+ * a handful of slivers cannot drag the comparison down to meet themselves.
+ */
+export function tinyKeys(keys) {
+  if (!keys?.length) return new Set();
+  const area = (k) => (k.width ?? 100) * (k.height ?? 100);
+  const sorted = keys.map(area).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  if (!median) return new Set();
+  const out = new Set();
+  keys.forEach((k, i) => { if (area(k) / median < 0.35) out.add(i); });
+  return out;
+}
+
 /** Every response carries exactly one subsystem; find which. */
 export function subsystemOf(rr) {
   for (const k of ["meta", "core", "behaviors", "keymap"]) if (rr?.[k]) return k;
@@ -427,6 +450,19 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
   eq(props.name, "Nav", "and the new name");
   eq(layerReq({ set_layer_props: { layer_id: 1, name: "Ünïcøde" } }).keymap.set_layer_props.name,
      "Ünïcøde", "a name outside ASCII survives the wire");
+
+  // Which keys are too small to label.
+  const grid = [];
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 12; c++) grid.push({ x: c * 100, y: r * 100, width: 100, height: 100 });
+  eq(tinyKeys(grid).size, 0, "a uniform keyboard has no unlabellable keys");
+  const trackball = [
+    ...Array.from({ length: 8 }, (_, i) => ({ x: i * 100, y: 0, width: 100, height: 100 })),
+    ...Array.from({ length: 4 }, (_, i) => ({ x: i * 40, y: 200, width: 40, height: 40 })),
+  ];
+  eq([...tinyKeys(trackball)], [8, 9, 10, 11], "encoder slivers are, and only they are");
+  eq(tinyKeys([]).size, 0, "no keys, no slivers");
+  // A board of nothing but slivers is a board of ordinary keys.
+  eq(tinyKeys(trackball.slice(8)).size, 0, "smallness is relative, so all-small is all-normal");
 
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");
