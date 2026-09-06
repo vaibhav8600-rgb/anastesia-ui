@@ -144,20 +144,8 @@ class Link {
   }
 }
 
-/**
- * Which namespace a behavior's first parameter lives in. Mouse buttons are
- * bitmasks, HID usages are page-encoded, and the number alone cannot tell you
- * which — a bare 4 is both the letter A and the middle button.
- */
 /** UNLOCK_REQUIRED from zmk/meta.proto. */
 const ERR_LOCKED = 1;
-
-export function paramKind(name) {
-  if (/mouse|mkp|mb|click/i.test(name ?? "")) return "mouse";
-  if (/press|kp|consumer|key/i.test(name ?? "")) return "usage";
-  return null;
-}
-
 /** Bindings come back as ids and numbers; make them a sentence. */
 function describe(binding, behaviors, layers) {
   if (!binding || Object.keys(binding).length === 0) return { name: "—", full: "Unbound", detail: null };
@@ -166,26 +154,29 @@ function describe(binding, behaviors, layers) {
   const name = b?.display_name ?? `#${id}`;
   const p1 = binding.param1 ?? 0;
   const p2 = binding.param2 ?? 0;
-  // A key press is by far the most common binding, and showing "Key Press
-  // 458756" for it would defeat the point of drawing a keymap at all.
-  // Anything carrying a HID usage reads as the key it sends. That is key
-  // press, mouse button press and consumer keys alike — they differ only in
-  // which page the usage is on, which usageName already knows.
-  const kind = paramKind(name);
   const meta = b?.metadata?.[0] ?? {};
   const i1 = paramInfo(meta.param1);
   const i2 = paramInfo(meta.param2);
 
-  // A key that only sends one thing reads as that thing. Mouse buttons are the
-  // exception worth making: the board calls them MB1, and "Left Click" is what
-  // the key actually does.
-  if (p1 && kind && i2.kind === "none") {
-    return { name: usageShort(p1, kind), full: usageName(p1, kind), detail: name };
+  // A key that sends one thing reads as that thing — and what that thing is
+  // comes from the parameter's own declaration, never from the behavior's
+  // name. Matching names is a guess about one firmware's naming habits dressed
+  // up as a rule, and it is how "Hold/tap (layer/mouse key)" got its layer read
+  // as a mouse button.
+  if (p1 && i1.kind !== "none" && i2.kind === "none") {
+    return {
+      name: paramShort(i1, p1, layers),
+      full: paramValueName(i1, p1, layers),
+      detail: name,
+    };
   }
 
   // Two parameters: the cap shows the values, not the behavior's name. Knowing
   // a key is a hold/tap without knowing which layer or which key it holds and
   // taps is the least useful thing the cap could say.
+  // Wording only. Nothing is parsed from the name, so a firmware that calls
+  // its behavior something else loses the words "hold" and "tap" and keeps
+  // every value.
   const holdTap = /hold\s*[\/-]?\s*tap/i.test(name);
   const part = (info, value, fallback) => (info.kind === "none" ? null
     : `${fallback}: ${paramValueName(info, value, layers)}`);
