@@ -897,9 +897,14 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                 // Type scaled to the key it sits in, in container units so it
                 // follows the board's own width. A narrow encoder key gets small
                 // type rather than a clipped label. The factor is read directly:
-                // container units cancel the board's width out, so 0.26 is 26% of
+                // container units cancel the board's width out, so 0.32 is 32% of
                 // this key's own width, whatever size the board is drawn at.
-                const size = ((w / spanX) * 100 * 0.26).toFixed(2);
+                //
+                // A hold-tap prints two values and a behavior name in the space
+                // a plain key gives to one, so it takes the smaller type. Sized
+                // for one and it overflowed the cap — which is a thing you only
+                // see on the keys that carry the most information.
+                const size = ((w / spanX) * 100 * (b.sub ? 0.24 : 0.32)).toFixed(2);
                 const tiny = tinies.has(position);
                 return (
                   <button
@@ -909,11 +914,16 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                       + (tiny ? " kmap__key--tiny" : "")}
                     data-type={b.type}
                     style={{
-                      left: `${((k.x ?? 0) - bounds.minX + PAD) / spanX * 100}%`,
-                      top: `${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}%`,
-                      width: `${(w / spanX) * 100}%`,
-                      height: `${(h / spanY) * 100}%`,
-                      fontSize: `clamp(8px, ${size}cqw, 22px)`,
+                      // Inset by half a gutter on every side. A physical layout
+                      // gives each key its whole unit — 100 wide means one full
+                      // key unit — so drawing keys at their stated size leaves
+                      // no space between them and the board reads as a grid of
+                      // touching rectangles rather than as keys.
+                      left: `calc(${((k.x ?? 0) - bounds.minX + PAD) / spanX * 100}% + var(--gut))`,
+                      top: `calc(${((k.y ?? 0) - bounds.minY + PAD) / spanY * 100}% + var(--gut))`,
+                      width: `calc(${(w / spanX) * 100}% - var(--gut) * 2)`,
+                      height: `calc(${(h / spanY) * 100}% - var(--gut) * 2)`,
+                      fontSize: `clamp(8px, ${size}cqw, 26px)`,
                       transform: k.r ? `rotate(${k.r / 100}deg)` : undefined,
                     }}
                     title={b.detail ? `${b.full} · ${b.detail}` : b.full}
@@ -1180,29 +1190,79 @@ function ParamField({ id, label, info, value, onChange, layers }) {
     );
   }
 
+  return <KeycodeGrid id={id} label={label} value={value} onChange={onChange} />;
+}
+
+/**
+ * Every bindable usage, laid out and coloured the way it is on the board.
+ *
+ * This was a `<select>`. One hundred and seventy-two options behind a dropdown
+ * is a list you can only use if you already know what you are looking for, and
+ * it gave no sense of what a board can do — which is most of what someone
+ * opening a keymap editor for the first time is trying to find out. Laid out
+ * flat, grouped and coloured by the same types the keycaps use, it answers
+ * "what can I put here" by being looked at.
+ */
+function KeycodeGrid({ id, label, value, onChange }) {
+  const [q, setQ] = useState("");
   const known = ALL_CHOICES.some((c) => c.param === value);
+  const needle = q.trim().toLowerCase();
+  const groups = CHOICE_GROUPS
+    .map((g) => ({
+      group: g.group,
+      items: needle ? g.items.filter((c) => c.name.toLowerCase().includes(needle)) : g.items,
+    }))
+    .filter((g) => g.items.length);
+  const found = groups.reduce((n, g) => n + g.items.length, 0);
+
   return (
-    <>
+    <div className="codes">
       <div className="ctl ctl--inline">
-        <label className="ctl__label" htmlFor={id}>{label}</label>
-        <select id={id} className="search search--slim" value={known ? value : ""}
-                onChange={(e) => onChange(Number(e.target.value))}>
-          <option value="">{known ? "—" : `custom (${value})`}</option>
-          {CHOICE_GROUPS.map((g) => (
-            <optgroup key={g.group} label={g.group}>
-              {g.items.map((c) => <option key={c.param} value={c.param}>{c.name}</option>)}
-            </optgroup>
-          ))}
-        </select>
+        <label className="ctl__label" htmlFor={`${id}-find`}>{label}</label>
+        <input
+          id={`${id}-find`}
+          type="search"
+          className="search search--slim"
+          placeholder={`Search ${ALL_CHOICES.length} keys`}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
       </div>
+
+      {/* A binding this app has no name for is still a binding. Showing the
+          number and letting it be typed is the difference between "we cannot
+          display this" and "we cannot change this". */}
       {!known && value !== 0 && (
         <div className="ctl ctl--inline">
-          <label className="ctl__label" htmlFor={`${id}-raw`}>{label} — raw value</label>
+          <label className="ctl__label" htmlFor={`${id}-raw`}>Not a key this app knows — raw value</label>
           <input id={`${id}-raw`} type="number" className="search search--slim" value={value}
                  onChange={(e) => onChange(Number(e.target.value))} />
         </div>
       )}
-    </>
+
+      <div className="codes__scroll">
+        {groups.map((g) => (
+          <div className="codes__group" key={g.group}>
+            <h5 className="codes__title">{g.group} <span className="codes__count">{g.items.length}</span></h5>
+            <div className="codes__grid">
+              {g.items.map((c) => (
+                <button
+                  key={c.param}
+                  type="button"
+                  className={"code" + (c.param === value ? " is-active" : "")}
+                  data-type={keyType(c.param)}
+                  title={c.name}
+                  onClick={() => onChange(c.param)}
+                >
+                  {usageShort(c.param) ?? c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {!found && <p className="ctl__hint">Nothing matches “{q}”.</p>}
+      </div>
+    </div>
   );
 }
 

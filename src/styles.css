@@ -2052,6 +2052,10 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 .kmap {
   position: relative;
+  /* The gap between one keycap and the next. Scaled to the board so it holds
+     at any zoom, floored so it never closes up and capped so a small board
+     does not turn into confetti. */
+  --gut: clamp(2px, 0.4cqw, 7px);
   /* Keys size their type against the board, not the viewport, so a narrow key
      in a narrow panel still gets type in proportion to itself. */
   container-type: inline-size;
@@ -2075,7 +2079,7 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   border: 1px solid color-mix(in srgb, var(--kt, var(--line)) 55%, var(--line));
   border-radius: var(--radius-sm);
   background: var(--keycap-face);
-  box-shadow: var(--keycap-bevel);
+  box-shadow: var(--keycap-bevel), var(--keycap-glow);
   color: var(--text);
   line-height: 1.1;
   text-align: center;
@@ -2764,6 +2768,10 @@ button.rail__item:hover { background: var(--glass-bg-3); }
      the page wash; this one lies over keycaps, and a tooltip you can read the
      keymap through is not a tooltip. */
   --keycard-bg: #1b1638;
+  /* The type's colour, thrown a little way past the cap's edge. `--kt` is set
+     per key and resolves here at the point of use, so one token glows every
+     key in its own colour. */
+  --keycap-glow: 0 0 12px -3px color-mix(in srgb, var(--kt, transparent) 72%, transparent);
   --keycap-face: linear-gradient(
     180deg,
     color-mix(in srgb, #fff 7%, var(--glass-bg-3)),
@@ -2796,6 +2804,7 @@ button.rail__item:hover { background: var(--glass-bg-3); }
 :root[data-theme="flat"] {
   --keycard-bg: var(--glass);
   --keycap-bevel: none;
+  --keycap-glow: none;
   --keycap-face: var(--glass-bg-3);
   --kt-letter: var(--line);
 }
@@ -2910,3 +2919,60 @@ button.rail__item:hover { background: var(--glass-bg-3); }
 .keycard__row { display: flex; gap: 1rem; justify-content: space-between; }
 .keycard__row dt { font-size: var(--fs-micro); color: var(--muted); }
 .keycard__row dd { margin: 0; font-size: var(--fs-micro); font-weight: 600; color: var(--text); }
+
+/* ---------- keycode grid ----------
+   The picker's "which key" half. A dropdown of a hundred and seventy-two
+   options is usable only by someone who already knows the answer; laid out and
+   coloured by the same types the keycaps carry, it can be browsed. */
+
+.codes { display: grid; gap: 0.5rem; }
+
+.codes__scroll {
+  max-height: 21rem;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-right: 0.25rem;
+}
+
+.codes__group { margin-bottom: 0.75rem; }
+
+.codes__title {
+  margin: 0 0 0.35rem;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.codes__count { color: var(--muted-dim); font-weight: 400; }
+
+/* Auto-fill rather than a fixed count: the picker is 42rem on a wide screen
+   and the width of a phone on a small one, and the grid should not care. */
+.codes__grid {
+  display: grid;
+  gap: 0.3rem;
+  grid-template-columns: repeat(auto-fill, minmax(3.4rem, 1fr));
+}
+
+.code {
+  min-height: 0;
+  padding: 0.35rem 0.2rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--kt, var(--line)) 45%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-3);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.code:hover { border-color: var(--kt, var(--text)); }
+.code.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--glass-bg-3));
+  font-weight: 600;
+}

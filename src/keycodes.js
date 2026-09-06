@@ -158,10 +158,32 @@ function baseName(page, id) {
   return `page ${page.toString(16)}:${id.toString(16)}`;
 }
 
+/**
+ * Names that do not fit on a keycap, and what a keyboard has always printed
+ * on them instead.
+ *
+ * Not a general abbreviator. Every one of these is what the key itself is
+ * labelled in the physical world, so shortening costs nothing — where there is
+ * no such convention the full name stays and the cap wraps.
+ */
+const CAP_SHORT = {
+  "Backspace": "BkSp", "Left Shift": "Shift", "Right Shift": "Shift",
+  "Left Ctrl": "Ctrl", "Right Ctrl": "Ctrl", "Left Alt": "Alt", "Right Alt": "AltGr",
+  "Left GUI": "GUI", "Right GUI": "GUI", "Caps Lock": "Caps", "Num Lock": "Num",
+  "Scroll Lock": "ScrLk", "Print Screen": "PrtSc", "Application / Menu": "Menu",
+  "Page Up": "PgUp", "Page Down": "PgDn", "Delete": "Del", "Insert": "Ins",
+  "Volume Up": "Vol +", "Volume Down": "Vol −", "Play / Pause": "Play",
+  "Previous Track": "Prev", "Next Track": "Next", "Fast Forward": "FFwd",
+  "Brightness Up": "Bright +", "Brightness Down": "Bright −",
+  "Middle Click": "Middle", "Left Click": "Click", "Right Click": "R Click",
+  "Mouse Forward": "Fwd", "Mouse Back": "Back",
+};
+
 /** The short form, for drawing on a key that is 40px wide. */
 export function usageShort(param, kind) {
   const full = usageName(param, kind);
   if (!full) return null;
+  if (CAP_SHORT[full]) return CAP_SHORT[full];
   // "- minus" and "→ Right" carry the glyph first precisely so this can cut
   // at the space and keep the half that reads at a glance.
   // A modified key keeps its whole name — "Ctrl+C" is the point of it, and
@@ -324,12 +346,20 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("keycodes.js")
   eq(usageName(0x04), "A", "the same 4 without the hint is the letter A");
   eq(usageName(3, "mouse"), "Left Click + Right Click", "a multi-button mask names each bit");
   eq(usageName(32, "mouse"), "Button 6", "a bit with no name still says which button");
-  eq(usageShort(2, "mouse"), "Right Click", "the short form takes the hint too");
+  eq(usageShort(2, "mouse"), "R Click", "the short form takes the hint too");
 
   eq(usageShort((PAGE_KEY << 16) | 0x2d), "-", "punctuation cuts to its glyph");
   eq(usageShort((PAGE_KEY << 16) | 0x4f), "→", "an arrow cuts to its arrow");
   eq(usageShort((PAGE_KEY << 16) | 0x59), "1", "a keypad key drops its prefix");
-  eq(usageShort((PAGE_CONSUMER << 16) | 0x00e9), "Volume Up", "a long name stays whole");
+  eq(usageShort((PAGE_CONSUMER << 16) | 0x00e9), "Vol +", "a long name takes the label a keyboard prints");
+  eq(usageShort((PAGE_KEY << 16) | 0x2a), "BkSp", "and so does the longest one on the board");
+  eq(usageShort((PAGE_KEY << 16) | 0x28), "Enter", "a name that already fits is left alone");
+  // The abbreviations are a lookup on the full name, so a modified key must not
+  // hit one: Ctrl+Delete is not "Del".
+  eq(usageShort(0x01070028), "Ctrl+Enter", "a chord is never abbreviated to one half");
+  const unnamed = Object.keys(CAP_SHORT).filter((n) =>
+    !ALL_CHOICES.some((c) => usageName(c.param) === n) && !Object.values(MOUSE_BUTTONS).includes(n));
+  console.assert(unnamed.length === 0, `abbreviations for names nothing produces: ${unnamed.join(", ")}`);
 
   // Every choice must name itself the same way a binding does, or the picker
   // and the key cap disagree about what a key is.
