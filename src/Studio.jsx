@@ -904,7 +904,28 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                 // a plain key gives to one, so it takes the smaller type. Sized
                 // for one and it overflowed the cap — which is a thing you only
                 // see on the keys that carry the most information.
-                const size = ((w / spanX) * 100 * (b.sub ? 0.24 : 0.32)).toFixed(2);
+                //
+                // And a name is sized to its own length. 30% of the key is right
+                // for "A" and absurd for "Output Selection", which at glyph size
+                // needs three lines a keycap does not have — so the long ones
+                // step down until they fit, and stop stepping at ten characters
+                // so the genuinely long ones wrap rather than shrink away.
+                //
+                // 0.78em per character is deliberately more than the font
+                // actually needs. The budget is the key, and the key is the
+                // cell less a gutter each side and its own padding — which is a
+                // fifth of a 50px keycap and nothing at all on a 200px one, so
+                // a figure tuned on a wide board put "None" on two lines on a
+                // narrow one. The slack is that difference.
+                //
+                // The hold line counts too, at the 0.78em it is actually drawn
+                // at. Budgeting for the cap alone left "F12" full size over a
+                // "hold Ctrl+Shift+F12" that needed three lines, and the two
+                // were drawn through each other.
+                const longest = Math.max((b.name ?? "").length, (b.sub ?? "").length * 0.78);
+                const chars = Math.max(2, Math.min(longest, 11));
+                const size = ((w / spanX) * 100
+                  * Math.min(b.sub ? 0.23 : 0.30, 1 / (chars * 0.78))).toFixed(2);
                 const tiny = tinies.has(position);
                 return (
                   <button

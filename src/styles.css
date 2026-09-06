@@ -2071,7 +2071,10 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   position: absolute;
   display: grid;
   place-items: center;
-  padding: 0.25rem;
+  /* Relative to the key's own type, not a fixed 4px. On a 42px keycap a fixed
+     padding is a fifth of the width, which is what pushed "None" onto two
+     lines while the same rule was invisible on a 200px one. */
+  padding: 0.15em;
   min-height: 0;                 /* the shared 44px floor would break the grid */
   overflow: hidden;
   /* The type's colour, at a strength that separates one key from the next
@@ -2092,7 +2095,13 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    at keycap size, and colouring the whole cap makes the glyph fight it. */
 /* The action label is out of flow, so the cap has to be told to leave room —
    without it the two were drawn on top of each other. */
-.kmap__key:has(.kmap__action) { padding-top: 1.05em; }
+.kmap__key:has(.kmap__action) { padding-top: 1em; }
+
+/* A centred grid item is sized to its content, not to its track, so a long
+   name made the cap wider than the key and then overflowed it on both sides:
+   "Transparent" was drawn as "nsparen". Capping the item at the track is what
+   gives `overflow-wrap` a width to break against. */
+.kmap__key > * { max-width: 100%; }
 
 .kmap__key:not(.kmap__key--tiny)::after {
   content: "";
@@ -2168,7 +2177,15 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    label, so it loses the micro-caps treatment: "HOLD CTRL+Z" letter-spaced is
    most of why these caps wrapped. */
 .kmap__sub {
-  display: block;
+  /* Two lines, like the cap. The size budget above keeps it to two; this is
+     what happens when a firmware names something longer than the budget
+     expected, and a clipped third line beats one drawn over the key below. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
   margin-top: 0.15em;
   font-size: 0.78em;
   color: var(--muted-dim);

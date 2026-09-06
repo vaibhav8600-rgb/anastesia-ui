@@ -179,17 +179,32 @@ const CAP_SHORT = {
   "Mouse Forward": "Fwd", "Mouse Back": "Back",
 };
 
-/** The short form, for drawing on a key that is 40px wide. */
+/**
+ * The short form, for drawing on a key that is 40px wide.
+ *
+ * Shortening happens to the base usage and the modifiers go back on after,
+ * rather than to the finished string. Done the other way, anything carrying a
+ * modifier was left alone entirely — which is how "Shift+= equals" ended up on
+ * a keycap, three times wider than the key it was drawn on.
+ */
 export function usageShort(param, kind) {
-  const full = usageName(param, kind);
-  if (!full) return null;
-  if (CAP_SHORT[full]) return CAP_SHORT[full];
-  // "- minus" and "→ Right" carry the glyph first precisely so this can cut
-  // at the space and keep the half that reads at a glance.
-  // A modified key keeps its whole name — "Ctrl+C" is the point of it, and
-  // cutting at the space would leave "Ctrl+C" as "Ctrl+C" anyway since the
-  // join uses +, but a plain "- minus" still wants its glyph alone.
-  if (full.includes("+")) return full;
+  if (!param) return null;
+  if (kind === "mouse") {
+    const name = usageName(param, kind);
+    return name ? (CAP_SHORT[name] ?? name) : null;
+  }
+  const mods = (param >>> 24) & 0xff;
+  const base = usageName(param & 0x00ffffff, kind);
+  if (!base) return null;
+  const short = CAP_SHORT[base] ?? trimName(base);
+  return mods ? [...modNames(mods), short].join("+") : short;
+}
+
+/**
+ * "- minus" and "→ Right" carry the glyph first precisely so this can cut at
+ * the space and keep the half that reads at a glance.
+ */
+function trimName(full) {
   const cut = full.split(" ")[0];
   return cut.length <= 3 || /^[A-Z0-9]$/.test(cut) ? cut : full.replace(/^(Keypad|Browser|Mouse) /, "");
 }
@@ -357,6 +372,11 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("keycodes.js")
   // The abbreviations are a lookup on the full name, so a modified key must not
   // hit one: Ctrl+Delete is not "Del".
   eq(usageShort(0x01070028), "Ctrl+Enter", "a chord is never abbreviated to one half");
+  // The one that put "Shift+= equals" on a keycap: the modifier used to stop
+  // the descriptor being cut, because the cut looked at the finished string.
+  eq(usageShort(0x0207002e), "Shift+=", "a modified punctuation key still drops its descriptor");
+  eq(usageShort(0x0207002a), "Shift+BkSp", "and a modified long name still takes its label");
+  eq(usageShort(0x02070050), "Shift+←", "and a modified arrow is still an arrow");
   const unnamed = Object.keys(CAP_SHORT).filter((n) =>
     !ALL_CHOICES.some((c) => usageName(c.param) === n) && !Object.values(MOUSE_BUTTONS).includes(n));
   console.assert(unnamed.length === 0, `abbreviations for names nothing produces: ${unnamed.join(", ")}`);
