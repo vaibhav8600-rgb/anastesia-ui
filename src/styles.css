@@ -1882,6 +1882,60 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 .assigns li { gap: 1rem; }
 .assigns li > span:first-child { min-width: 0; }
 
+/* ---------- keymap editor on its own ----------
+   No stage, no model, no tabs — one column at a readable measure. The editor
+   is the whole page here rather than a panel beside something else. */
+
+.app--studio { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 100%; }
+
+.studio-only {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--gap) var(--pad);
+}
+
+/* One column, one left edge.
+   Everything the editor draws — heading, chips, layer pills, the board, the
+   picker, the save row — is a direct child of this, so sizing the container
+   is what makes them agree. Sizing the children instead did not: each brought
+   its own margin, `.kmap` and `.picker` both carry `margin: 0.75rem 0`, and a
+   later rule of equal specificity wins — so the board sat 1400 wide, the prose
+   900, and the picker pinned itself to the far left of the window. Three
+   widths and no shared edge is what "scattered" looks like. */
+.studio-only__col { width: min(100%, 1400px); margin-inline: auto; }
+
+/* A keyboard wants the width. A sentence does not, and neither does a form:
+   `.ctl--inline` puts the label at one edge and the control at the other, which
+   is a pairing at panel width and two unrelated things at 1400px. Both keep the
+   column's left edge, so narrowing them costs no alignment. */
+.studio-only__col > p { max-width: 70ch; }
+.studio-only .picker { max-width: 42rem; }
+
+/* Separation, not exile. `.actions__gap` grows to fill, which reads as one
+   toolbar at 900px and as two unrelated things at 1400. */
+.studio-only .actions__gap { flex: 0 0 1.5rem; }
+
+/* A button that reads as a link, for an aside rather than an action. */
+.linkish {
+  padding: 0;
+  border: 0;
+  min-height: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linkish:hover { color: var(--text); }
+
+.welcome__aside {
+  margin: 0.75rem 0 0;
+  font-size: var(--fs-body);
+  color: var(--muted);
+}
+
 /* ---------- modal ----------
    For the one thing that stops everything else working. A corner card can be
    missed; this cannot, and it dims what is behind it so it is clear that the
@@ -1998,6 +2052,10 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 
 .kmap {
   position: relative;
+  /* The gap between one keycap and the next. Scaled to the board so it holds
+     at any zoom, floored so it never closes up and capped so a small board
+     does not turn into confetti. */
+  --gut: clamp(2px, 0.4cqw, 7px);
   /* Keys size their type against the board, not the viewport, so a narrow key
      in a narrow panel still gets type in proportion to itself. */
   container-type: inline-size;
@@ -2013,30 +2071,96 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   position: absolute;
   display: grid;
   place-items: center;
-  padding: 0.25rem;
+  /* Relative to the key's own type, not a fixed 4px. On a 42px keycap a fixed
+     padding is a fifth of the width, which is what pushed "None" onto two
+     lines while the same rule was invisible on a 200px one. */
+  padding: 0.15em;
   min-height: 0;                 /* the shared 44px floor would break the grid */
   overflow: hidden;
-  border: 1px solid var(--line);
+  /* The type's colour, at a strength that separates one key from the next
+     without turning the board into a paint chart. */
+  border: 1px solid color-mix(in srgb, var(--kt, var(--line)) 55%, var(--line));
   border-radius: var(--radius-sm);
-  background: var(--glass-bg-3);
+  background: var(--keycap-face);
+  box-shadow: var(--keycap-bevel), var(--keycap-glow);
   color: var(--text);
   line-height: 1.1;
   text-align: center;
   /* A long binding name breaks rather than being clipped mid-word. */
   overflow-wrap: anywhere;
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease;
+  transition: border-color 140ms ease, background 140ms ease, translate 90ms ease;
 }
-.kmap__key:hover { border-color: color-mix(in srgb, var(--text) 34%, transparent); }
+/* The dot the legend matches. A border alone is too thin to read as a colour
+   at keycap size, and colouring the whole cap makes the glyph fight it. */
+/* The action label is out of flow, so the cap has to be told to leave room —
+   without it the two were drawn on top of each other. */
+.kmap__key:has(.kmap__action) { padding-top: 1em; }
+
+/* A centred grid item is sized to its content, not to its track, so a long
+   name made the cap wider than the key and then overflowed it on both sides:
+   "Transparent" was drawn as "nsparen". Capping the item at the track is what
+   gives `overflow-wrap` a width to break against. */
+.kmap__key > * { max-width: 100%; }
+
+.kmap__key:not(.kmap__key--tiny)::after {
+  content: "";
+  position: absolute;
+  top: 0.28em;
+  right: 0.28em;
+  width: 0.3em;
+  height: 0.3em;
+  border-radius: 50%;
+  background: var(--kt, transparent);
+}
+.kmap__key[data-type="none"]::after, .kmap__key[data-type="letter"]::after { display: none; }
+.kmap__key:hover {
+  border-color: color-mix(in srgb, var(--kt, var(--text)) 90%, var(--text));
+}
+/* Pressed, because a key is a thing you press. */
+.kmap__key:active { translate: 0 1px; }
 .kmap__key.is-active {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--glass-bg-3));
 }
 
+/* Which behavior this is, in the corner the reference puts it in — so a macro
+   and a mod-tap are distinguishable without hovering either. */
+.kmap__action {
+  position: absolute;
+  top: 0.22em;
+  left: 0.4em;
+  max-width: calc(100% - 1.2em);
+  overflow: hidden;
+  font-size: 0.44em;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted-dim);
+}
+
 /* A hold-tap carries two answers. Tap is what an ordinary press does, so it
    takes the cap; hold sits under it, smaller and muted, labelled so the two
    are never read as one. */
-.kmap__cap { display: block; }
+/* Two lines, then an ellipsis. A macro called `tap_dance_lower` will not fit
+   on a keycap at any size worth reading, and wrapping it to four lines made
+   the whole board's type shrink to accommodate one key. The full binding is
+   on the key's title and in the picker. */
+.kmap__cap {
+  /* The thing you press. It carries the weight. */
+  font-weight: 650;
+  /* Break a word only when it cannot fit a line on its own. `anywhere` split
+     "Volume Up" into "Volum" and "e Up"; `normal` let "Backspace" run past the
+     keycap. This breaks the second and not the first. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
 
 /* A key too small for any label. It still shows where it is and stays
    clickable; what it does is listed under the board. */
@@ -2049,13 +2173,24 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
 }
 .kmap__key--tiny.is-active .kmap__dot { background: var(--accent); }
 
+/* Relative to the cap, never absolute. This was `--fs-micro`, a fixed rem,
+   while the cap scales with the board — so on a narrow board the hold line
+   rendered bigger than the tap it belongs under. And it is a value, not a
+   label, so it loses the micro-caps treatment: "HOLD CTRL+Z" letter-spaced is
+   most of why these caps wrapped. */
 .kmap__sub {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: var(--fs-micro);
-  font-weight: var(--fw-micro);
-  letter-spacing: var(--ls-micro);
-  text-transform: uppercase;
+  /* Two lines, like the cap. The size budget above keeps it to two; this is
+     what happens when a firmware names something longer than the budget
+     expected, and a clipped third line beats one drawn over the key below. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  margin-top: 0.15em;
+  /* Sized inline, from its own length. `0.78em` tied it to the cap, which is
+     what made a long hold line shrink the tap letter above it. */
   color: var(--muted-dim);
 }
 
@@ -2541,3 +2676,323 @@ textarea.search::-webkit-scrollbar-thumb:hover {
 /* Wrapping the three endpoint icons to hang one title on them must not move
    them: the gap has to match .status's own, or the bar reflows. */
 .status__eps { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+/* ---------- keymap editor ----------
+   A rail for what you are editing in, a canvas for what you are editing. The
+   rail's contents used to be three rows stacked above the board, which is
+   where they went when there were two of them; there are now layouts, layers,
+   a legend and the device, and a board wants the height more than they do. */
+
+.editor { display: grid; gap: 1rem; align-items: start; }
+@media (min-width: 900px) {
+  .editor { grid-template-columns: 15rem minmax(0, 1fr); }
+  /* The rail follows the board down a long keymap rather than scrolling off. */
+  .editor__rail { position: sticky; top: var(--gap); }
+}
+
+.editor__rail { display: grid; gap: 0.25rem; align-content: start; min-width: 0; }
+.editor__main { min-width: 0; }
+
+
+.rail__list {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.rail__item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+button.rail__item { cursor: pointer; }
+button.rail__item:hover { background: var(--glass-bg-3); }
+.rail__item.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.rail__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail__meta {
+  flex: none;
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-dim);
+}
+
+.rail__add {
+  width: 100%;
+  min-height: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rail__add:hover:not(:disabled) { border-style: solid; color: var(--text); }
+
+.rail__form { display: grid; gap: 0.4rem; margin: 0.75rem 0; }
+
+.rail__foot {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---------- key types ----------
+   Colour is the whole point of these: a keymap read at a glance is "where are
+   my modifiers", not "what is on key 34". Semantic, so both themes get them —
+   what flat does not get is the bevel and the glow further down.
+
+   Letters have no colour on purpose. They are most of a keyboard, and a board
+   where everything is coloured is a board where nothing is. */
+:root {
+  --kt-letter: var(--line);
+  --kt-number: #6aa9ff;
+  --kt-mod: #b28cff;
+  --kt-layer: #ffb454;
+  --kt-nav: #4dd6c8;
+  --kt-edit: #63e6a0;
+  --kt-media: #ff8fc0;
+  --kt-mouse: #7cd4ff;
+  --kt-system: #9aa4c8;
+  --kt-other: var(--muted-dim);
+  --kt-none: transparent;
+
+  /* Depth. A keycap is a physical object with a lit top edge and a shadow
+     under it, and reading a board as objects rather than as rectangles is
+     most of why the reference looks like hardware. */
+  --keycap-bevel:
+    inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 28%, transparent),
+    0 2px 0 color-mix(in srgb, #000 30%, transparent),
+    0 4px 10px color-mix(in srgb, #000 26%, transparent);
+  /* Opaque on purpose. Every other surface in this app is translucent over
+     the page wash; this one lies over keycaps, and a tooltip you can read the
+     keymap through is not a tooltip. */
+  --keycard-bg: #1b1638;
+  /* The type's colour, thrown a little way past the cap's edge. `--kt` is set
+     per key and resolves here at the point of use, so one token glows every
+     key in its own colour. */
+  --keycap-glow: 0 0 12px -3px color-mix(in srgb, var(--kt, transparent) 72%, transparent);
+  --keycap-face: linear-gradient(
+    180deg,
+    color-mix(in srgb, #fff 7%, var(--glass-bg-3)),
+    var(--glass-bg-3) 62%,
+    color-mix(in srgb, #000 8%, var(--glass-bg-3)));
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Same hues, darkened until they hold their own against a pale ground. */
+    --kt-number: #1c62c4;
+    --kt-mod: #6b3fd4;
+    --kt-layer: #a35a00;
+    --kt-nav: #06736a;
+    --kt-edit: #1d7a4c;
+    --kt-media: #b8306f;
+    --kt-mouse: #0f7fb8;
+    --kt-system: #5b6280;
+    --keycard-bg: #ffffff;
+    --keycap-bevel:
+      inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, #000 10%, transparent),
+      0 2px 0 color-mix(in srgb, #000 10%, transparent),
+      0 4px 10px color-mix(in srgb, #000 8%, transparent);
+  }
+}
+
+/* Flat had no depth. Colour is semantics and stays; the bevel is a glass
+   treatment and goes, the same way the shadows and highlights do. */
+:root[data-theme="flat"] {
+  --keycard-bg: var(--glass);
+  --keycap-bevel: none;
+  --keycap-glow: none;
+  --keycap-face: var(--glass-bg-3);
+  --kt-letter: var(--line);
+}
+
+[data-type="letter"] { --kt: var(--kt-letter); }
+[data-type="number"] { --kt: var(--kt-number); }
+[data-type="mod"] { --kt: var(--kt-mod); }
+[data-type="layer"] { --kt: var(--kt-layer); }
+[data-type="nav"] { --kt: var(--kt-nav); }
+[data-type="edit"] { --kt: var(--kt-edit); }
+[data-type="media"] { --kt: var(--kt-media); }
+[data-type="mouse"] { --kt: var(--kt-mouse); }
+[data-type="system"] { --kt: var(--kt-system); }
+[data-type="other"] { --kt: var(--kt-other); }
+[data-type="none"] { --kt: var(--kt-none); }
+
+.legend { display: grid; gap: 0.3rem; margin: 0 0 0.5rem; padding: 0; list-style: none; }
+.legend__item {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: var(--fs-micro);
+  color: var(--muted);
+}
+.legend__swatch {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--kt);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--kt) 40%, transparent);
+}
+
+/* Below the breakpoint the rail is not a rail — it is a stack sitting on top
+   of the board, and at 390px it took the whole screen, so you scrolled past
+   four lists to reach the thing you opened the editor for. Same controls,
+   laid out as the rows they were before there was a rail.
+
+   This block sits after every rule it overrides on purpose: a media query
+   carries no extra specificity, so at equal weight the later rule wins and an
+   earlier one is simply ignored — which is what happened the first time. */
+@media (max-width: 899px) {
+  .rail__list { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .rail__item { width: auto; }
+  .rail__add { width: auto; justify-self: start; }
+  .rail__form { display: flex; flex-wrap: wrap; align-items: center; }
+  .rail__form .search { flex: 1 1 10rem; }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; }
+  .rail__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+/* ---------- board chrome ---------- */
+
+.kmap__bar { display: flex; gap: 0.5rem; align-items: center; }
+.sec--flush { margin-top: 0; }
+
+/* Zoomed past fit the board is wider than its column, so it scrolls in its
+   own frame rather than pushing the page sideways. */
+.kmap__wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+
+.zoom {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.zoom__btn, .zoom__now {
+  min-height: 0;
+  padding: 0.25rem 0.55rem;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.zoom__now {
+  min-width: 4ch;
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  border-inline: 1px solid var(--line);
+}
+.zoom__btn:hover:not(:disabled), .zoom__now:hover { background: var(--glass-bg-3); }
+.zoom__btn:disabled { color: var(--muted-dim); cursor: default; }
+
+/* ---------- the key detail card ----------
+   A keycap holds a glyph and a hold line. Which behavior it is, which half of
+   a hold-tap is which, and what kind of key it sends do not fit on one and
+   were previously only in a `title` — which is to say, only for people who
+   hover and then wait. */
+
+.keycard {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, calc(-100% - 8px));
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--keycard-bg);
+  box-shadow: var(--glass-shadow-1);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.keycard[data-below] { transform: translate(-50%, 8px); }
+.keycard__rows { display: grid; gap: 0.1rem; margin: 0; }
+.keycard__row { display: flex; gap: 1rem; justify-content: space-between; }
+.keycard__row dt { font-size: var(--fs-micro); color: var(--muted); }
+.keycard__row dd { margin: 0; font-size: var(--fs-micro); font-weight: 600; color: var(--text); }
+
+/* ---------- keycode grid ----------
+   The picker's "which key" half. A dropdown of a hundred and seventy-two
+   options is usable only by someone who already knows the answer; laid out and
+   coloured by the same types the keycaps carry, it can be browsed. */
+
+.codes { display: grid; gap: 0.5rem; }
+
+.codes__scroll {
+  max-height: 21rem;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-right: 0.25rem;
+}
+
+.codes__group { margin-bottom: 0.75rem; }
+
+.codes__title {
+  margin: 0 0 0.35rem;
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.codes__count { color: var(--muted-dim); font-weight: 400; }
+
+/* Auto-fill rather than a fixed count: the picker is 42rem on a wide screen
+   and the width of a phone on a small one, and the grid should not care. */
+.codes__grid {
+  display: grid;
+  gap: 0.3rem;
+  grid-template-columns: repeat(auto-fill, minmax(3.4rem, 1fr));
+}
+
+.code {
+  min-height: 0;
+  padding: 0.35rem 0.2rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--kt, var(--line)) 45%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-3);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.code:hover { border-color: var(--kt, var(--text)); }
+.code.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--glass-bg-3));
+  font-weight: 600;
+}

@@ -158,19 +158,121 @@ function baseName(page, id) {
   return `page ${page.toString(16)}:${id.toString(16)}`;
 }
 
-/** The short form, for drawing on a key that is 40px wide. */
+/**
+ * Names that do not fit on a keycap, and what a keyboard has always printed
+ * on them instead.
+ *
+ * Not a general abbreviator. Every one of these is what the key itself is
+ * labelled in the physical world, so shortening costs nothing — where there is
+ * no such convention the full name stays and the cap wraps.
+ */
+const CAP_SHORT = {
+  "Backspace": "BkSp", "Left Shift": "Shift", "Right Shift": "Shift",
+  "Left Ctrl": "Ctrl", "Right Ctrl": "Ctrl", "Left Alt": "Alt", "Right Alt": "AltGr",
+  "Left GUI": "GUI", "Right GUI": "GUI", "Caps Lock": "Caps", "Num Lock": "Num",
+  "Scroll Lock": "ScrLk", "Print Screen": "PrtSc", "Application / Menu": "Menu",
+  "Page Up": "PgUp", "Page Down": "PgDn", "Delete": "Del", "Insert": "Ins",
+  "Volume Up": "Vol +", "Volume Down": "Vol −", "Play / Pause": "Play",
+  "Previous Track": "Prev", "Next Track": "Next", "Fast Forward": "FFwd",
+  "Brightness Up": "Bright +", "Brightness Down": "Bright −",
+  "Middle Click": "Middle", "Left Click": "Click", "Right Click": "R Click",
+  "Mouse Forward": "Fwd", "Mouse Back": "Back",
+};
+
+/**
+ * The short form, for drawing on a key that is 40px wide.
+ *
+ * Shortening happens to the base usage and the modifiers go back on after,
+ * rather than to the finished string. Done the other way, anything carrying a
+ * modifier was left alone entirely — which is how "Shift+= equals" ended up on
+ * a keycap, three times wider than the key it was drawn on.
+ */
 export function usageShort(param, kind) {
-  const full = usageName(param, kind);
-  if (!full) return null;
-  // "- minus" and "→ Right" carry the glyph first precisely so this can cut
-  // at the space and keep the half that reads at a glance.
-  // A modified key keeps its whole name — "Ctrl+C" is the point of it, and
-  // cutting at the space would leave "Ctrl+C" as "Ctrl+C" anyway since the
-  // join uses +, but a plain "- minus" still wants its glyph alone.
-  if (full.includes("+")) return full;
+  if (!param) return null;
+  if (kind === "mouse") {
+    const name = usageName(param, kind);
+    return name ? (CAP_SHORT[name] ?? name) : null;
+  }
+  const mods = (param >>> 24) & 0xff;
+  const base = usageName(param & 0x00ffffff, kind);
+  if (!base) return null;
+  const short = CAP_SHORT[base] ?? trimName(base);
+  return mods ? [...modNames(mods), short].join("+") : short;
+}
+
+/**
+ * "- minus" and "→ Right" carry the glyph first precisely so this can cut at
+ * the space and keep the half that reads at a glance.
+ */
+function trimName(full) {
   const cut = full.split(" ")[0];
   return cut.length <= 3 || /^[A-Z0-9]$/.test(cut) ? cut : full.replace(/^(Keypad|Browser|Mouse) /, "");
 }
+
+/**
+ * What kind of thing a usage is, for colour and for the word on a key.
+ *
+ * Built from the same group tables that name it, so a key can never be
+ * coloured as one thing and named as another — and adding a usage to a group
+ * types it without a second edit anywhere.
+ *
+ * The groups are finer than the types on purpose: Keypad, System and
+ * International all read as "system" on a keycap, but they stay separate in
+ * the picker where you are hunting for one specific key.
+ */
+const TYPE_OF_GROUP = {
+  Letters: "letter", Numbers: "number",
+  Editing: "edit", Punctuation: "edit",
+  Navigation: "nav", Function: "system", Keypad: "system",
+  System: "system", International: "system", Modifiers: "mod",
+  Volume: "media", Media: "media", Display: "media",
+  Browser: "media", Launch: "media", Power: "system",
+};
+
+const groupIndex = (groups) => {
+  const m = new Map();
+  for (const [group, ids] of Object.entries(groups)) {
+    for (const id of Object.keys(ids)) m.set(Number(id), group);
+  }
+  return m;
+};
+const KEYBOARD_GROUP = groupIndex(KEYBOARD_GROUPS);
+const CONSUMER_GROUP = groupIndex(CONSUMER_GROUPS);
+
+/** The group a usage belongs to, or null. Exported for the key detail card. */
+export function usageGroup(param, kind) {
+  if (kind === "mouse") return MOUSE_BUTTONS[param] ? "Mouse" : null;
+  const page = (param >>> 16) & 0xff;
+  const id = param & 0xffff;
+  if (page === PAGE_CONSUMER) return CONSUMER_GROUP.get(id) ?? null;
+  if (page === PAGE_KEY || page === 0) return KEYBOARD_GROUP.get(id) ?? null;
+  if (page === PAGE_BUTTON) return "Mouse";
+  return null;
+}
+
+/**
+ * One of a small set of slugs, which is all a colour can carry.
+ *
+ * A key that holds implicit modifiers is a modifier key first — Ctrl+C is
+ * something you reach for as a chord, and colouring it as a letter would put
+ * it in with the plain C next door.
+ */
+export function keyType(param, kind) {
+  if (!param) return "none";
+  if (kind === "mouse") return "mouse";
+  if ((param >>> 24) & 0xff) return "mod";
+  const group = usageGroup(param, kind);
+  if (group === "Mouse") return "mouse";
+  return TYPE_OF_GROUP[group] ?? "other";
+}
+
+/** The types a board can show, in the order a legend should list them. */
+export const KEY_TYPES = [
+  ["letter", "Letter"], ["number", "Number"], ["mod", "Modifier"],
+  ["layer", "Layer"], ["nav", "Navigation"], ["edit", "Editing"],
+  ["media", "Media"], ["mouse", "Mouse"], ["system", "System"],
+  ["other", "Other"],
+];
 
 /**
  * Everything bindable, grouped for a picker. Built from the same tables that
@@ -188,6 +290,49 @@ export const CHOICE_GROUPS = [
 ];
 
 export const ALL_CHOICES = CHOICE_GROUPS.flatMap((g) => g.items);
+
+/**
+ * A physical keypress, as the usage it would send.
+ *
+ * KeyboardEvent.code names the key by position — "KeyA" is wherever A sits on
+ * a US board, whatever the layout prints on it — which is the same thing a HID
+ * usage means, so the two map without going near the character produced. That
+ * is the point: binding by what you pressed rather than by what it typed keeps
+ * a non-US layout honest, and lets a key that types nothing at all be bound.
+ */
+export function usageFromEvent(e) {
+  const code = e?.code;
+  if (!code) return null;
+  const key = (id) => (PAGE_KEY << 16) | id;
+
+  if (/^Key[A-Z]$/.test(code)) return key(0x04 + code.charCodeAt(3) - 65);
+  // Digit1..Digit9 run 0x1E..0x26 and Digit0 sits after them, not before.
+  if (/^Digit[1-9]$/.test(code)) return key(0x1e + Number(code[5]) - 1);
+  if (code === "Digit0") return key(0x27);
+  const fn = code.match(/^F(\d{1,2})$/);
+  if (fn) {
+    const n = Number(fn[1]);
+    if (n >= 1 && n <= 12) return key(0x3a + n - 1);
+    if (n >= 13 && n <= 24) return key(0x68 + n - 13);
+  }
+  const named = {
+    Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, Space: 0x2c,
+    Minus: 0x2d, Equal: 0x2e, BracketLeft: 0x2f, BracketRight: 0x30,
+    Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+    Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39,
+    PrintScreen: 0x46, ScrollLock: 0x47, Pause: 0x48,
+    Insert: 0x49, Home: 0x4a, PageUp: 0x4b, Delete: 0x4c, End: 0x4d, PageDown: 0x4e,
+    ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+    NumLock: 0x53, NumpadDivide: 0x54, NumpadMultiply: 0x55, NumpadSubtract: 0x56,
+    NumpadAdd: 0x57, NumpadEnter: 0x58, Numpad1: 0x59, Numpad2: 0x5a,
+    Numpad3: 0x5b, Numpad4: 0x5c, Numpad5: 0x5d, Numpad6: 0x5e, Numpad7: 0x5f,
+    Numpad8: 0x60, Numpad9: 0x61, Numpad0: 0x62, NumpadDecimal: 0x63,
+    IntlBackslash: 0x64, ContextMenu: 0x65, NumpadEqual: 0x67,
+    ControlLeft: 0xe0, ShiftLeft: 0xe1, AltLeft: 0xe2, MetaLeft: 0xe3,
+    ControlRight: 0xe4, ShiftRight: 0xe5, AltRight: 0xe6, MetaRight: 0xe7,
+  };
+  return named[code] === undefined ? null : key(named[code]);
+}
 
 // node src/keycodes.js
 if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("keycodes.js")) {
@@ -216,12 +361,25 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("keycodes.js")
   eq(usageName(0x04), "A", "the same 4 without the hint is the letter A");
   eq(usageName(3, "mouse"), "Left Click + Right Click", "a multi-button mask names each bit");
   eq(usageName(32, "mouse"), "Button 6", "a bit with no name still says which button");
-  eq(usageShort(2, "mouse"), "Right Click", "the short form takes the hint too");
+  eq(usageShort(2, "mouse"), "R Click", "the short form takes the hint too");
 
   eq(usageShort((PAGE_KEY << 16) | 0x2d), "-", "punctuation cuts to its glyph");
   eq(usageShort((PAGE_KEY << 16) | 0x4f), "→", "an arrow cuts to its arrow");
   eq(usageShort((PAGE_KEY << 16) | 0x59), "1", "a keypad key drops its prefix");
-  eq(usageShort((PAGE_CONSUMER << 16) | 0x00e9), "Volume Up", "a long name stays whole");
+  eq(usageShort((PAGE_CONSUMER << 16) | 0x00e9), "Vol +", "a long name takes the label a keyboard prints");
+  eq(usageShort((PAGE_KEY << 16) | 0x2a), "BkSp", "and so does the longest one on the board");
+  eq(usageShort((PAGE_KEY << 16) | 0x28), "Enter", "a name that already fits is left alone");
+  // The abbreviations are a lookup on the full name, so a modified key must not
+  // hit one: Ctrl+Delete is not "Del".
+  eq(usageShort(0x01070028), "Ctrl+Enter", "a chord is never abbreviated to one half");
+  // The one that put "Shift+= equals" on a keycap: the modifier used to stop
+  // the descriptor being cut, because the cut looked at the finished string.
+  eq(usageShort(0x0207002e), "Shift+=", "a modified punctuation key still drops its descriptor");
+  eq(usageShort(0x0207002a), "Shift+BkSp", "and a modified long name still takes its label");
+  eq(usageShort(0x02070050), "Shift+←", "and a modified arrow is still an arrow");
+  const unnamed = Object.keys(CAP_SHORT).filter((n) =>
+    !ALL_CHOICES.some((c) => usageName(c.param) === n) && !Object.values(MOUSE_BUTTONS).includes(n));
+  console.assert(unnamed.length === 0, `abbreviations for names nothing produces: ${unnamed.join(", ")}`);
 
   // Every choice must name itself the same way a binding does, or the picker
   // and the key cap disagree about what a key is.
@@ -230,6 +388,51 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("keycodes.js")
 
   const ids = ALL_CHOICES.map((c) => c.param);
   console.assert(new Set(ids).size === ids.length, "a usage is listed twice");
+
+  // Binding by the key you pressed. Every code must land on the usage that
+  // key's own name describes, or the editor writes a different key than the
+  // one under your finger.
+  const pressed = (code) => usageName(usageFromEvent({ code }));
+  eq(pressed("KeyA"), "A", "the A key");
+  eq(pressed("KeyZ"), "Z", "and the far end of the alphabet");
+  eq(pressed("Digit1"), "1", "the digit row starts at one");
+  eq(pressed("Digit0"), "0", "and zero sits after nine, not before one");
+  eq(pressed("Digit9"), "9", "nine is where the run ends");
+  eq(pressed("F1"), "F1", "the first function key");
+  eq(pressed("F12"), "F12", "the end of the first run");
+  eq(pressed("F13"), "F13", "and the start of the second, which is elsewhere");
+  eq(pressed("F24"), "F24", "the last one");
+  eq(pressed("Enter"), "Enter", "a named key");
+  eq(pressed("ArrowUp"), "↑ Up", "an arrow");
+  eq(pressed("Numpad5"), "Keypad 5", "the keypad, not the digit row");
+  eq(pressed("ShiftLeft"), "Left Shift", "a modifier binds as itself");
+  eq(usageFromEvent({ code: "MediaPlayPause" }), null, "a key with no usage here says so");
+  eq(usageFromEvent({}), null, "an event with no code");
+  eq(usageFromEvent(null), null, "no event at all");
+
+  // Typing. Every group must map to a type, or a key colours as "other" while
+  // its name says otherwise — the one failure this table can have.
+  const K = (id) => (PAGE_KEY << 16) | id;
+  const C = (id) => (PAGE_CONSUMER << 16) | id;
+  const untyped = CHOICE_GROUPS.filter((g) => !TYPE_OF_GROUP[g.group]).map((g) => g.group);
+  console.assert(untyped.length === 0, `groups with no type: ${untyped.join(", ")}`);
+  const knownTypes = new Set(KEY_TYPES.map(([slug]) => slug));
+  const strayTypes = [...new Set(Object.values(TYPE_OF_GROUP))].filter((t) => !knownTypes.has(t));
+  console.assert(strayTypes.length === 0, `types with no legend entry: ${strayTypes.join(", ")}`);
+  eq(keyType(K(0x04)), "letter", "A is a letter");
+  eq(keyType(K(0x1e)), "number", "1 is a number");
+  eq(keyType(K(0xe1)), "mod", "Left Shift is a modifier");
+  eq(keyType(K(0x50)), "nav", "an arrow is navigation");
+  eq(keyType(K(0x2a)), "edit", "Backspace edits");
+  eq(keyType(C(0x00e9)), "media", "Volume Up is media");
+  eq(keyType(1, "mouse"), "mouse", "a button mask is a mouse button");
+  // The one that would otherwise mis-colour: implicit mods sit above the page.
+  eq(keyType(0x01070006), "mod", "Ctrl+C is a chord, not a letter");
+  eq(keyType(K(0x06)), "letter", "while a bare C is still a letter");
+  eq(keyType(0), "none", "an unbound key has no type");
+  eq(keyType(K(0x0fff)), "other", "a usage in no group falls through");
+  eq(usageGroup(K(0x04)), "Letters", "the group is named for the detail card");
+  eq(usageGroup(0xdead0001), null, "an unknown page has no group");
 
   const mouseWrong = MOUSE_CHOICES.filter((c) => usageName(c.param, "mouse") !== c.name);
   console.assert(mouseWrong.length === 0, `mouse choices that do not round-trip: ${JSON.stringify(mouseWrong)}`);
