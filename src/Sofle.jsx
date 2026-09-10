@@ -30,6 +30,9 @@ const DISPLAY = { w: 14, h: 36, aw: 11.7, ah: 27.5, t: 2.9, inset: 21 };
 // reference put the module at z 12 and the knob at 48, and the module is the
 // one of the pair that is not a key, so it is the one measured from the other.
 const DISPLAY_AHEAD = 36;
+// And 3.2mm further inboard than the knob — the reference's 21 against 17.8.
+// Small, but it is what puts the two in one lobe of the case instead of two.
+const DISPLAY_ASIDE = 3.2;
 const ENCODER = { r: 8.0 };
 
 const THEMES = {
@@ -383,7 +386,8 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
     const groups = splitHalves(spots);
     // An encoder's push is a switch, so it arrives as a key position like any
     // other. It gets a knob instead of a keycap rather than as well as one.
-    const knobAt = encoderKeys(spots);
+    // The halves say which way "inboard" is, which is how it is found.
+    const knobAt = encoderKeys(spots, groups);
     const th0 = THEMES[live.current.theme];
 
     const capGeo = new Map();   // one geometry per distinct key size, not per key
@@ -527,7 +531,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
           track(flatExtrude(roundedRect(DISPLAY.w + 3.5, DISPLAY.h + 3.5, 2), DISPLAY.t, bezelBevel)),
           mats.bezel,
         );
-        const sx = anchor ? anchor.x : innerX + sign * live.current.disp;
+        const sx = anchor ? anchor.x + sign * DISPLAY_ASIDE : innerX + sign * live.current.disp;
         const sz = anchor ? anchor.z - DISPLAY_AHEAD : zTop + 12;
         bezel.position.set(sx, PLATE_Y, sz);
         bezel.castShadow = true; bezel.receiveShadow = true;

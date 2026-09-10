@@ -356,8 +356,6 @@ export function tinyKeys(keys) {
 
 /** A third of a key unit. Well past rounding, well under any real split. */
 const SEAM_MM = 19.05 / 3;
-/** Further than this from every other key and nothing else can be there. */
-const LONE_MM = 19.05 * 1.25;
 
 /**
  * Which keys belong to which half, from the one vertical line no key crosses.
@@ -389,36 +387,61 @@ export function splitHalves(spots) {
 /**
  * The key positions that are encoders rather than keycaps.
  *
- * An encoder's push is a switch, so a board with two of them reports two more
- * key positions than its keycaps account for — a 58-key Sofle arrives as 60.
- * Drawing a keycap at those two and then adding knobs beside them, which is
- * what the reference model's fixed constants amount to, puts four things on a
- * board that has two.
+ * An encoder's push is a switch, so the board reports it as a key position
+ * like any other — a 58-key Sofle arrives as 60. The reference model has no
+ * such position at all: it draws 58 keycaps and then places two knobs from
+ * measured constants. Its measurements are the useful part, so they are what
+ * finds the switch here.
  *
- * Found by isolation. Every key in a grid or a thumb cluster has a neighbour
- * about one unit away; an encoder sits on its own, inboard of the column block
- * with space around it. Nothing else on these layouts is lonely.
+ * The first attempt looked for isolation, on the theory that an encoder sits
+ * on its own. On a real board it does not sit far enough on its own — it has a
+ * keycap within a key unit of it — and no encoder was found at all. So this
+ * asks where the reference says the knob is instead: inboard of every column
+ * of the key block, about 48mm behind the top row.
  *
- * ponytail: an encoder tucked within 1.25u of a keycap reads as a keycap. The
- * upgrade is asking the board, and the board has no way to say — the physical
- * layout carries no per-key kind, and sensor bindings are a separate list that
- * does not name key positions.
+ * Both halves of that matter. Inboard of the block rules out the block itself,
+ * and the depth rules out the rotated thumb key, which is also inboard and
+ * also alone in its column but sits 40mm further down. A board with nothing at
+ * that spot gets no knob, which is the right answer for a board with no
+ * encoder.
  */
-export function encoderKeys(spots) {
-  if (spots.length < 8) return new Set();
+const COL_MIN = 3;            // keys sharing an x before it counts as a column
+const ENCODER_Z = 48;         // the reference's own measurement, millimetres
+const ENCODER_Z_SLOP = 26;    // nearer the thumb row than this and it is a key
+
+export function encoderKeys(spots, halves) {
   const out = new Set();
-  for (let i = 0; i < spots.length; i++) {
-    let best = Infinity;
-    for (let j = 0; j < spots.length; j++) {
-      if (i === j) continue;
-      best = Math.min(best, Math.hypot(spots[i].x - spots[j].x, spots[i].z - spots[j].z));
-      if (best <= LONE_MM) break;
+  // One knob per half, and the halves are what say which way "inboard" is.
+  if (!halves || halves.length !== 2) return out;
+  halves.forEach((idx, side) => {
+    if (idx.length < 8) return;
+    const sign = side === 0 ? 1 : -1;
+    const cols = new Map();
+    for (const p of idx) {
+      const k = Math.round(spots[p].x / (19.05 / 4));
+      if (!cols.has(k)) cols.set(k, []);
+      cols.get(k).push(p);
     }
-    if (best > LONE_MM) out.add(i);
-  }
-  // A sparse layout is not a board covered in encoders. Past four this is
-  // measuring something else, and a keycap is the safer thing to be wrong as.
-  return out.size > 4 ? new Set() : out;
+    let edge = -Infinity;
+    for (const members of cols.values()) {
+      if (members.length < COL_MIN) continue;
+      const x = spots[members[0]].x * sign;
+      if (x > edge) edge = x;
+    }
+    if (edge === -Infinity) return;
+
+    const zTop = Math.min(...idx.map((p) => spots[p].z));
+    let best = null, bestD = Infinity;
+    for (const members of cols.values()) {
+      if (members.length !== 1) continue;
+      const p = members[0];
+      if (spots[p].x * sign <= edge) continue;
+      const d = Math.abs(spots[p].z - (zTop + ENCODER_Z));
+      if (d <= ENCODER_Z_SLOP && d < bestD) { bestD = d; best = p; }
+    }
+    if (best !== null) out.add(best);
+  });
+  return out;
 }
 
 /** Every response carries exactly one subsystem; find which. */
@@ -556,28 +579,42 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
   eq(splitHalves([]).length, 1, "no keys, one board");
   eq(splitHalves(row(0, 2)).length, 1, "too few keys to have a seam");
 
-  // Which reported positions are knobs rather than keycaps.
-  const block = [];
-  for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
-    block.push({ x: c * 19.05, z: r * 19.05 });
-  }
-  eq(encoderKeys(block).size, 0, "every key in a grid has a neighbour");
-  eq([...encoderKeys([...block, { x: 8 * 19.05, z: 0 }])], [24],
-     "a key on its own is the encoder");
-  // The near miss the threshold has to survive: one unit out is still a key.
-  eq(encoderKeys([...block, { x: 6 * 19.05, z: 0 }]).size, 0,
-     "a key one unit past the block is a key, not a knob");
-  // Two knobs, one per half, which is what a Sofle reports.
-  // Inboard of each block and two units clear of everything, including each
-  // other — put them a unit apart and they are neighbours, not encoders.
-  const pair = [...block, ...block.map((k) => ({ x: k.x + 11 * 19.05, z: k.z })),
-    { x: 7 * 19.05, z: 0 }, { x: 9 * 19.05, z: 0 }];
-  eq(encoderKeys(pair).size, 2, "one knob per half");
-  // Three keys in a row on their own are three keys, not three encoders.
-  eq(encoderKeys([{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 200, z: 0 },
-    { x: 300, z: 0 }, { x: 400, z: 0 }, { x: 500, z: 0 },
-    { x: 600, z: 0 }, { x: 700, z: 0 }]).size, 0,
-     "a sparse layout is not a board covered in encoders");
+  // Which reported positions are knobs rather than keycaps. A half here is a
+  // 6x4 block, a four-key thumb row, one rotated thumb inboard at the bottom,
+  // and — where the board has one — an encoder inboard at mid-depth.
+  const U2 = 19.05;
+  const halfAt = (x0, sign, withKnob) => {
+    const out = [];
+    for (let c = 0; c < 6; c++) for (let r = 0; r < 4; r++) {
+      out.push({ x: x0 + sign * c * U2, z: r * U2, w: U2 });
+    }
+    for (let c = 2; c < 6; c++) out.push({ x: x0 + sign * c * U2, z: 4.2 * U2, w: U2 });
+    // The rotated thumb: inboard, alone in its column, and low down.
+    out.push({ x: x0 + sign * 6.3 * U2, z: 88, w: U2 });
+    if (withKnob) out.push({ x: x0 + sign * 6.1 * U2, z: 48, w: U2 });
+    return out;
+  };
+  const build = (withKnob) => {
+    const l = halfAt(0, 1, withKnob);
+    const r = halfAt(14 * U2, -1, withKnob);
+    const all = [...l, ...r];
+    return { all, halves: [l.map((_, i) => i), r.map((_, i) => i + l.length)] };
+  };
+  const withEnc = build(true);
+  eq(encoderKeys(withEnc.all, withEnc.halves).size, 2, "one knob per half, where there is one");
+  const noEnc = build(false);
+  eq(encoderKeys(noEnc.all, noEnc.halves).size, 0, "and none where there is not");
+  // The rotated thumb is the trap: inboard and alone, but far too low.
+  const thumbs = noEnc.halves.flat().filter((i) => noEnc.all[i].z === 88);
+  eq(thumbs.length, 2, "the fixture does have two rotated thumbs to reject");
+  // Isolation, which this replaced, would have missed the real thing: the
+  // encoder here has a keycap one unit away from it.
+  const enc = [...encoderKeys(withEnc.all, withEnc.halves)];
+  const near = enc.map((p) => Math.min(...withEnc.all
+    .map((s, j) => (j === p ? Infinity : Math.hypot(s.x - withEnc.all[p].x, s.z - withEnc.all[p].z)))));
+  console.assert(near.every((d) => d < U2 * 1.25),
+    `the fixture's encoders are meant to have close neighbours: ${near}`);
+  eq(encoderKeys(withEnc.all, null).size, 0, "no halves, no knobs");
 
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");
