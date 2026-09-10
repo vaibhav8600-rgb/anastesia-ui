@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sofle 3D — nice!view + dual encoders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#F2ECE4; --ink-dim:#A79A8C;
+    --panel:#26211D; --panel-2:#332C26; --line:#443A32;
+    --accent:#F0A18B; --accent-2:#F5DCC6; --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:#191512;color:var(--ink);font-family:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;overflow:hidden}
+  canvas#view{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  canvas#view.dragging{cursor:grabbing}
+
+  #panel{
+    position:fixed;top:0;right:0;height:100%;width:302px;
+    background:linear-gradient(180deg,rgba(38,33,29,.97),rgba(28,24,21,.97));
+    border-left:1px solid var(--line);backdrop-filter:blur(14px);
+    display:flex;flex-direction:column;gap:19px;
+    overflow-y:auto;overscroll-behavior:contain;padding:22px 20px 26px;
+  }
+  #panel h1{font-size:18px;font-weight:700;letter-spacing:-.015em;margin:0;line-height:1.2}
+  #panel h1 span{display:block;font-weight:400;font-size:12.5px;color:var(--ink-dim);margin-top:6px;letter-spacing:0}
+  .group{display:flex;flex-direction:column;gap:10px}
+  .gt{font-size:11.5px;color:var(--ink-dim);font-weight:500}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+  .val{font-variant-numeric:tabular-nums;color:var(--accent-2);font-size:12px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;margin:0}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--line);border-radius:3px}
+  input[type=range]::-moz-range-track{height:3px;background:var(--line);border-radius:3px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);margin-top:-5.5px;border:0}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--accent)}
+  input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:4px}
+
+  .swatches{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .sw{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:var(--radius);
+    background:var(--panel-2);border:1px solid transparent;cursor:pointer;font:inherit;font-size:12px;color:var(--ink);text-align:left}
+  .sw:hover{border-color:var(--line)}
+  .sw[aria-pressed=true]{border-color:var(--accent);background:#3B322B}
+  .sw i{width:16px;height:16px;border-radius:5px;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+  .sw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .toggles{display:flex;flex-wrap:wrap;gap:7px}
+  .tg{font:inherit;font-size:12px;padding:7px 11px;border-radius:20px;cursor:pointer;background:var(--panel-2);border:1px solid transparent;color:var(--ink-dim)}
+  .tg[aria-pressed=true]{color:#241F1B;background:var(--accent-2);border-color:var(--accent-2)}
+  .tg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .views{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+  .vb{font:inherit;font-size:12px;padding:9px 0;border-radius:8px;cursor:pointer;background:var(--panel-2);border:1px solid var(--line);color:var(--ink)}
+  .vb:hover{background:#3B322B}
+  .vb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  #save{font:inherit;font-size:13px;padding:11px;border-radius:var(--radius);cursor:pointer;width:100%;background:var(--accent);border:0;color:#2A1D17;font-weight:500}
+  #save:hover{filter:brightness(1.06)}
+  #spec{border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--ink-dim);line-height:1.65}
+  #spec b{color:var(--ink);font-weight:500}
+
+  #hint{position:fixed;left:22px;bottom:20px;font-size:12px;color:#8C8175;line-height:1.7;pointer-events:none}
+  #hint kbd{font:inherit;background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink-dim)}
+  #panelToggle{position:fixed;top:14px;right:14px;z-index:5;display:none;font:inherit;font-size:13px;padding:9px 13px;border-radius:9px;background:var(--panel);border:1px solid var(--line);color:var(--ink);cursor:pointer}
+
+  @media (max-width:900px){
+    #panel{width:100%;height:auto;max-height:60%;top:auto;bottom:0;border-left:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding:18px 16px 22px}
+    #panel.hidden{display:none}
+    #panelToggle{display:block}
+    #hint{display:none}
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<button id="panelToggle" aria-expanded="true">Hide controls</button>
+
+<aside id="panel">
+  <h1>Sofle v2 — wireless<span>4 rows &times; 6 cols, inner-four fifth row, rotated 1.5u thumb</span></h1>
+
+  <div class="group">
+    <div class="gt">Keycap colourway</div>
+    <div class="swatches" id="themes"></div>
+  </div>
+
+  <div class="group">
+    <div class="gt">Ergonomics</div>
+    <div class="row"><label for="tent">Tenting</label><span class="val" id="tentV">10&deg;</span></div>
+    <input id="tent" type="range" min="0" max="35" value="10" step="1">
+    <div class="row"><label for="splay">Splay</label><span class="val" id="splayV">8&deg;</span></div>
+    <input id="splay" type="range" min="0" max="30" value="8" step="1">
+    <div class="row"><label for="gap">Split gap</label><span class="val" id="gapV">70 mm</span></div>
+    <input id="gap" type="range" min="0" max="240" value="70" step="2">
+    <div class="row"><label for="knob">Knob inset</label><span class="val" id="knobV">17.8 mm</span></div>
+    <input id="knob" type="range" min="13" max="26" value="17.8" step="0.2">
+  </div>
+
+  <div class="group">
+    <div class="gt">Show</div>
+    <div class="toggles" id="toggles"></div>
+  </div>
+
+  <div class="group">
+    <div class="gt">Camera</div>
+    <div class="views">
+      <button class="vb" data-view="iso">Iso</button>
+      <button class="vb" data-view="top">Top</button>
+      <button class="vb" data-view="front">Front</button>
+      <button class="vb" data-view="thumb">Thumbs</button>
+      <button class="vb" data-view="screen">Screen</button>
+    </div>
+  </div>
+
+  <button id="save">Save a PNG</button>
+
+  <div id="spec">
+    <b>58 keys</b> &middot; 2&times; nice!view 1.08&Prime; (160&times;68) &middot; 2&times; EC11<br>
+    <b>19.05 mm</b> MX spacing, column-staggered<br>
+    <b>Displays</b> render live — layer, battery, WPM
+  </div>
+</aside>
+
+<div id="hint">
+  <kbd>drag</kbd> orbit &nbsp; <kbd>wheel</kbd> zoom &nbsp; <kbd>right-drag</kbd> pan<br>
+  click any key to press it, or a knob to turn it
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ---------------------------------------------------------
+   Board geometry, millimetres. Local axes per half:
+   +x = toward the middle of the desk, +z = toward the typist.
+   --------------------------------------------------------- */
+const U = 19.05;
+const COLS = 6, ROWS = 4;
+
+const CASE_TOP  = 13;      // top of the rim
+const PLATE_Y   = 9.5;     // switch plate surface
+const CAP_BOT   = 15;      // keycap underside
+const CAP_H     = 10.8;
+
+const STAGGER = [12.2, 10.2, 2.9, 0, 1.5, 2.4];   // measured off the build photos
+const colX = c => (c - 5) * U;                  // inner column at x = 0
+const rowZ = (r, c) => r * U + STAGGER[c];
+
+const LEFT_ROWS = [
+  ["`","1","2","3","4","5"],
+  ["Tab","Q","W","E","R","T"],
+  ["Esc","A","S","D","F","G"],
+  ["Shft","Z","X","C","V","B"]
+];
+const RIGHT_ROWS = [
+  ["Del","0","9","8","7","6"],
+  ["\\","P","O","I","U","Y"],
+  ["'",";","L","K","J","H"],
+  ["Shft","/",".",",","M","N"]
+];
+// The fifth row only runs under the four inner columns; the outer two stop
+// at four keys. One rotated 1.5u key sits inboard of it all.
+const LEFT_ROW5  = {2:"Ctrl", 3:"Alt", 4:"Cmd", 5:"Lower"};
+// One exact pitch below row 3 on every column -- no extra gap. The curve comes
+// from the column stagger itself, not from pushing the row away.
+const ROW5_Z = {2: 79.10, 3: 76.20, 4: 77.70, 5: 78.60};
+const RIGHT_ROW5 = {2:"Fn", 3:"Alt", 4:"Cmd", 5:"Raise"};
+const LEFT_BIG   = "Space";
+const RIGHT_BIG  = "Enter";
+
+// Rotated 1.5u thumb key, measured at 26.8 mm inboard and 97.3 mm down.
+// Everything on the inner edge sits on one line at x = STRIP_X; only the
+// thumb key breaks it, by being rotated.
+const STRIP_X = 25.5;
+const BIGTHUMB = {x: STRIP_X, z: 88, rot: -20 * Math.PI/180, w: 18, h: 27.6};
+
+// nice!view: LS011B7DH03, 1.08", 160x68 px, module 36 x 14 x 2.9 mm.
+// Mounted along the inner edge with its long axis running front-to-back,
+// so the rendered screen is portrait: 68 px across, 160 px deep.
+const DISPLAY = {x: 21, z: 12, w: 14, h: 36, aw: 11.7, ah: 27.5, t: 2.9};   // in line with the knob
+// The knob sits inboard of the strip, tucked up against the key field --
+// 21 mm leaves ~1 mm between the knob collar and the inner column.
+// A 16 mm knob clears the inner column down to x = 17.8. Live-adjustable from
+// the panel, since where this sits is a matter of taste.
+const ENCODER = {x: 17.8, z: 48, r: 8.0};   // 16 mm knob
+
+const THEMES = {
+  peach:   {name:"Peach & cream", case:"#F7F3EB", rim:"#F2EDE4", plate:"#E4DFD6",
+            outer:"#F2A48D", inner:"#F8EAD9", legend:"#C2664B", accent:"#F2A48D",
+            lcd:"#D7DDD2", ink:"#141A15", stem:"#3A3633", bezel:"#FBF8F3"},
+  milktea: {name:"Milk tea", case:"#EFE7DC", rim:"#E9DFD2", plate:"#DDD2C3",
+            outer:"#BC9370", inner:"#EDDFCB", legend:"#5A4433", accent:"#BC9370",
+            lcd:"#D7DDD2", ink:"#141A15", stem:"#3A3633", bezel:"#F6F0E7"},
+  matcha:  {name:"Matcha", case:"#F1F3EE", rim:"#E7EBE2", plate:"#DCE2D5",
+            outer:"#8FAF87", inner:"#EAF0E3", legend:"#3D573A", accent:"#8FAF87",
+            lcd:"#D7DDD2", ink:"#141A15", stem:"#3A3633", bezel:"#F7F9F4"},
+  ink:     {name:"Ink & ember", case:"#2F2B29", rim:"#3A3533", plate:"#171514",
+            outer:"#E0704B", inner:"#4E4744", legend:"#F2ECE5", accent:"#E0704B",
+            lcd:"#BFC5BB", ink:"#12160F", stem:"#141312", bezel:"#3A3533"}
+};
+
+const state = {
+  theme:"peach", tent:10, splay:8, gap:70,
+  gradient:true, labels:true, cases:true, screens:true, shadows:true,
+  knobX: 17.8
+};
+
+/* ---------------------------------------------------------
+   Renderer
+   --------------------------------------------------------- */
+const canvas = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#191512");
+
+const camera = new THREE.PerspectiveCamera(36, 1, 1, 4000);
+
+scene.add(new THREE.HemisphereLight("#FFF4E8", "#332B25", 0.62));
+
+const key1 = new THREE.DirectionalLight("#FFF3E2", 0.95);
+key1.position.set(-190, 340, 240);
+key1.castShadow = true;
+key1.shadow.mapSize.set(2048, 2048);
+const D = 340;
+key1.shadow.camera.left = -D; key1.shadow.camera.right = D;
+key1.shadow.camera.top = D;   key1.shadow.camera.bottom = -D;
+key1.shadow.camera.near = 60; key1.shadow.camera.far = 1000;
+key1.shadow.bias = -0.0013;
+key1.shadow.radius = 2.2;
+key1.shadow.camera.updateProjectionMatrix();
+scene.add(key1);
+
+const fill = new THREE.DirectionalLight("#D6E4FF", 0.26);
+fill.position.set(260, 180, -200);
+scene.add(fill);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600), new THREE.ShadowMaterial({opacity:0.24}));
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.05;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const board = new THREE.Group();
+scene.add(board);
+const halves = [], screens = [];
+
+/* ---------------------------------------------------------
+   Shape helpers
+   --------------------------------------------------------- */
+function roundedRect(w, h, r){
+  const s = new THREE.Shape(), x = -w/2, y = -h/2;
+  s.moveTo(x+r, y);
+  s.lineTo(x+w-r, y);   s.quadraticCurveTo(x+w, y, x+w, y+r);
+  s.lineTo(x+w, y+h-r); s.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  s.lineTo(x+r, y+h);   s.quadraticCurveTo(x, y+h, x, y+h-r);
+  s.lineTo(x, y+r);     s.quadraticCurveTo(x, y, x+r, y);
+  return s;
+}
+
+function flatExtrude(shape, depth, bevel){
+  const g = new THREE.ExtrudeGeometry(shape, {
+    depth: depth, bevelEnabled: bevel > 0,
+    bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 10
+  });
+  // +PI/2 maps the shape's +y onto world +z, so outlines keep the same
+  // front-to-back sense as the key coordinates. -PI/2 mirrors them.
+  g.rotateX(Math.PI/2);
+  g.computeBoundingBox();
+  g.translate(0, -g.boundingBox.min.y, 0);
+  return g;
+}
+
+// A part is a rectangle (key, display module, encoder) that the case must cover.
+function rectPoly(part, m){
+  const hw = part.w/2 + m, hh = part.h/2 + m;
+  const ca = Math.cos(part.rot), sa = Math.sin(part.rot), out = [];
+  [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].forEach(function(q){
+    out.push([part.x + q[0]*ca + q[1]*sa, part.z - q[0]*sa + q[1]*ca]);
+  });
+  return out;
+}
+
+// Where a vertical line at x enters and leaves a convex polygon.
+function spanAt(poly, x){
+  let lo = Infinity, hi = -Infinity, hit = false;
+  for (let i=0;i<poly.length;i++){
+    const a = poly[i], b = poly[(i+1) % poly.length];
+    if ((a[0] <= x && b[0] >= x) || (b[0] <= x && a[0] >= x)){
+      hit = true;
+      if (Math.abs(b[0]-a[0]) < 1e-9){
+        lo = Math.min(lo, a[1], b[1]); hi = Math.max(hi, a[1], b[1]);
+      } else {
+        const z = a[1] + (x - a[0])/(b[0]-a[0]) * (b[1]-a[1]);
+        lo = Math.min(lo, z); hi = Math.max(hi, z);
+      }
+    }
+  }
+  return hit ? [lo, hi] : null;
+}
+
+// Douglas-Peucker, so stair steps stay crisp and diagonals stay straight.
+function simplify(pts, tol){
+  if (pts.length < 3) return pts.slice();
+  const keep = new Array(pts.length).fill(false);
+  keep[0] = keep[pts.length-1] = true;
+  const stack = [[0, pts.length-1]];
+  while (stack.length){
+    const seg = stack.pop(), a = seg[0], b = seg[1];
+    const ax = pts[a][0], az = pts[a][1];
+    const dx = pts[b][0]-ax, dz = pts[b][1]-az;
+    const len = Math.hypot(dx, dz) || 1;
+    let maxd = -1, idx = -1;
+    for (let i=a+1;i<b;i++){
+      const dist = Math.abs((pts[i][0]-ax)*dz - (pts[i][1]-az)*dx) / len;
+      if (dist > maxd){ maxd = dist; idx = i; }
+    }
+    if (maxd > tol && idx > 0){ keep[idx] = true; stack.push([a,idx],[idx,b]); }
+  }
+  return pts.filter(function(p,i){ return keep[i]; });
+}
+
+// Sweep left to right, taking the near and far edge of everything the case
+// must enclose. That reproduces the column-stagger steps and the thumb wedge.
+function outline(parts, m, step){
+  const polys = parts.map(function(p){ return rectPoly(p, m); });
+  let xmin = Infinity, xmax = -Infinity;
+  polys.forEach(function(p){ p.forEach(function(v){
+    if (v[0] < xmin) xmin = v[0];
+    if (v[0] > xmax) xmax = v[0];
+  }); });
+  const near = [], far = [];
+  const n = Math.max(2, Math.ceil((xmax - xmin) / step));
+  for (let i=0;i<=n;i++){
+    const x = xmin + (xmax - xmin) * i / n;
+    let lo = Infinity, hi = -Infinity;
+    for (let j=0;j<polys.length;j++){
+      const iv = spanAt(polys[j], x);
+      if (iv){ if (iv[0] < lo) lo = iv[0]; if (iv[1] > hi) hi = iv[1]; }
+    }
+    if (lo === Infinity) continue;
+    near.push([x, lo]); far.push([x, hi]);
+  }
+  return simplify(near, 0.4).concat(simplify(far, 0.4).reverse());
+}
+
+// Trace a rounded polygon into an existing Shape or Path
+function tracePolygon(target, poly, radius){
+  const n = poly.length;
+  for (let i=0;i<n;i++){
+    const prev = poly[(i-1+n)%n], cur = poly[i], next = poly[(i+1)%n];
+    const v1x = cur[0]-prev[0], v1y = cur[1]-prev[1];
+    const v2x = next[0]-cur[0], v2y = next[1]-cur[1];
+    const l1 = Math.hypot(v1x,v1y) || 1, l2 = Math.hypot(v2x,v2y) || 1;
+    const r = Math.min(radius, l1*0.48, l2*0.48);
+    const ax = cur[0]-v1x/l1*r, ay = cur[1]-v1y/l1*r;
+    const bx = cur[0]+v2x/l2*r, by = cur[1]+v2y/l2*r;
+    if (i===0) target.moveTo(ax, ay); else target.lineTo(ax, ay);
+    target.quadraticCurveTo(cur[0], cur[1], bx, by);
+  }
+  target.closePath();
+  return target;
+}
+
+const capGeoCache = {}, stemGeoCache = {};
+function capGeoFor(w, h){
+  const k = w + "x" + h;
+  if (!capGeoCache[k]) capGeoCache[k] = flatExtrude(roundedRect(w - 3.4, h - 3.4, 2.0), CAP_H - 2.8, 1.4);
+  return capGeoCache[k];
+}
+function stemGeoFor(w, h){
+  const k = w + "x" + h;
+  if (!stemGeoCache[k]){
+    const t = CAP_BOT - PLATE_Y + 0.6;
+    const g = new THREE.BoxGeometry(w - 4.6, t, h - 4.6);
+    g.translate(0, t/2, 0);
+    stemGeoCache[k] = g;
+  }
+  return stemGeoCache[k];
+}
+
+/* ---------------------------------------------------------
+   Canvas textures
+   --------------------------------------------------------- */
+const labelCache = {};
+function labelTexture(text, color){
+  const k = text + "|" + color;
+  if (labelCache[k]) return labelCache[k];
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d");
+  g.clearRect(0,0,128,128);
+  g.fillStyle = color;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  const size = text.length > 3 ? 29 : (text.length > 1 ? 37 : 54);
+  g.font = '500 ' + size + 'px "Space Grotesk", sans-serif';
+  g.fillText(text, 64, 66);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 8;
+  t.encoding = THREE.sRGBEncoding;
+  labelCache[k] = t;
+  return t;
+}
+
+// The active area is only 11.7 mm wide, so it covers very few screen pixels.
+// Mipmapping averages the hairline strokes straight into the background and the
+// panel reads as blank white -- draw at 4x and minify with a plain linear filter.
+const SS = 4;
+function makeScreen(side){
+  const c = document.createElement("canvas");
+  c.width = 68 * SS; c.height = 160 * SS;
+  const tex = new THREE.CanvasTexture(c);
+  tex.encoding = THREE.sRGBEncoding;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.anisotropy = 8;
+  return {canvas:c, ctx:c.getContext("2d"), tex:tex, side:side};
+}
+
+function paintScreen(s, t){
+  const g = s.ctx, th = THEMES[state.theme], W = 68, H = 160;
+  g.setTransform(SS, 0, 0, SS, 0, 0);       // draw in module pixels, render at 4x
+  g.fillStyle = th.lcd; g.fillRect(0, 0, W, H);
+  g.fillStyle = th.ink; g.strokeStyle = th.ink; g.lineWidth = 2;
+
+  // battery
+  const pct = s.side === "L" ? 86 : 79;
+  g.strokeRect(5, 6, 24, 11);
+  g.fillRect(30, 9, 2.5, 5);
+  g.fillRect(7, 8, Math.round(20 * pct/100), 7);
+  g.font = '500 10px "Space Grotesk", sans-serif';
+  g.textAlign = "right";
+  g.fillText(pct + "%", W - 5, 15);
+
+  // bluetooth profiles
+  g.textAlign = "left";
+  for (let i=0;i<5;i++){
+    if (i === 0) g.fillRect(5 + i*8, 23, 5, 5);
+    else g.strokeRect(5.5 + i*8, 23.5, 4, 4);
+  }
+  g.beginPath(); g.moveTo(5, 34); g.lineTo(W-5, 34); g.stroke();
+
+  if (s.side === "L"){
+    g.font = '500 9px "Space Grotesk", sans-serif';
+    g.fillText("LAYER", 5, 50);
+    g.font = '700 14px "Space Grotesk", sans-serif';
+    g.fillText(["QWERTY","LOWER","RAISE","ADJUST"][Math.floor(t/4) % 4], 5, 68);
+    g.font = '500 9px "Space Grotesk", sans-serif';
+    g.fillText("WPM", 5, 92);
+    for (let i=0;i<14;i++){
+      const v = 4 + Math.abs(Math.sin(t*0.85 + i*0.6)) * 34;
+      g.fillRect(5 + i*4.4, 142 - v, 3, v);
+    }
+  } else {
+    g.save();
+    g.translate(34, 84);
+    g.lineWidth = 2.2;
+    g.beginPath(); g.arc(0, 3, 21, 0, Math.PI*2); g.stroke();
+    g.beginPath();
+    g.moveTo(-19,-9); g.lineTo(-16,-26); g.lineTo(-5,-16);
+    g.moveTo(19,-9);  g.lineTo(16,-26);  g.lineTo(5,-16);
+    g.stroke();
+    if (Math.floor(t) % 5 === 0){
+      g.beginPath(); g.moveTo(-12,1); g.lineTo(-5,1); g.moveTo(5,1); g.lineTo(12,1); g.stroke();
+    } else {
+      g.beginPath(); g.arc(-8, 0, 2.6, 0, Math.PI*2); g.fill();
+      g.beginPath(); g.arc(8, 0, 2.6, 0, Math.PI*2); g.fill();
+    }
+    g.beginPath(); g.moveTo(-3,12); g.lineTo(3,12); g.stroke();
+    g.restore();
+    const now = new Date();
+    g.textAlign = "center";
+    g.font = '500 13px "Space Grotesk", sans-serif';
+    g.fillText(String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0"), 34, 132);
+  }
+  s.tex.needsUpdate = true;
+}
+
+/* ---------------------------------------------------------
+   Build a half
+   --------------------------------------------------------- */
+function capColor(th, c){
+  const outer = new THREE.Color(th.outer), inner = new THREE.Color(th.inner);
+  if (!state.gradient) return c <= 1 ? outer : inner;
+  return outer.clone().lerp(inner, Math.min(1, c / 4.4));
+}
+
+function buildHalf(side){
+  const mirror = side === "L" ? 1 : -1;
+  const th = THEMES[state.theme];
+  const pivot = new THREE.Group();
+  const group = new THREE.Group();
+  pivot.add(group);
+
+  const stemMat  = new THREE.MeshStandardMaterial({color:th.stem, roughness:0.88});
+  const caseMat  = new THREE.MeshStandardMaterial({color:th.case, roughness:0.68, metalness:0.02});
+  const plateMat  = new THREE.MeshStandardMaterial({color:th.plate, roughness:0.8});
+  const bottomMat = new THREE.MeshStandardMaterial({color:th.rim, roughness:0.74, metalness:0.02});
+  const bezelMat = new THREE.MeshStandardMaterial({color:th.bezel, roughness:0.5});
+
+  const parts = [];
+  const caps = [], labels = [], keyIndex = [], capCols = [];
+
+  function addKey(x, z, rot, label, col, w, h){
+    w = w || 18; h = h || 18;
+    const cap = new THREE.Mesh(capGeoFor(w, h), new THREE.MeshStandardMaterial({roughness:0.6, metalness:0.02}));
+    cap.material.color.copy(capColor(th, col));
+    cap.position.set(x, CAP_BOT, z);
+    cap.rotation.y = rot;
+    cap.castShadow = true; cap.receiveShadow = true;
+    group.add(cap); caps.push(cap); capCols.push(col);
+
+    const stem = new THREE.Mesh(stemGeoFor(w, h), stemMat);
+    stem.position.set(x, PLATE_Y - 0.3, z);
+    stem.rotation.y = rot;
+    group.add(stem);
+
+    const ls = Math.min(w, h) * 0.66;
+    const geo = new THREE.PlaneGeometry(ls, ls);
+    geo.rotateX(-Math.PI/2);
+    const lm = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      map: labelTexture(label, th.legend), transparent:true, depthWrite:false
+    }));
+    lm.position.set(x, CAP_BOT + CAP_H + 0.06, z);
+    lm.rotation.y = rot;
+    group.add(lm); labels.push(lm);
+    keyIndex.push(label);
+
+    parts.push({x:x, z:z, rot:rot, w:w, h:h});
+  }
+
+  const rows = side === "L" ? LEFT_ROWS : RIGHT_ROWS;
+  for (let r=0;r<ROWS;r++)
+    for (let c=0;c<COLS;c++)
+      addKey(colX(c) * mirror, rowZ(r,c), 0, rows[r][c], c);
+
+  // fifth row, inner four columns only
+  const row5 = side === "L" ? LEFT_ROW5 : RIGHT_ROW5;
+  for (let c=2;c<=5;c++)
+    addKey(colX(c) * mirror, ROW5_Z[c], 0, row5[c], c);
+
+  // the rotated 1.5u thumb key
+  addKey(BIGTHUMB.x * mirror, BIGTHUMB.z, BIGTHUMB.rot * mirror,
+         side === "L" ? LEFT_BIG : RIGHT_BIG, 3, BIGTHUMB.w, BIGTHUMB.h);
+
+  // nice!view module, raised off the plate
+  const dx = DISPLAY.x * mirror;
+  // module body: extrude depth + 2x bevel = its true height above the plate
+  const bezelBevel = 0.5, bezelH = DISPLAY.t + bezelBevel * 2;
+  const bezel = new THREE.Mesh(flatExtrude(roundedRect(DISPLAY.w + 3.5, DISPLAY.h + 3.5, 2), DISPLAY.t, bezelBevel), bezelMat);
+  bezel.position.set(dx, PLATE_Y, DISPLAY.z);
+  bezel.castShadow = true; bezel.receiveShadow = true;
+  group.add(bezel);
+
+  const scr = makeScreen(side);
+  screens.push(scr);
+  const sgeo = new THREE.PlaneGeometry(DISPLAY.aw, DISPLAY.ah);
+  sgeo.rotateX(-Math.PI/2);
+  const screenMesh = new THREE.Mesh(sgeo, new THREE.MeshBasicMaterial({map:scr.tex}));
+  screenMesh.position.set(dx, PLATE_Y + bezelH + 0.06, DISPLAY.z);   // just clear of the bezel
+  group.add(screenMesh);
+  parts.push({x:dx, z:DISPLAY.z, rot:0, w:DISPLAY.w + 4, h:DISPLAY.h + 4});
+
+  // EC11 encoder
+  const ex = ENCODER.x * mirror;
+  const knobMat = new THREE.MeshStandardMaterial({color:th.bezel, roughness:0.4, metalness:0.06});
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(ENCODER.r + 0.3, ENCODER.r + 0.6, 2.4, 30), bezelMat);
+  base.position.set(ex, PLATE_Y + 1.2, ENCODER.z);
+  base.receiveShadow = true;
+  group.add(base);
+
+  const knob = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(ENCODER.r, ENCODER.r * 0.97, 10.5, 40), knobMat);
+  body.position.y = 5.25; body.castShadow = true;
+  knob.add(body);
+  for (let i=0;i<20;i++){
+    const a = i/20 * Math.PI*2;
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.85, 8.6, 1.5), knobMat);
+    rib.position.set(Math.cos(a)*ENCODER.r, 5.25, Math.sin(a)*ENCODER.r);
+    rib.rotation.y = -a;
+    knob.add(rib);
+  }
+  const dot = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.6, 12),
+    new THREE.MeshStandardMaterial({color:th.accent, roughness:0.5}));
+  dot.position.set(0, 10.7, ENCODER.r * 0.55);
+  knob.add(dot);
+  knob.position.set(ex, PLATE_Y + 2.4, ENCODER.z);
+  knob.userData.isKnob = true;
+  group.add(knob);
+  parts.push({x:ex, z:ENCODER.z, rot:0, w:(ENCODER.r + 4)*2, h:(ENCODER.r + 4)*2});
+
+  // Stacked case, bottom up: baseplate (proud of the walls), walls with the
+  // switch opening cut through them, then the dark switch plate.
+  const bottomMesh = new THREE.Mesh(
+    flatExtrude(tracePolygon(new THREE.Shape(), outline(parts, 6.5, 0.5), 7.0), 2.2, 0.4), bottomMat);
+  bottomMesh.castShadow = true; bottomMesh.receiveShadow = true;
+  group.add(bottomMesh);
+
+  const caseShape = tracePolygon(new THREE.Shape(), outline(parts, 4.0, 0.5), 6.5);
+  caseShape.holes.push(tracePolygon(new THREE.Path(), outline(parts, 1.2, 0.5).reverse(), 4.0));
+  const caseMesh = new THREE.Mesh(flatExtrude(caseShape, CASE_TOP - 3.0 - 1.2, 0.6), caseMat);
+  caseMesh.position.y = 3.0;
+  caseMesh.castShadow = true; caseMesh.receiveShadow = true;
+  group.add(caseMesh);
+
+  const plateMesh = new THREE.Mesh(
+    flatExtrude(tracePolygon(new THREE.Shape(), outline(parts, 2.4, 0.5), 4.5), 2, 0), plateMat);
+  plateMesh.position.y = PLATE_Y - 2;
+  plateMesh.receiveShadow = true;
+  group.add(plateMesh);
+
+  // recentre the half on its own footprint
+  const box = new THREE.Box3().setFromObject(group);
+  group.position.x = -(box.min.x + box.max.x)/2;
+  group.position.z = -(box.min.z + box.max.z)/2;
+
+  const halfWidth = (box.max.x - box.min.x)/2;
+
+  const half = {
+    side:side, pivot:pivot, group:group, knob:knob, caps:caps, labels:labels,
+    caseMesh:caseMesh, plateMesh:plateMesh, bottomMesh:bottomMesh, bezel:bezel, base:base, screenMesh:screenMesh,
+    keyIndex:keyIndex, capCols:capCols, halfWidth:halfWidth, knobSpin:0, knobTarget:0,
+    pressAmt: new Float32Array(caps.length), pressTgt: new Float32Array(caps.length),
+    mats:{stem:stemMat, case:caseMat, plate:plateMat, bottom:bottomMat, bezel:bezelMat, knob:knobMat, dot:dot.material}
+  };
+  board.add(pivot);
+  halves.push(half);
+  return half;
+}
+
+buildHalf("L");
+buildHalf("R");
+
+// tag every cap so a raycast hit knows which key it landed on
+const allCaps = [];
+halves.forEach(function(h){
+  h.caps.forEach(function(c, i){ c.userData.half = h; c.userData.idx = i; allCaps.push(c); });
+});
+
+/* ---------------------------------------------------------
+   Tenting / splay / split
+   --------------------------------------------------------- */
+function pose(){
+  const tent = state.tent * Math.PI/180;
+  const splay = state.splay * Math.PI/180;
+  halves.forEach(function(h){
+    const m = h.side === "L" ? 1 : -1;       // +1 = left half, sits at -x
+    h.pivot.rotation.set(0, splay * m, tent * m);   // +z rotation lifts the +x (inner) edge
+    h.pivot.position.set(-(state.gap/2 + h.halfWidth) * m, 0, 0);
+    const box = new THREE.Box3().setFromObject(h.pivot);
+    h.pivot.position.y = -box.min.y;         // sit the lowest corner on the desk
+  });
+}
+
+
+/* ---------------------------------------------------------
+   Themes / visibility
+   --------------------------------------------------------- */
+function applyTheme(){
+  const th = THEMES[state.theme];
+  halves.forEach(function(h){
+    h.mats.case.color.set(th.case);
+    h.mats.plate.color.set(th.plate);
+    h.mats.bottom.color.set(th.rim);
+    h.mats.stem.color.set(th.stem);
+    h.mats.bezel.color.set(th.bezel);
+    h.mats.knob.color.set(th.bezel);
+    h.mats.dot.color.set(th.accent);
+    h.caps.forEach(function(cap, i){
+      cap.material.color.copy(capColor(th, h.capCols[i]));
+    });
+    h.labels.forEach(function(lm, i){
+      lm.material.map = labelTexture(h.keyIndex[i], th.legend);
+      lm.material.needsUpdate = true;
+    });
+  });
+  document.documentElement.style.setProperty("--accent", th.accent);
+}
+
+function applyVisibility(){
+  halves.forEach(function(h){
+    h.labels.forEach(l => { l.visible = state.labels; });
+    [h.caseMesh, h.plateMesh, h.bottomMesh, h.bezel, h.base].forEach(m => { m.visible = state.cases; });
+    h.screenMesh.visible = state.screens;
+    h.caps.forEach(c => { c.castShadow = state.shadows; });
+    h.caseMesh.castShadow = state.shadows;
+  });
+  renderer.shadowMap.enabled = state.shadows;
+  renderer.shadowMap.needsUpdate = true;
+  ground.visible = state.shadows;
+  scene.traverse(function(o){ if (o.material) o.material.needsUpdate = true; });
+}
+
+/* ---------------------------------------------------------
+   Camera (hand-rolled orbit). theta = PI/2 puts us in front.
+   --------------------------------------------------------- */
+const cam = {theta: Math.PI/2 + 0.3, phi: 0.85, dist: 580, target: new THREE.Vector3(0, 12, 0)};
+function updateCamera(){
+  cam.phi = Math.max(0.06, Math.min(Math.PI/2 - 0.02, cam.phi));
+  cam.dist = Math.max(150, Math.min(1500, cam.dist));
+  camera.position.set(
+    cam.target.x + cam.dist * Math.sin(cam.phi) * Math.cos(cam.theta),
+    cam.target.y + cam.dist * Math.cos(cam.phi),
+    cam.target.z + cam.dist * Math.sin(cam.phi) * Math.sin(cam.theta)
+  );
+  camera.lookAt(cam.target);
+}
+
+let dragging = null, lastX = 0, lastY = 0, moved = 0;
+canvas.addEventListener("pointerdown", function(e){
+  dragging = (e.button === 2 || e.shiftKey) ? "pan" : "orbit";
+  lastX = e.clientX; lastY = e.clientY; moved = 0;
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add("dragging");
+});
+canvas.addEventListener("pointermove", function(e){
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  if (dragging === "orbit"){
+    cam.theta -= dx * 0.006;
+    cam.phi   -= dy * 0.006;
+  } else {
+    const s = cam.dist * 0.0016;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    cam.target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
+  }
+  updateCamera();
+});
+canvas.addEventListener("pointerup", function(e){
+  if (dragging === "orbit" && moved < 5) pickKnob(e);
+  dragging = null; canvas.classList.remove("dragging");
+});
+canvas.addEventListener("pointercancel", function(){ dragging = null; canvas.classList.remove("dragging"); });
+canvas.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+canvas.addEventListener("wheel", function(e){
+  e.preventDefault();
+  cam.dist *= (1 + Math.sign(e.deltaY) * 0.09);
+  updateCamera();
+}, {passive:false});
+
+let pinch = null;
+canvas.addEventListener("touchstart", function(e){
+  if (e.touches.length === 2){
+    pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    dragging = null;
+  }
+}, {passive:true});
+canvas.addEventListener("touchmove", function(e){
+  if (e.touches.length === 2 && pinch){
+    const d2 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    cam.dist *= pinch / d2; pinch = d2; updateCamera();
+  }
+}, {passive:true});
+canvas.addEventListener("touchend", function(){ pinch = null; }, {passive:true});
+
+const ray = new THREE.Raycaster();
+const KEY_TRAVEL = 2.4;
+function pickKnob(e){
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(
+    ((e.clientX - r.left)/r.width)*2 - 1,
+    -((e.clientY - r.top)/r.height)*2 + 1
+  ), camera);
+
+  const knobHits = ray.intersectObjects(halves.map(h => h.knob), true);
+  if (knobHits.length){
+    let o = knobHits[0].object;
+    while (o && !o.userData.isKnob) o = o.parent;
+    const h = halves.find(x => x.knob === o);
+    if (h) h.knobTarget += Math.PI/6;
+    return;
+  }
+
+  const capHits = ray.intersectObjects(allCaps, false);
+  if (!capHits.length) return;
+  const cap = capHits[0].object;
+  const h = cap.userData.half, i = cap.userData.idx;
+  h.pressTgt[i] = 1;
+  setTimeout(function(){ h.pressTgt[i] = 0; }, 130);
+}
+
+const VIEWS = {
+  iso:   {theta: Math.PI/2 + 0.34, phi:0.82, dist:580, target:[0,14,0]},
+  top:   {theta: Math.PI/2,        phi:0.07, dist:620, target:[0,12,0]},
+  front: {theta: Math.PI/2,        phi:1.40, dist:480, target:[0,26,0]},
+  thumb: {theta: Math.PI/2 + 0.85, phi:0.70, dist:250, target:[60,16,42]},
+  screen:{theta: Math.PI/2 + 0.10, phi:0.50, dist:78,  target:[0,15,0]}
+};
+let anim = null;
+function goView(name){
+  const v = VIEWS[name]; if (!v) return;
+  const to = {theta:v.theta, phi:v.phi, dist:v.dist, target:new THREE.Vector3().fromArray(v.target)};
+  if (name === "screen"){
+    // aim at the left nice!view wherever tenting and split have put it
+    halves[0].screenMesh.getWorldPosition(to.target);
+  }
+  while (to.theta - cam.theta >  Math.PI) to.theta -= Math.PI*2;
+  while (to.theta - cam.theta < -Math.PI) to.theta += Math.PI*2;
+  anim = {from:{theta:cam.theta, phi:cam.phi, dist:cam.dist, target:cam.target.clone()}, to:to, t:0};
+}
+
+/* ---------------------------------------------------------
+   UI
+   --------------------------------------------------------- */
+const themesEl = document.getElementById("themes");
+Object.keys(THEMES).forEach(function(k){
+  const b = document.createElement("button");
+  b.className = "sw"; b.type = "button";
+  b.setAttribute("aria-pressed", String(k === state.theme));
+  b.innerHTML = '<i style="background:linear-gradient(135deg,' + THEMES[k].outer + ' 0 50%,' + THEMES[k].inner + ' 50% 100%)"></i>' + THEMES[k].name;
+  b.addEventListener("click", function(){
+    state.theme = k;
+    themesEl.querySelectorAll(".sw").forEach(x => x.setAttribute("aria-pressed","false"));
+    b.setAttribute("aria-pressed","true");
+    applyTheme();
+  });
+  themesEl.appendChild(b);
+});
+
+const togglesEl = document.getElementById("toggles");
+[{k:"gradient",label:"Gradient caps"},{k:"labels",label:"Legends"},{k:"cases",label:"Case"},
+ {k:"screens",label:"Displays"},{k:"shadows",label:"Shadows"}].forEach(function(t){
+  const b = document.createElement("button");
+  b.className = "tg"; b.type = "button"; b.textContent = t.label;
+  b.setAttribute("aria-pressed", String(state[t.k]));
+  b.addEventListener("click", function(){
+    state[t.k] = !state[t.k];
+    b.setAttribute("aria-pressed", String(state[t.k]));
+    applyTheme(); applyVisibility();
+  });
+  togglesEl.appendChild(b);
+});
+
+function slider(id, prop, fmt){
+  const el = document.getElementById(id), out = document.getElementById(id + "V");
+  el.addEventListener("input", function(){
+    state[prop] = parseFloat(el.value);
+    out.textContent = fmt(state[prop]);
+    if (prop === "knobX") placeKnobs(); else pose();
+  });
+}
+slider("tent", "tent", v => v + "\u00B0");
+slider("splay", "splay", v => v + "\u00B0");
+slider("gap", "gap", v => v + " mm");
+slider("knob", "knobX", v => v.toFixed(1) + " mm");
+
+function placeKnobs(){
+  halves.forEach(function(h){
+    const m = h.side === "L" ? 1 : -1;
+    h.knob.position.x = state.knobX * m;
+    h.base.position.x = state.knobX * m;
+  });
+}
+
+document.querySelectorAll(".vb").forEach(function(b){
+  b.addEventListener("click", function(){ goView(b.dataset.view); });
+});
+
+document.getElementById("save").addEventListener("click", function(){
+  renderer.render(scene, camera);
+  const a = document.createElement("a");
+  a.download = "sofle-" + state.theme + ".png";
+  a.href = renderer.domElement.toDataURL("image/png");
+  a.click();
+});
+
+const panel = document.getElementById("panel"), panelToggle = document.getElementById("panelToggle");
+panelToggle.addEventListener("click", function(){
+  const hidden = panel.classList.toggle("hidden");
+  panelToggle.textContent = hidden ? "Show controls" : "Hide controls";
+  panelToggle.setAttribute("aria-expanded", String(!hidden));
+  resize();
+});
+
+/* ---------------------------------------------------------
+   Loop
+   --------------------------------------------------------- */
+function resize(){
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  updateCamera();
+}
+addEventListener("resize", resize);
+
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const clock = new THREE.Clock();
+let screenT = 0;
+
+function tick(){
+  requestAnimationFrame(tick);
+  const dt = clock.getDelta();
+
+  if (anim){
+    anim.t = Math.min(1, anim.t + dt * 1.9);
+    const e = 1 - Math.pow(1 - anim.t, 3);
+    cam.theta = anim.from.theta + (anim.to.theta - anim.from.theta) * e;
+    cam.phi   = anim.from.phi   + (anim.to.phi   - anim.from.phi)   * e;
+    cam.dist  = anim.from.dist  + (anim.to.dist  - anim.from.dist)  * e;
+    cam.target.lerpVectors(anim.from.target, anim.to.target, e);
+    updateCamera();
+    if (anim.t >= 1) anim = null;
+  }
+
+  halves.forEach(function(h){
+    h.knobSpin += (h.knobTarget - h.knobSpin) * Math.min(1, dt * 9);
+    h.knob.rotation.y = h.knobSpin;
+
+    const k = Math.min(1, dt * 22);
+    for (let i=0;i<h.caps.length;i++){
+      const a = h.pressAmt[i] + (h.pressTgt[i] - h.pressAmt[i]) * k;
+      if (Math.abs(a - h.pressAmt[i]) < 0.0004 && a < 0.0004) continue;
+      h.pressAmt[i] = a;
+      const drop = a * KEY_TRAVEL;
+      h.caps[i].position.y = CAP_BOT - drop;
+      h.labels[i].position.y = CAP_BOT + CAP_H + 0.06 - drop;
+    }
+  });
+
+  screenT += dt;
+  if (state.screens && screenT > (reduce ? 3 : 0.9)){
+    screens.forEach(s => paintScreen(s, performance.now()/1000));
+    screenT = 0;
+  }
+
+  renderer.render(scene, camera);
+}
+
+function boot(){
+  pose();
+  placeKnobs();
+  applyTheme();
+  applyVisibility();
+  screens.forEach(s => paintScreen(s, 0));
+  resize();
+  tick();
+}
+
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(boot).catch(boot);
+else boot();
+
+})();
+</script>
+</body>
+</html>

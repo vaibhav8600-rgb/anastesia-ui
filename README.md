@@ -27,6 +27,11 @@ attached.
 
 Eight tabs. Seven match the original's shape; Firmware is ours.
 
+The keymap editor also opens on its own, from a link on the connect screen. It
+draws whatever the device reports over ZMK Studio's RPC, so it works with any
+ZMK board that has Studio enabled — no trackball, no stage, none of the twelve
+tabs of settings another firmware has never heard of.
+
 | Tab | What it covers |
 | --- | --- |
 | Keymap | A live key binding editor over ZMK Studio's RPC, plus profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
@@ -54,6 +59,8 @@ Eight tabs. Seven match the original's shape; Firmware is ours.
 | `src/Effects.jsx` | per-event RGB / vibration editor |
 | `src/Board.jsx` | keymap profiles, import/export, storage backup, surface quality |
 | `src/Studio.jsx` | the key binding editor: layers, key positions, the picker |
+| `src/Sofle.jsx` | the board in three dimensions — case, keycaps, knobs and displays, swept around the layout the board reports |
+| `src/glyphs.js` | icons as path data: one table for the flat board and the 3D legend, with a runnable self-check |
 | `src/studio.js` | ZMK Studio's RPC — framing, protobuf and the message set, with a runnable self-check |
 | `src/keycodes.js` | HID usages and mouse masks, so a binding reads as a key |
 | `src/Firmware.jsx` | release check, the right .uf2 for this board, and the bootloader write |
@@ -66,6 +73,7 @@ Eight tabs. Seven match the original's shape; Firmware is ours.
 | `src/Status.jsx` | header readout: active output, firmware, battery |
 | `src/Trackball.jsx` | the three.js preview — the real device, built procedurally |
 | `reference/trackball3d.html` | standalone model the preview was ported from |
+| `reference/sofle-3d.html` | standalone Sofle model the 3D board's geometry came from |
 | `reference/marshmellow-ui.html` | later build of the original app; the protocol reference |
 | `src/styles.css` | all of the styling |
 
@@ -700,7 +708,8 @@ totalling 8KB, pinned by ZMK v0.3.0 at `zmk-studio-messages` 6cb4c28. Proto3 on
 that message set needs only varints, length-delimited fields and zigzag — no
 fixed32, no fixed64, no maps — so the codec is about a hundred lines and the
 messages are data tables declared in upstream's order. No generator, no
-dependency, no build step. Twenty-six assertions run without a board.
+dependency, no build step. Forty-six assertions run without a board, and a
+hundred and thirty-one more across the keycode and icon tables.
 
 The editor takes its own port, because the RPC is a second CDC-ACM interface on
 the same USB device. Both interfaces share a vendor and product id, so
@@ -710,6 +719,134 @@ boards. So the editor asks rather than assumes: it opens each granted port and
 keeps whichever answers `get_device_info`. A port the settings tabs are holding
 fails to open and is skipped, which is the right answer, since that one is the
 shell by definition.
+
+### The editor on its own
+
+The editor never needed this board. Everything Endgame-specific — the sensor
+tabs, the model, the labels painted on its keys — sits outside it, and what is
+left draws whatever the device reports. But the only way in was a connect flow
+that asks for a trackball first.
+
+So there is a second door on the connect screen. Same editor, no stage, no
+tabs, one centred column and a way back. It is offered wherever Web Serial is,
+which is the only thing it needs.
+
+### The board in three dimensions
+
+`reference/sofle-3d.html` is where the geometry comes from: the sweep that
+finds a case outline around a staggered key field, the rounded extrusion, the
+keycap and stem shapes, the nice!view and EC11 dimensions, the tenting and
+splay ranges, the four colourways.
+
+What is not from that file is the key field. It had a hard-coded table of
+fifty-eight keys, and using it would have meant matching those against sixty
+bindings arriving over the wire and hoping the two orders agreed — a mapping
+nobody can see is wrong until they press a key and something else changes. The
+positions, sizes and rotations are read from the physical layout instead, so
+key *n* in the scene is binding *n* by construction. The case follows: the
+outline is swept around the key positions the board reported, which is how a
+column stagger becomes steps and a rotated thumb becomes a wedge without anyone
+describing either.
+
+Three things that took a second attempt, because the first was reasonable and
+wrong:
+
+**The seam.** A split board's halves were found by the widest gap between key
+centres. A Sofle's thumb cluster reaches inboard past its own inner column, so
+the widest centre gap is *inside* a half — the halves came out joined, one case
+with a notch in it. Measured edge to edge, keys within a half abut, so any
+emptiness spanning the board is the seam.
+
+**The encoder.** An encoder's push is a switch, so the board reports it as a key
+position: a 58-key Sofle arrives as 60. The reference model has no such
+position — it draws 58 keycaps and places two knobs from constants — so porting
+both halves put a keycap *and* a knob where the hardware has one thing. The
+knob is drawn at the reported position now, instead of the keycap rather than
+beside it, and clicking it edits the push. Finding it by isolation failed on a
+real board: its nearest keycap is 1.23 key units away against a threshold of
+1.25. It asks where the reference says the knob is instead — inboard of every
+column, about 48mm behind the top row — which also rules out the rotated thumb
+key, inboard and alone in its column but 40mm lower.
+
+**The fit.** Fitting a bounding sphere to the tighter of the two fields of view
+is the obvious way to frame the board and is badly wrong for this shape: a
+keyboard seen from above is wide and shallow, so the sphere gets sized by a
+width the horizontal field has room to spare for, and then that width is fitted
+into the vertical one. It drew the board at a third of size. The box is
+projected onto the view plane and each axis fitted to its own field.
+
+The displays show what the editor knows — which board, which layer, how many
+there are, whether anything is unsaved. The reference painted battery,
+Bluetooth profiles and words per minute; none of that reaches this app over
+Studio's RPC, and a drawn battery reading is worse than none.
+
+Only offered where the layout is named Sofle. It would draw any board, but
+"would draw" is not "has been looked at", and a case swept around a shape
+nobody has seen is a good way to ship a puddle. Anything else gets the flat
+board, with no toggle to wonder about.
+
+### Icons for the bindings a keycap cannot spell
+
+"Output Selection · OUT_TOG" is four words for a thing that is one arrow, and
+at keycap size the words lose. So fifteen shapes as SVG path data on a 24-unit
+grid, and thirteen icons built from two shapes each — a bluetooth rune and an
+eraser for clearing one profile, a rune and a bin for clearing all, a plug and
+the swap arrows for the USB output.
+
+One table serves both views. The flat board hands the data to an SVG `<path>`;
+the 3D legend hands the same string to `Path2D` and strokes it onto the canvas
+the keycap texture is drawn from. Path2D taking SVG path data is the whole
+reason the shapes are stored that way — the alternative was writing every icon
+twice and having the copies drift.
+
+### What a behavior says about itself, and what it does not
+
+Four bugs, all of them in the gap between what the protocol allows and what one
+board happens to send. They are worth naming because each one looked like a
+rendering problem and was not.
+
+**`metadata` is a repeated field, and only the first set was ever read.** `&bt`
+declares two: one holds the constants that take no profile — clear, next,
+previous — and another holds Select Profile and Disconnect together with the
+profile range. Read the first only, and selecting a profile finds no constant
+list at all: no name, no range for the number, and a cap printing the bare 3
+that `BT_SEL` happens to equal. Five profile keys all read "3".
+
+**A zero-valued parameter is still a parameter.** `BT_CLR` is 0, `OUT_TOG` is 0,
+and so is layer 0. A guard of `if (param1 && …)` sent every one of them to "this
+behavior takes no parameters", which prints the behavior's own name — so a
+bluetooth key said "Bluet" and a momentary layer 0 would have named no layer.
+Whether a parameter exists is what its metadata says.
+
+**A constant's name says what it is; its value does not.** `MB1`, `MB2` and
+`MB3` are 1, 2 and 4 — and so are `OUT_USB`, `OUT_BLE` and `BT_DISC`. Asking
+the value made those three a left, right and middle click, in the icons and
+very nearly in the text.
+
+**And the name is whatever the firmware calls it.** This board does not send
+ZMK's identifiers; it sends "Clear All Profiles", "USB Output", "Toggle
+Outputs". Matching `BT_CLR` against those finds nothing, so every rule fell
+through and one icon covered five keys. Names are read as words now, split on
+separators and on camel humps, so one rule reads `BT_CLR_ALL`, "Clear All
+Profiles" and `clearAllProfiles` alike.
+
+A fifth, found auditing rather than looking: `metaOf` picks the one set a value
+belongs to, which is right for reading a binding and wrong for offering one.
+The picker resets the value to 0 when you change behavior, landing in the set
+that holds constant 0 — so it showed four of `&bt`'s six choices and a
+bluetooth profile could not be bound at all. The first parameter gathers its
+constants from every set now; the second still comes from the set the chosen
+value belongs to, so the profile number appears for the two constants that take
+one. Merged only where every set declares constants there, because a hold-tap
+has one set taking a layer and another taking a key, and merging those is how a
+layer parameter gets read as a mouse button.
+
+A mouse move's direction is not in its name either. ZMK packs the horizontal
+into the top sixteen bits of the parameter and the vertical into the bottom, so
+all four directions can be one behavior with one display name. Decoded from the
+binding — including that a move and a scroll disagree about which way is up,
+which is ZMK's convention and is written down as two assertions rather than as
+a comment.
 
 ## A reply is not finished just because the board went quiet
 
@@ -791,6 +928,9 @@ original that is missing here.
 | Log console | — | SEND/RECEIVE with timestamps, download, and a command prompt |
 | 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |
 | Bindings shown on the device | — | Each key's binding printed on that key in the 3D view, encoders labelled on the shell beside them |
+| Keymap editor on its own | — | A second door on the connect screen: the editor without the trackball or the tabs, for any ZMK board with Studio enabled |
+| The keyboard in 3D | — | A Sofle drawn as a case with keycaps, knobs and its nice!views, swept around the layout the board reports; click a key to edit it, hover for the whole binding |
+| Bindings a keycap cannot spell | Text | Icons for bluetooth profiles, output selection, mouse buttons and mouse move and scroll direction — one path table shared by the flat board and the model |
 | Themes | One | Glass and flat, one attribute apart |
 | Demo mode without hardware | — | Every tab, including a synthetic sensor image |
 | Offline | Yes | Single self-contained HTML file |
