@@ -2996,3 +2996,48 @@ button.rail__item:hover { background: var(--glass-bg-3); }
   background: color-mix(in srgb, var(--accent) 20%, var(--glass-bg-3));
   font-weight: 600;
 }
+
+/* ---------- the board in three dimensions ----------
+   Same frame as the flat board so switching between them does not move the
+   page under you. */
+
+.board3d {
+  position: relative;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--glass-bg-2);
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
+  overflow: hidden;
+}
+
+/* Tall enough for a split board seen from above at a tilt, and it grows with
+   the column rather than being pinned to the viewport. */
+.board3d__view {
+  aspect-ratio: 16 / 9;
+  min-height: 260px;
+  cursor: grab;
+  touch-action: none;
+}
+.board3d__view:active { cursor: grabbing; }
+.board3d__view canvas { display: block; width: 100%; height: 100%; }
+
+.board3d__views {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-1);
+  overflow: hidden;
+}
+.board3d__views .zoom__btn + .zoom__btn { border-left: 1px solid var(--line); }
+
+/* The chosen half of a two-way switch. `is-active` is the app's word for it
+   everywhere else, so it is the word here. */
+.zoom__btn.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}

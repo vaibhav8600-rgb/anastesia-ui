@@ -8,6 +8,7 @@ import {
   keyType, usageGroup, usageName, usageShort,
 } from "./keycodes.js";
 import Loading from "./Loading.jsx";
+import Sofle from "./Sofle.jsx";
 
 // The keymap editor: layers, key positions and bindings, read and written over
 // ZMK Studio's RPC.
@@ -342,6 +343,9 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   // — forty keys on a wide screen leave a lot of room, and a hundred-key board
   // on a laptop leaves none.
   const [zoom, setZoom] = useState(1);
+  // Drawn as a board rather than as a diagram. Only offered where the shape has
+  // been looked at, and remembered per session rather than per board.
+  const [solid, setSolid] = useState(true);
 
   const load = useCallback(async () => {
     const l = link.current;
@@ -742,6 +746,18 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   const tinies = tinyKeys(keys);
 
   const activeLayout = layouts?.active_layout_index ?? 0;
+  // The 3D view builds itself from the reported layout, so it would draw any
+  // board — but "would draw" is not "has been looked at", and a case swept
+  // around a shape nobody has seen is a good way to ship a puddle. Sofle is the
+  // one that has been, so Sofle is the one that gets offered it.
+  const canSolid = /sofle/i.test(layout?.name ?? "");
+  const solidView = canSolid && solid;
+  // Cap and colour only. The hold line, the behavior name and the type dot are
+  // a flat-board affordance; a keycap gets a legend.
+  const legends = keys.map((_, position) => {
+    const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
+    return { cap: b.name, type: b.type };
+  });
   // Only the types this layer actually uses. A legend listing ten colours
   // where the board shows three is decoration; one that matches what is on
   // screen is a key to it.
@@ -864,7 +880,17 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
         <div className="kmap__bar">
           <h3 className="sec sec--flush">Key bindings</h3>
           <span className="actions__gap" />
-          <div className="zoom" role="group" aria-label="Board size">
+          {canSolid && (
+            <div className="zoom" role="group" aria-label="How to draw the board">
+              <button className={"zoom__btn" + (solidView ? " is-active" : "")}
+                      onClick={() => setSolid(true)} aria-pressed={solidView}>3D</button>
+              <button className={"zoom__btn" + (solidView ? "" : " is-active")}
+                      onClick={() => setSolid(false)} aria-pressed={!solidView}>Flat</button>
+            </div>
+          )}
+          {/* The 3D view zooms on its own wheel, so this would be a second
+              control for the same thing pointing at the wrong one. */}
+          <div className="zoom" role="group" aria-label="Board size" hidden={solidView}>
             <button
               className="zoom__btn"
               onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(2)))}
@@ -887,7 +913,24 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
           </div>
         </div>
 
-        {layout ? (
+        {layout && solidView && (
+          <>
+            <Sofle
+              keys={keys}
+              labels={legends}
+              active={picking}
+              onPick={(position) => setPicking(picking === position ? null : position)}
+            />
+            <p className="ctl__hint">
+              Drag to look around, wheel to zoom, click a key to change it. The
+              case is swept around the key positions this board reported, so it
+              is the shape of your layout rather than a picture of someone
+              else's.
+            </p>
+          </>
+        )}
+
+        {layout && !solidView ? (
           <div className="kmap__wrap">
             <div className="kmap" style={{ aspectRatio: `${spanX} / ${spanY}`, width: `${zoom * 100}%` }}>
               {keys.map((k, position) => {
@@ -1001,14 +1044,16 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
               )}
             </div>
           </div>
-        ) : (
+        ) : null}
+
+        {!layout && (
           <p className="ctl__hint">
             This board reports no physical layout, so its keys cannot be drawn in
             position. The bindings are still listed below.
           </p>
         )}
 
-        {layout && (() => {
+        {layout && !solidView && (() => {
           // Grouped by encoder, not by layout order. Listing them in raw position
           // order put Volume Up, then the other wheel, then Volume Down — the two
           // halves of one encoder split by an unrelated key.
