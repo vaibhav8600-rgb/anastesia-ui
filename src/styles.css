@@ -2996,3 +2996,111 @@ button.rail__item:hover { background: var(--glass-bg-3); }
   background: color-mix(in srgb, var(--accent) 20%, var(--glass-bg-3));
   font-weight: 600;
 }
+
+/* ---------- the board in three dimensions ----------
+   Same frame as the flat board so switching between them does not move the
+   page under you. */
+
+.board3d {
+  position: relative;
+  margin: 0.75rem 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--glass-bg-2);
+  box-shadow: var(--glass-shadow-2), var(--glass-highlight-2);
+  overflow: hidden;
+}
+
+/* Tall enough for a split board seen from above at a tilt, and it grows with
+   the column rather than being pinned to the viewport. */
+.board3d__view {
+  aspect-ratio: 16 / 9;
+  min-height: 260px;
+  cursor: grab;
+  touch-action: none;
+}
+.board3d__view:active { cursor: grabbing; }
+.board3d__view canvas { display: block; width: 100%; height: 100%; }
+
+.board3d__views {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-1);
+  overflow: hidden;
+}
+.board3d__views .zoom__btn + .zoom__btn { border-left: 1px solid var(--line); }
+
+/* The chosen half of a two-way switch. `is-active` is the app's word for it
+   everywhere else, so it is the word here. */
+.zoom__btn.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The 3D board's own settings. A disclosure rather than a panel: they are
+   worth having and not worth looking at every time. */
+.board3d__panel {
+  margin: 0 0 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--glass-bg-2);
+}
+.board3d__panel > summary {
+  padding: 0.6rem 0;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-label);
+  cursor: pointer;
+}
+.board3d__panel .codes__title { margin-top: 0.75rem; }
+.board3d__panel .ctl { margin-bottom: 0.5rem; }
+
+/* A colourway: the two cap colours it uses, and its name. */
+.sw {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-3);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+  text-align: left;
+  cursor: pointer;
+}
+.sw:hover { border-color: var(--line); }
+.sw.is-active { border-color: var(--accent); }
+.sw i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 18%, transparent);
+}
+
+/* An icon on a keycap. Sized in em so it follows the cap's own type scale,
+   which is already fitted to the key — and coloured by inheritance, so it
+   picks up the type tint and the hover state without knowing about either. */
+.kmap__glyph {
+  display: block;
+  width: 1.5em;
+  height: 1.5em;
+  color: var(--text);
+}
+/* With no text under it, the icon is the legend and can have the room. */
+.kmap__key:not(:has(.kmap__cap:not(:empty))) .kmap__glyph { width: 2em; height: 2em; }
+/* With a hold line as well, three things share the cap and it gives ground. */
+.kmap__key:has(.kmap__sub) .kmap__glyph { width: 1.15em; height: 1.15em; }
+
+/* The model's hover card follows the pointer, so unlike the flat board's it
+   is positioned in pixels rather than in percentages of a key. */
+.board3d__card { position: absolute; z-index: 6; transform: translate(-50%, calc(-100% - 14px)); }
+.board3d__card[data-below] { transform: translate(-50%, 14px); }

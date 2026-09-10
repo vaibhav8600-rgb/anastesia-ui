@@ -354,6 +354,96 @@ export function tinyKeys(keys) {
   return out;
 }
 
+/** A third of a key unit. Well past rounding, well under any real split. */
+const SEAM_MM = 19.05 / 3;
+
+/**
+ * Which keys belong to which half, from the one vertical line no key crosses.
+ *
+ * Measured edge to edge, not centre to centre. Centres were the first attempt
+ * and they do not work: a Sofle's thumb clusters reach inboard past its inner
+ * column, so the widest gap between centres is inside a half rather than
+ * between them, and the board came out as one piece with a notch in it.
+ *
+ * Keys within a half abut, so any real emptiness spanning the board is the
+ * seam. A third of a key unit is well past rounding and well under the
+ * narrowest gap anyone leaves.
+ */
+export function splitHalves(spots) {
+  if (spots.length < 4) return [spots.map((_, i) => i)];
+  const order = spots
+    .map((s, i) => ({ i, l: s.x - s.w / 2, r: s.x + s.w / 2 }))
+    .sort((a, b) => a.l - b.l);
+  let reach = order[0].r, best = 0, at = -1;
+  for (let n = 1; n < order.length; n++) {
+    const gap = order[n].l - reach;
+    if (gap > best) { best = gap; at = n; }
+    reach = Math.max(reach, order[n].r);
+  }
+  if (best < SEAM_MM || at < 0) return [spots.map((_, i) => i)];
+  return [order.slice(0, at).map((o) => o.i), order.slice(at).map((o) => o.i)];
+}
+
+/**
+ * The key positions that are encoders rather than keycaps.
+ *
+ * An encoder's push is a switch, so the board reports it as a key position
+ * like any other — a 58-key Sofle arrives as 60. The reference model has no
+ * such position at all: it draws 58 keycaps and then places two knobs from
+ * measured constants. Its measurements are the useful part, so they are what
+ * finds the switch here.
+ *
+ * The first attempt looked for isolation, on the theory that an encoder sits
+ * on its own. On a real board it does not sit far enough on its own — it has a
+ * keycap within a key unit of it — and no encoder was found at all. So this
+ * asks where the reference says the knob is instead: inboard of every column
+ * of the key block, about 48mm behind the top row.
+ *
+ * Both halves of that matter. Inboard of the block rules out the block itself,
+ * and the depth rules out the rotated thumb key, which is also inboard and
+ * also alone in its column but sits 40mm further down. A board with nothing at
+ * that spot gets no knob, which is the right answer for a board with no
+ * encoder.
+ */
+const COL_MIN = 3;            // keys sharing an x before it counts as a column
+const ENCODER_Z = 48;         // the reference's own measurement, millimetres
+const ENCODER_Z_SLOP = 26;    // nearer the thumb row than this and it is a key
+
+export function encoderKeys(spots, halves) {
+  const out = new Set();
+  // One knob per half, and the halves are what say which way "inboard" is.
+  if (!halves || halves.length !== 2) return out;
+  halves.forEach((idx, side) => {
+    if (idx.length < 8) return;
+    const sign = side === 0 ? 1 : -1;
+    const cols = new Map();
+    for (const p of idx) {
+      const k = Math.round(spots[p].x / (19.05 / 4));
+      if (!cols.has(k)) cols.set(k, []);
+      cols.get(k).push(p);
+    }
+    let edge = -Infinity;
+    for (const members of cols.values()) {
+      if (members.length < COL_MIN) continue;
+      const x = spots[members[0]].x * sign;
+      if (x > edge) edge = x;
+    }
+    if (edge === -Infinity) return;
+
+    const zTop = Math.min(...idx.map((p) => spots[p].z));
+    let best = null, bestD = Infinity;
+    for (const members of cols.values()) {
+      if (members.length !== 1) continue;
+      const p = members[0];
+      if (spots[p].x * sign <= edge) continue;
+      const d = Math.abs(spots[p].z - (zTop + ENCODER_Z));
+      if (d <= ENCODER_Z_SLOP && d < bestD) { bestD = d; best = p; }
+    }
+    if (best !== null) out.add(best);
+  });
+  return out;
+}
+
 /** Every response carries exactly one subsystem; find which. */
 export function subsystemOf(rr) {
   for (const k of ["meta", "core", "behaviors", "keymap"]) if (rr?.[k]) return k;
@@ -463,6 +553,68 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
   eq(tinyKeys([]).size, 0, "no keys, no slivers");
   // A board of nothing but slivers is a board of ordinary keys.
   eq(tinyKeys(trackball.slice(8)).size, 0, "smallness is relative, so all-small is all-normal");
+
+  // Where a split board comes apart. Positions here are millimetres, the
+  // shape the 3D view works in.
+  const row = (x0, n) => Array.from({ length: n }, (_, i) => ({ x: x0 + i * 19.05, w: 19.05 }));
+  eq(splitHalves(row(0, 12)).length, 1, "a board with no gap is one board");
+  const apart = [...row(0, 6), ...row(6 * 19.05 + 40, 6)];
+  eq(splitHalves(apart).map((h) => h.length), [6, 6], "a real gap comes apart in the middle");
+  // The shape that broke the first attempt. A Sofle's thumb cluster reaches
+  // inboard past its own inner column, so the seam it leaves is about one key
+  // unit — and the first rule measured centre to centre and wanted two and a
+  // half before it would believe in a split. It found none, and the board was
+  // drawn as one piece with a notch in it. Edge to edge, a thumb key that
+  // overlaps the column above it opens no gap at all, and the only emptiness
+  // spanning the board is the seam.
+  // Written out in key units rather than generated, because the first version
+  // of this fixture put the thumbs outboard by arithmetic slip and passed a
+  // board with no seam in it at all.
+  const at = (n) => ({ x: n * 19.05, w: 19.05 });
+  //                columns    thumbs, the last reaching inboard past column 5
+  const lhs = [0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 6].map(at);
+  const rhs = [8, 9, 10, 11, 12, 13, 8, 9, 10, 11, 12].map(at);
+  eq(splitHalves([...lhs, ...rhs]).map((h) => h.length), [11, 11],
+     "thumb keys reaching inboard do not open a seam of their own");
+  eq(splitHalves([]).length, 1, "no keys, one board");
+  eq(splitHalves(row(0, 2)).length, 1, "too few keys to have a seam");
+
+  // Which reported positions are knobs rather than keycaps. A half here is a
+  // 6x4 block, a four-key thumb row, one rotated thumb inboard at the bottom,
+  // and — where the board has one — an encoder inboard at mid-depth.
+  const U2 = 19.05;
+  const halfAt = (x0, sign, withKnob) => {
+    const out = [];
+    for (let c = 0; c < 6; c++) for (let r = 0; r < 4; r++) {
+      out.push({ x: x0 + sign * c * U2, z: r * U2, w: U2 });
+    }
+    for (let c = 2; c < 6; c++) out.push({ x: x0 + sign * c * U2, z: 4.2 * U2, w: U2 });
+    // The rotated thumb: inboard, alone in its column, and low down.
+    out.push({ x: x0 + sign * 6.3 * U2, z: 88, w: U2 });
+    if (withKnob) out.push({ x: x0 + sign * 6.1 * U2, z: 48, w: U2 });
+    return out;
+  };
+  const build = (withKnob) => {
+    const l = halfAt(0, 1, withKnob);
+    const r = halfAt(14 * U2, -1, withKnob);
+    const all = [...l, ...r];
+    return { all, halves: [l.map((_, i) => i), r.map((_, i) => i + l.length)] };
+  };
+  const withEnc = build(true);
+  eq(encoderKeys(withEnc.all, withEnc.halves).size, 2, "one knob per half, where there is one");
+  const noEnc = build(false);
+  eq(encoderKeys(noEnc.all, noEnc.halves).size, 0, "and none where there is not");
+  // The rotated thumb is the trap: inboard and alone, but far too low.
+  const thumbs = noEnc.halves.flat().filter((i) => noEnc.all[i].z === 88);
+  eq(thumbs.length, 2, "the fixture does have two rotated thumbs to reject");
+  // Isolation, which this replaced, would have missed the real thing: the
+  // encoder here has a keycap one unit away from it.
+  const enc = [...encoderKeys(withEnc.all, withEnc.halves)];
+  const near = enc.map((p) => Math.min(...withEnc.all
+    .map((s, j) => (j === p ? Infinity : Math.hypot(s.x - withEnc.all[p].x, s.z - withEnc.all[p].z)))));
+  console.assert(near.every((d) => d < U2 * 1.25),
+    `the fixture's encoders are meant to have close neighbours: ${near}`);
+  eq(encoderKeys(withEnc.all, null).size, 0, "no halves, no knobs");
 
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");

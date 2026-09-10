@@ -8,6 +8,10 @@ import {
   keyType, usageGroup, usageName, usageShort,
 } from "./keycodes.js";
 import Loading from "./Loading.jsx";
+import Sofle from "./Sofle.jsx";
+import {
+  GLYPHS, PAIR_SCALE, PAIR_X, PAIR_Y, badgeFor, iconFor, shapesOf,
+} from "./glyphs.js";
 
 // The keymap editor: layers, key positions and bindings, read and written over
 // ZMK Studio's RPC.
@@ -150,6 +154,31 @@ class Link {
 /** UNLOCK_REQUIRED from zmk/meta.proto. */
 const ERR_LOCKED = 1;
 /**
+ * One icon, from the same path data the 3D legend strokes onto its canvas.
+ *
+ * `currentColor` so it takes the keycap's own colour, and no width or height,
+ * so the em size of whatever it sits in decides how big it is.
+ */
+export function Glyph({ name, className = "kmap__glyph" }) {
+  const shapes = shapesOf(name);
+  if (!shapes) return null;
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true"
+         fill="none" stroke="currentColor" strokeWidth="2"
+         strokeLinecap="round" strokeLinejoin="round">
+      {shapes.length === 1 ? <path d={GLYPHS[shapes[0]]} /> : shapes.map((n, i) => (
+        // non-scaling-stroke so half-size shapes keep full-weight lines. The
+        // alternative is dividing the width by the scale in two places and
+        // having them disagree.
+        <g key={n + i} transform={`translate(${PAIR_X[i]} ${PAIR_Y}) scale(${PAIR_SCALE})`}>
+          <path d={GLYPHS[n]} vectorEffect="non-scaling-stroke" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/**
  * A binding, as everything the UI needs to say about it.
  *
  * One pass, because the cap, the colour, the tooltip and the accessible name
@@ -167,7 +196,7 @@ function describe(binding, behaviors, layers) {
   const name = b?.display_name ?? `#${id}`;
   const p1 = binding.param1 ?? 0;
   const p2 = binding.param2 ?? 0;
-  const meta = b?.metadata?.[0] ?? {};
+  const meta = metaOf(b?.metadata, p1);
   const i1 = paramInfo(meta.param1);
   const i2 = paramInfo(meta.param2);
 
@@ -188,18 +217,38 @@ function describe(binding, behaviors, layers) {
     return null;
   };
   const typeWord = (slug) => KEY_TYPES.find(([t]) => t === slug)?.[1] ?? null;
+  // The name the firmware gave this value, where it gave one. BT_SEL, OUT_TOG,
+  // MB2 — read rather than guessed, which is what an icon is chosen from.
+  const constName = (info, value) => (info.kind === "constant"
+    ? info.options.find((o) => o.constant === value)?.name : null);
+  const iconOf = (v1, v2) => iconFor(name,
+    constName(i1, v1) ?? constName(i2, v2),
+    (i1.kind === "constant" && MOUSE_BUTTONS[v1] && v1)
+      || (i2.kind === "constant" && MOUSE_BUTTONS[v2] && v2) || 0,
+    v1);
+  // The keycap's text, once an icon is carrying the meaning. `badgeFor`
+  // returns null when the text should stand as it was, and the bluetooth
+  // profile number even when that number is zero.
+  const capOf = (icon, v1, v2, fallback) =>
+    badgeFor(icon, constName(i1, v1) ?? constName(i2, v2), v2) ?? fallback;
 
   // A key that sends one thing reads as that thing — and what that thing is
   // comes from the parameter's own declaration, never from the behavior's
   // name. Matching names is a guess about one firmware's naming habits dressed
   // up as a rule, and it is how "Hold/tap (layer/mouse key)" got its layer read
   // as a mouse button.
-  if (p1 && i1.kind !== "none" && i2.kind === "none") {
+  // Not `if (p1 && ...)`. Whether a parameter exists is what its metadata
+  // says, not whether its value happens to be non-zero — BT_CLR is 0 and so is
+  // layer 0, and both were falling through to "this behavior takes no
+  // parameters" and printing the behavior's name instead of the binding.
+  if (i1.kind !== "none" && i2.kind === "none") {
     const type = typeOf(i1, p1);
+    const icon = iconOf(p1, p2);
     return {
-      name: paramShort(i1, p1, layers),
+      name: capOf(icon, p1, p2, paramShort(i1, p1, layers)),
       action: name,
       type,
+      icon,
       full: paramValueName(i1, p1, layers),
       detail: name,
       rows: [
@@ -229,11 +278,16 @@ function describe(binding, behaviors, layers) {
     // it in smaller type, prefixed so the two are never mistaken for each other.
     // The colour follows the cap for the same reason.
     const type = typeOf(i2, p2);
+    const icon = iconOf(p1, p2);
     return {
-      name: paramShort(i2, p2, layers),
-      sub: `hold ${paramShort(i1, p1, layers)}`,
+      name: capOf(icon, p1, p2, paramShort(i2, p2, layers)),
+      // "hold" belongs to a hold-tap. Anything else with two parameters gets
+      // the first one plainly, or nothing at all when an icon already says it.
+      sub: holdTap ? `hold ${paramShort(i1, p1, layers)}`
+        : (icon ? null : paramShort(i1, p1, layers)),
       action: name,
       type,
+      icon,
       full: `${name} — ${parts.join(", ")}`,
       detail: null,
       rows: [
@@ -245,10 +299,19 @@ function describe(binding, behaviors, layers) {
     };
   }
   const rows = [["Action", name], ...(parts.length ? [["Sends", parts.join(", ")]] : [])];
-  if (parts.length) return { name, action: name, type: "other", full: `${name} — ${parts.join(", ")}`, detail: null, rows };
+  if (parts.length) {
+    const icon = iconOf(p1, p2);
+    return { name: capOf(icon, p1, p2, name), action: name, type: "other", icon,
+      full: `${name} — ${parts.join(", ")}`, detail: null, rows };
+  }
   // No parameters at all: the behavior's name is the whole story, so it is the
   // cap rather than a caption above an empty one.
-  return { name, action: null, type: "other", full: name, detail: null, rows };
+  // A behavior with no parameters at all — a macro, usually. Its name is the
+  // whole story unless an icon is telling it: a macro called mouse_move_up
+  // beside an arrow pointing up does not need to say so twice.
+  const bare = iconFor(name, null, 0);
+  return { name: badgeFor(bare, null, 0) ?? name, action: null, type: "other",
+    icon: bare, full: name, detail: null, rows };
 }
 
 /**
@@ -342,6 +405,9 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   // — forty keys on a wide screen leave a lot of room, and a hundred-key board
   // on a laptop leaves none.
   const [zoom, setZoom] = useState(1);
+  // Drawn as a board rather than as a diagram. Only offered where the shape has
+  // been looked at, and remembered per session rather than per board.
+  const [solid, setSolid] = useState(true);
 
   const load = useCallback(async () => {
     const l = link.current;
@@ -742,6 +808,18 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   const tinies = tinyKeys(keys);
 
   const activeLayout = layouts?.active_layout_index ?? 0;
+  // The 3D view builds itself from the reported layout, so it would draw any
+  // board — but "would draw" is not "has been looked at", and a case swept
+  // around a shape nobody has seen is a good way to ship a puddle. Sofle is the
+  // one that has been, so Sofle is the one that gets offered it.
+  const canSolid = /sofle/i.test(layout?.name ?? "");
+  const solidView = canSolid && solid;
+  // Cap and colour only. The hold line, the behavior name and the type dot are
+  // a flat-board affordance; a keycap gets a legend.
+  const legends = keys.map((_, position) => {
+    const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
+    return { cap: b.name, type: b.type, icon: b.icon };
+  });
   // Only the types this layer actually uses. A legend listing ten colours
   // where the board shows three is decoration; one that matches what is on
   // screen is a key to it.
@@ -864,7 +942,17 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
         <div className="kmap__bar">
           <h3 className="sec sec--flush">Key bindings</h3>
           <span className="actions__gap" />
-          <div className="zoom" role="group" aria-label="Board size">
+          {canSolid && (
+            <div className="zoom" role="group" aria-label="How to draw the board">
+              <button className={"zoom__btn" + (solidView ? " is-active" : "")}
+                      onClick={() => setSolid(true)} aria-pressed={solidView}>3D</button>
+              <button className={"zoom__btn" + (solidView ? "" : " is-active")}
+                      onClick={() => setSolid(false)} aria-pressed={!solidView}>Flat</button>
+            </div>
+          )}
+          {/* The 3D view zooms on its own wheel, so this would be a second
+              control for the same thing pointing at the wrong one. */}
+          <div className="zoom" role="group" aria-label="Board size" hidden={solidView}>
             <button
               className="zoom__btn"
               onClick={() => setZoom((z) => Math.max(0.6, +(z - 0.2).toFixed(2)))}
@@ -887,7 +975,40 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
           </div>
         </div>
 
-        {layout ? (
+        {layout && solidView && (
+          <>
+            <Sofle
+              keys={keys}
+              labels={legends}
+              active={picking}
+              onPick={(position) => setPicking(picking === position ? null : position)}
+              // What the nice!views show. The reference painted battery,
+              // Bluetooth profiles and words per minute; none of that reaches
+              // this app, and a drawn battery reading is worse than no reading.
+              // These four are things the editor actually knows.
+              // The hover card's rows, asked for one key at a time rather than
+              // built for sixty on every render.
+              detail={(position) => describe(current?.bindings?.[position],
+                behaviors, keymap?.layers).rows}
+              info={{
+                device: device?.name ?? "ZMK",
+                layer: current?.name ?? `Layer ${layer}`,
+                index: layer,
+                layers: keymap?.layers?.length ?? 1,
+                keys: keys.length,
+                dirty,
+              }}
+            />
+            <p className="ctl__hint">
+              Drag to look around, wheel to zoom, click a key to change it. The
+              case is swept around the key positions this board reported, so it
+              is the shape of your layout rather than a picture of someone
+              else's.
+            </p>
+          </>
+        )}
+
+        {layout && !solidView ? (
           <div className="kmap__wrap">
             <div className="kmap" style={{ aspectRatio: `${spanX} / ${spanY}`, width: `${zoom * 100}%` }}>
               {keys.map((k, position) => {
@@ -925,8 +1046,12 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                 // to spare. They are two different pieces of information at two
                 // different sizes; the tap is the one you read.
                 const chars = Math.max(2, Math.min((b.name ?? "").length, 11));
+                // An icon takes a line and a half of the cap's height, so the
+                // text under it gets what is left rather than what it would
+                // have had on its own.
+                const room = b.icon ? (b.sub ? 0.17 : 0.21) : (b.sub ? 0.28 : 0.30);
                 const size = ((w / spanX) * 100
-                  * Math.min(b.sub ? 0.28 : 0.30, 1 / (chars * 0.78))).toFixed(2);
+                  * Math.min(room, 1 / (chars * 0.78))).toFixed(2);
                 const subChars = Math.max(4, Math.min((b.sub ?? "").length, 16));
                 const subSize = ((w / spanX) * 100
                   * Math.min(0.13, 1 / (subChars * 0.72))).toFixed(2);
@@ -961,6 +1086,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                     {tiny ? <span className="kmap__dot" aria-hidden="true" /> : (
                       <>
                         {b.action && <span className="kmap__action">{b.action}</span>}
+                        {b.icon && <Glyph name={b.icon} />}
                         <span className="kmap__cap">{b.name}</span>
                         {b.sub && (
                           <span className="kmap__sub"
@@ -1001,14 +1127,16 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
               )}
             </div>
           </div>
-        ) : (
+        ) : null}
+
+        {!layout && (
           <p className="ctl__hint">
             This board reports no physical layout, so its keys cannot be drawn in
             position. The bindings are still listed below.
           </p>
         )}
 
-        {layout && (() => {
+        {layout && !solidView && (() => {
           // Grouped by encoder, not by layout order. Listing them in raw position
           // order put Volume Up, then the other wheel, then Volume Down — the two
           // halves of one encoder split by an unrelated key.
@@ -1086,6 +1214,61 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
 }
 
 /**
+ * The metadata set a binding's value actually belongs to.
+ *
+ * `metadata` is repeated, and only the first was ever read. That is wrong for
+ * any behavior that declares more than one shape, and `&bt` is exactly that:
+ * one set holds the constants that take no profile — clear, next, previous —
+ * and another holds BT_SEL and BT_DISC together with the profile range. Read
+ * the first set only, and selecting a profile finds no constant list at all:
+ * no name to choose an icon from, no range for the number, and a cap printing
+ * the raw 3 that BT_SEL happens to equal.
+ *
+ * So: the set whose first parameter can actually hold this value. Failing
+ * that, the set that declares the most, because offering every control the
+ * behavior has beats offering the fewest.
+ */
+export function metaOf(sets, p1) {
+  if (!sets?.length) return {};
+  if (sets.length === 1) return sets[0];
+  for (const set of sets) {
+    const info = paramInfo(set.param1);
+    if (info.kind === "constant" && info.options.some((o) => o.constant === p1)) return set;
+  }
+  for (const set of sets) {
+    const { range } = paramInfo(set.param1);
+    if (range && p1 >= range.min && p1 <= range.max) return set;
+  }
+  const size = (s) => (s.param1?.length ?? 0) + (s.param2?.length ?? 0);
+  return [...sets].sort((a, b) => size(b) - size(a))[0];
+}
+
+/**
+ * The first parameter's choices, gathered across every set.
+ *
+ * `metaOf` picks the one set a value belongs to, which is right for reading a
+ * binding and wrong for offering one. A behavior can split its constants
+ * across sets — `&bt` puts clear, next and previous in one and Select Profile
+ * and Disconnect in another — and the picker resets the value to 0 when you
+ * change behavior, so it landed in the set holding constant 0 and the other
+ * set's constants were unreachable. Bluetooth profiles could not be bound at
+ * all.
+ *
+ * Merged only when every set declares constants there. Mixing descriptor
+ * kinds across sets is how a layer parameter gets read as a mouse button, and
+ * that is a mistake worth only making once.
+ */
+export function firstParamInfo(sets) {
+  const infos = (sets ?? []).map((set) => paramInfo(set.param1));
+  if (infos.length < 2 || !infos.every((i) => i.kind === "constant")) {
+    return infos[0] ?? { kind: "none" };
+  }
+  const seen = new Map();
+  for (const i of infos) for (const o of i.options) seen.set(o.constant, o);
+  return { kind: "constant", options: [...seen.values()] };
+}
+
+/**
  * What one parameter actually is, read from its own descriptors.
  *
  * This has to be per parameter, not per behavior. "Hold/tap (layer/mouse key)"
@@ -1123,7 +1306,7 @@ const TYPE_WORD = {
 export function pairings(behaviors) {
   return [...behaviors.values()]
     .map((b) => {
-      const set = b.metadata?.[0] ?? {};
+      const set = metaOf(b.metadata, 0);
       const i1 = paramInfo(set.param1);
       const i2 = paramInfo(set.param2);
       return { id: b.id, name: b.display_name || `#${b.id}`, i1, i2 };
@@ -1149,7 +1332,11 @@ export function paramShort(info, value, layers) {
   if (info.kind === "layer") return layers?.[value]?.name || `L${value}`;
   if (info.kind === "constant") {
     const found = info.options.find((o) => o.constant === value);
-    return MOUSE_BUTTONS[value] ?? found?.name ?? String(value);
+    // The name says whether this is a mouse button, not the number. Reading
+    // MOUSE_BUTTONS by value alone made OUT_USB, which is 1, print as "Left
+    // Click" — the same mistake the icons were making, in the text.
+    if (/^mb\d/i.test(found?.name ?? "")) return usageShort(value, "mouse") ?? found.name;
+    return found?.name ?? String(value);
   }
   if (info.kind === "range") return String(value);
   return usageShort(value) ?? String(value);
@@ -1313,8 +1500,12 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick, layers }
     : list;
 
   const chosen = behaviors.get(id);
-  const set = chosen?.metadata?.[0] ?? {};
-  const i1 = paramInfo(set.param1);
+  // Every constant the behavior has for its first parameter, and then the
+  // second parameter of whichever set the chosen value actually belongs to —
+  // so the profile number appears exactly when a profile-taking constant is
+  // picked, and not before.
+  const set = metaOf(chosen?.metadata, param1);
+  const i1 = firstParamInfo(chosen?.metadata);
   const i2 = paramInfo(set.param2);
   const pairs = pairings(behaviors);
 
