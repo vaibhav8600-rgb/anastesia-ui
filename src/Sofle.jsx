@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { encoderKeys, splitHalves } from "./studio.js";
+import { drawGlyph } from "./glyphs.js";
 
 // A split keyboard, in three dimensions, built from what the board reported.
 //
@@ -22,6 +23,11 @@ const CAP_BOT = 15;     // keycap underside
 const CAP_H = 10.8;
 const CASE_TOP = 13;    // top of the rim
 const TRAVEL = 2.4;     // how far a cap drops when pressed
+// The gap between one keycap and the next, in millimetres. A real MX cap is
+// 18mm on 19.05 spacing, so a tenth of this — but a board drawn at 400 pixels
+// wide needs the separation to survive being small, and the plate showing
+// through is what makes the caps read as separate objects.
+const CAP_GAP = 5.2;
 
 // nice!view: LS011B7DH03, 1.08 inch, 160x68, module 36 x 14 x 2.9 mm, mounted
 // with its long axis running front to back so the panel is portrait.
@@ -222,7 +228,7 @@ function place(k) {
 
 /* ---------------------------------------------------------------- textures */
 
-function labelCanvas(text, colour) {
+function labelCanvas(text, colour, icon) {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
   const g = c.getContext("2d");
@@ -230,6 +236,17 @@ function labelCanvas(text, colour) {
   g.fillStyle = colour;
   g.textAlign = "center";
   g.textBaseline = "middle";
+
+  // An icon takes the middle of the cap and the text drops under it — the same
+  // order the flat board uses, drawn from the same path data.
+  if (icon && drawGlyph(g, icon, 64, text ? 48 : 64, text ? 52 : 68, colour, 2.2)) {
+    if (text) {
+      g.font = "600 26px system-ui, sans-serif";
+      g.fillText(text.length > 5 ? text.slice(0, 5) : text, 64, 100);
+    }
+    return c;
+  }
+
   const n = (text ?? "").length;
   const size = n > 7 ? 20 : n > 4 ? 26 : n > 1 ? 36 : 54;
   g.font = `600 ${size}px system-ui, sans-serif`;
@@ -430,11 +447,14 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
 
         const ck = `${s.w.toFixed(1)}x${s.h.toFixed(1)}`;
         if (!capGeo.has(ck)) {
-          capGeo.set(ck, track(flatExtrude(roundedRect(s.w - 3.4, s.h - 3.4, 2.0), CAP_H - 2.8, 1.4)));
+          capGeo.set(ck, track(flatExtrude(
+            roundedRect(s.w - CAP_GAP, s.h - CAP_GAP, 2.0), CAP_H - 2.8, 1.4)));
         }
         if (!stemGeo.has(ck)) {
           const t = CAP_BOT - PLATE_Y + 0.6;
-          const box = track(new THREE.BoxGeometry(Math.max(2, s.w - 4.6), t, Math.max(2, s.h - 4.6)));
+          // The stem has to stay inside the cap above it, whatever the gap is.
+          const box = track(new THREE.BoxGeometry(
+            Math.max(2, s.w - CAP_GAP - 1.4), t, Math.max(2, s.h - CAP_GAP - 1.4)));
           box.translate(0, t / 2, 0);
           stemGeo.set(ck, box);
         }
@@ -495,7 +515,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         stem.rotation.y = s.rot;
         g.add(stem);
 
-        const tex = track(new THREE.CanvasTexture(labelCanvas(info2.cap, th0.legend)));
+        const tex = track(new THREE.CanvasTexture(labelCanvas(info2.cap, th0.legend, info2.icon)));
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
         const lg = track(new THREE.PlaneGeometry(Math.min(s.w, s.h) * 0.74, Math.min(s.w, s.h) * 0.74));
@@ -506,7 +526,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         legend.position.set(s.x, CAP_BOT + CAP_H + 0.06, s.z);
         legend.rotation.y = s.rot;
         g.add(legend);
-        legends[position] = { mesh: legend, text: info2.cap };
+        legends[position] = { mesh: legend, text: info2.cap, icon: info2.icon };
       }
 
       // The inner edge of this half — where a Sofle puts its display and its
@@ -596,7 +616,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
 
     // --------------------------------------------------------------- pose
     // Declared up here because pose() refits the camera and pose() runs first.
-    const cam = { theta: Math.PI / 2 + 0.3, phi: 0.78, dist: 0, target: new THREE.Vector3() };
+    const cam = { theta: Math.PI / 2, phi: 0.09, dist: 0, target: new THREE.Vector3() };
     let touched = false;
     let span, focus, corners = [];
     const remeasure = () => {
@@ -715,7 +735,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       legends.forEach((l) => {
         if (!l) return;
         l.mesh.material.map?.dispose();
-        const t = new THREE.CanvasTexture(labelCanvas(l.text, th.legend));
+        const t = new THREE.CanvasTexture(labelCanvas(l.text, th.legend, l.icon));
         t.colorSpace = THREE.SRGBColorSpace;
         t.anisotropy = 8;
         l.mesh.material.map = t;
@@ -869,7 +889,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         }
       },
       view(name) {
-        if (name === "top") { cam.theta = Math.PI / 2; cam.phi = 0.07; }
+        if (name === "top") { cam.theta = Math.PI / 2; cam.phi = 0.09; }
         else if (name === "front") { cam.theta = Math.PI / 2; cam.phi = 1.32; }
         else if (name === "thumbs") { cam.theta = Math.PI / 2 + 0.85; cam.phi = 0.62; }
         else if (name === "screen") { cam.theta = Math.PI / 2 + 0.1; cam.phi = 0.5; }
@@ -968,7 +988,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         <div className="board3d__view" ref={host} tabIndex={0} role="application"
              aria-label="The board in three dimensions. Click a key to edit it." />
         <div className="board3d__views">
-          {[["iso", "Iso"], ["top", "Top"], ["front", "Front"],
+          {[["top", "Top"], ["iso", "Iso"], ["front", "Front"],
             ["thumbs", "Thumbs"], ["screen", "Screen"]].map(([k, label]) => (
             <button key={k} className="zoom__btn" onClick={() => api.current?.view(k)}>{label}</button>
           ))}

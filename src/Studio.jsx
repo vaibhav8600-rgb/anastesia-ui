@@ -9,6 +9,7 @@ import {
 } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 import Sofle from "./Sofle.jsx";
+import { GLYPHS, iconFor } from "./glyphs.js";
 
 // The keymap editor: layers, key positions and bindings, read and written over
 // ZMK Studio's RPC.
@@ -151,6 +152,24 @@ class Link {
 /** UNLOCK_REQUIRED from zmk/meta.proto. */
 const ERR_LOCKED = 1;
 /**
+ * One icon, from the same path data the 3D legend strokes onto its canvas.
+ *
+ * `currentColor` so it takes the keycap's own colour, and no width or height,
+ * so the em size of whatever it sits in decides how big it is.
+ */
+export function Glyph({ name, className = "kmap__glyph" }) {
+  const d = GLYPHS[name];
+  if (!d) return null;
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true"
+         fill="none" stroke="currentColor" strokeWidth="2"
+         strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  );
+}
+
+/**
  * A binding, as everything the UI needs to say about it.
  *
  * One pass, because the cap, the colour, the tooltip and the accessible name
@@ -189,6 +208,14 @@ function describe(binding, behaviors, layers) {
     return null;
   };
   const typeWord = (slug) => KEY_TYPES.find(([t]) => t === slug)?.[1] ?? null;
+  // The name the firmware gave this value, where it gave one. BT_SEL, OUT_TOG,
+  // MB2 — read rather than guessed, which is what an icon is chosen from.
+  const constName = (info, value) => (info.kind === "constant"
+    ? info.options.find((o) => o.constant === value)?.name : null);
+  const iconOf = (v1, v2) => iconFor(name,
+    constName(i1, v1) ?? constName(i2, v2),
+    (i1.kind === "constant" && MOUSE_BUTTONS[v1] && v1)
+      || (i2.kind === "constant" && MOUSE_BUTTONS[v2] && v2) || 0);
 
   // A key that sends one thing reads as that thing — and what that thing is
   // comes from the parameter's own declaration, never from the behavior's
@@ -201,6 +228,7 @@ function describe(binding, behaviors, layers) {
       name: paramShort(i1, p1, layers),
       action: name,
       type,
+      icon: iconOf(p1, p2),
       full: paramValueName(i1, p1, layers),
       detail: name,
       rows: [
@@ -235,6 +263,7 @@ function describe(binding, behaviors, layers) {
       sub: `hold ${paramShort(i1, p1, layers)}`,
       action: name,
       type,
+      icon: iconOf(p1, p2),
       full: `${name} — ${parts.join(", ")}`,
       detail: null,
       rows: [
@@ -246,10 +275,14 @@ function describe(binding, behaviors, layers) {
     };
   }
   const rows = [["Action", name], ...(parts.length ? [["Sends", parts.join(", ")]] : [])];
-  if (parts.length) return { name, action: name, type: "other", full: `${name} — ${parts.join(", ")}`, detail: null, rows };
+  if (parts.length) {
+    return { name, action: name, type: "other", icon: iconOf(p1, p2),
+      full: `${name} — ${parts.join(", ")}`, detail: null, rows };
+  }
   // No parameters at all: the behavior's name is the whole story, so it is the
   // cap rather than a caption above an empty one.
-  return { name, action: null, type: "other", full: name, detail: null, rows };
+  return { name, action: null, type: "other", icon: iconFor(name, null, 0),
+    full: name, detail: null, rows };
 }
 
 /**
@@ -756,7 +789,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
   // a flat-board affordance; a keycap gets a legend.
   const legends = keys.map((_, position) => {
     const b = describe(current?.bindings?.[position], behaviors, keymap?.layers);
-    return { cap: b.name, type: b.type };
+    return { cap: b.name, type: b.type, icon: b.icon };
   });
   // Only the types this layer actually uses. A legend listing ten colours
   // where the board shows three is decoration; one that matches what is on
@@ -980,8 +1013,12 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                 // to spare. They are two different pieces of information at two
                 // different sizes; the tap is the one you read.
                 const chars = Math.max(2, Math.min((b.name ?? "").length, 11));
+                // An icon takes a line and a half of the cap's height, so the
+                // text under it gets what is left rather than what it would
+                // have had on its own.
+                const room = b.icon ? (b.sub ? 0.17 : 0.21) : (b.sub ? 0.28 : 0.30);
                 const size = ((w / spanX) * 100
-                  * Math.min(b.sub ? 0.28 : 0.30, 1 / (chars * 0.78))).toFixed(2);
+                  * Math.min(room, 1 / (chars * 0.78))).toFixed(2);
                 const subChars = Math.max(4, Math.min((b.sub ?? "").length, 16));
                 const subSize = ((w / spanX) * 100
                   * Math.min(0.13, 1 / (subChars * 0.72))).toFixed(2);
@@ -1016,6 +1053,7 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
                     {tiny ? <span className="kmap__dot" aria-hidden="true" /> : (
                       <>
                         {b.action && <span className="kmap__action">{b.action}</span>}
+                        {b.icon && <Glyph name={b.icon} />}
                         <span className="kmap__cap">{b.name}</span>
                         {b.sub && (
                           <span className="kmap__sub"

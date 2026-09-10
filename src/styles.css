@@ -3085,3 +3085,17 @@ button.rail__item:hover { background: var(--glass-bg-3); }
   border-radius: 4px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 18%, transparent);
 }
+
+/* An icon on a keycap. Sized in em so it follows the cap's own type scale,
+   which is already fitted to the key — and coloured by inheritance, so it
+   picks up the type tint and the hover state without knowing about either. */
+.kmap__glyph {
+  display: block;
+  width: 1.5em;
+  height: 1.5em;
+  color: var(--text);
+}
+/* With no text under it, the icon is the legend and can have the room. */
+.kmap__key:not(:has(.kmap__cap:not(:empty))) .kmap__glyph { width: 2em; height: 2em; }
+/* With a hold line as well, three things share the cap and it gives ground. */
+.kmap__key:has(.kmap__sub) .kmap__glyph { width: 1.15em; height: 1.15em; }
