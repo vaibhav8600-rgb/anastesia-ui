@@ -306,8 +306,12 @@ function describe(binding, behaviors, layers) {
   }
   // No parameters at all: the behavior's name is the whole story, so it is the
   // cap rather than a caption above an empty one.
-  return { name, action: null, type: "other", icon: iconFor(name, null, 0),
-    full: name, detail: null, rows };
+  // A behavior with no parameters at all — a macro, usually. Its name is the
+  // whole story unless an icon is telling it: a macro called mouse_move_up
+  // beside an arrow pointing up does not need to say so twice.
+  const bare = iconFor(name, null, 0);
+  return { name: badgeFor(bare, null, 0) ?? name, action: null, type: "other",
+    icon: bare, full: name, detail: null, rows };
 }
 
 /**

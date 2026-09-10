@@ -46,14 +46,15 @@ export const GLYPHS = {
  * already knows how to place a glyph, so it places two.
  */
 export const PAIRS = {
-  btClear: ["bluetooth", "eraser"],
-  btDisc: ["bluetooth", "trash"],
-  outUsb: ["swap", "usb"],
-  outBle: ["swap", "bluetooth"],
-  mouseUp: ["mouseBody", "arrowUp"],
-  mouseDown: ["mouseBody", "arrowDown"],
-  mouseLeft: ["mouseBody", "arrowLeft"],
-  mouseRight: ["mouseBody", "arrowRight"],
+  btClear: ["bluetooth", "eraser"],       // clear the selected profile
+  btClearAll: ["bluetooth", "trash"],     // clear all of them
+  btDisc: ["bluetooth", "eject"],         // drop the connection, keep the pairing
+  outUsb: ["usb", "swap"],
+  outBle: ["bluetooth", "swap"],
+  mouseUp: ["move", "arrowUp"],
+  mouseDown: ["move", "arrowDown"],
+  mouseLeft: ["move", "arrowLeft"],
+  mouseRight: ["move", "arrowRight"],
   scrollUp: ["scroll", "arrowUp"],
   scrollDown: ["scroll", "arrowDown"],
   scrollLeft: ["scroll", "arrowLeft"],
@@ -91,12 +92,55 @@ export function packedDirection(v, kind) {
   return up ? "Up" : "Down";
 }
 
-/** Which way a movement behavior goes, from its own name. */
-function directionOf(b) {
-  if (/(^|[^a-z])up([^a-z]|$)|_u$/.test(b)) return "Up";
-  if (/(^|[^a-z])down([^a-z]|$)|_d$/.test(b)) return "Down";
-  if (/(^|[^a-z])left([^a-z]|$)|_l$/.test(b)) return "Left";
-  if (/(^|[^a-z])right([^a-z]|$)|_r$/.test(b)) return "Right";
+/**
+ * A name broken into words, however it was written.
+ *
+ * The reason this exists: the firmware does not send ZMK's identifiers. It
+ * sends what it calls things — "Clear All Profiles", "USB Output", "Toggle
+ * Outputs" — and matching `BT_CLR` against those finds nothing, which is why
+ * every bluetooth key drew the same plain rune. Splitting on separators and on
+ * camel humps means one rule reads BT_CLR_ALL, "Clear All Profiles" and
+ * "clearAllProfiles" alike.
+ */
+export const words = (s) => (s ?? "")
+  .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+  .toLowerCase()
+  .split(/[^a-z0-9]+/)
+  .filter(Boolean);
+
+const any = (w, ...list) => list.some((x) => w.includes(x));
+const isBt = (w) => any(w, "bt", "ble", "bluetooth", "profile", "profiles");
+const isOut = (w) => any(w, "out", "output", "outputs", "endpoint", "endpoints");
+const isClear = (w) => any(w, "clr", "clear");
+
+/**
+ * What a constant's own name says it is, in the order the tests have to run.
+ *
+ * Order is load-bearing twice. "Clear All Profiles" has to be tried before
+ * "Clear …", or clearing everything gets the eraser meant for clearing one.
+ * And "BLE Output" has to be tried as an output before it is tried as a
+ * bluetooth thing, or a key that switches the endpoint draws a bare rune.
+ */
+const CONSTANT_ICONS = [
+  ["clickL", (w) => any(w, "mb1") || (any(w, "left") && any(w, "click"))],
+  ["clickR", (w) => any(w, "mb2") || (any(w, "right") && any(w, "click"))],
+  ["clickM", (w) => any(w, "mb3") || (any(w, "middle") && any(w, "click"))],
+  ["outUsb", (w) => isOut(w) && any(w, "usb")],
+  ["outBle", (w) => isOut(w) && any(w, "ble", "bluetooth")],
+  ["swap", (w) => isOut(w)],
+  ["btClearAll", (w) => isBt(w) && isClear(w) && any(w, "all")],
+  ["btClear", (w) => isBt(w) && isClear(w)],
+  ["btDisc", (w) => isBt(w) && any(w, "disc", "disconnect")],
+  ["bluetooth", (w) => isBt(w)],
+  ["usb", (w) => any(w, "usb")],
+];
+
+/** Which way a movement goes, from the words of its name. */
+function directionOf(w) {
+  if (any(w, "up")) return "Up";
+  if (any(w, "down")) return "Down";
+  if (any(w, "left")) return "Left";
+  if (any(w, "right")) return "Right";
   return "";
 }
 
@@ -115,42 +159,36 @@ function directionOf(b) {
  * writes it to the board.
  */
 export function iconFor(behavior, constant, mouse, param) {
-  const c = (constant ?? "").toUpperCase();
-  const b = (behavior ?? "").toLowerCase();
-  // Named first, and named is what a button is. Testing the value instead —
+  const cw = words(constant);
+  const bw = words(behavior);
+
+  // Named, and named is what a mouse button is. Testing the value instead —
   // "is it 1, 2 or 4?" — made OUT_USB a left click, OUT_BLE a right click and
-  // BT_DISC a middle click, because those constants are 1, 2 and 4 too. A
-  // mouse button is MB1, and nothing else is.
-  if (c === "MB1") return "clickL";
-  if (c === "MB2") return "clickR";
-  if (c === "MB3") return "clickM";
-  if (c.startsWith("BT_CLR")) return "btClear";
-  if (c.startsWith("BT_DIS")) return "btDisc";
-  if (c.startsWith("BT_")) return "bluetooth";
-  if (c === "OUT_USB") return "outUsb";
-  if (c === "OUT_BLE") return "outBle";
-  if (c === "OUT_TOG") return "swap";
+  // BT_DISC a middle click, because those constants are 1, 2 and 4 too.
+  if (cw.length) {
+    for (const [icon, test] of CONSTANT_ICONS) if (test(cw)) return icon;
+  }
 
   // A bare mask, with no constant to name it. Only a mouse behavior can mean
   // one — a bare 4 is the letter A everywhere else.
-  if (!c && mouse && /mouse|mkp|\bmb\b/.test(b)) {
+  if (!cw.length && mouse && any(bw, "mouse", "mkp", "mb")) {
     if (mouse === 1) return "clickL";
     if (mouse === 2) return "clickR";
     if (mouse === 4) return "clickM";
   }
 
-  // The parameter first, the name only if the parameter said nothing. Four
-  // mouse_move keys share one name and differ only in their number.
-  if (/scrl|scroll|wheel/.test(b)) {
-    const d = packedDirection(param, "scroll") || directionOf(b);
+  // The parameter first, the name only if the parameter said nothing: four
+  // mouse-move bindings can share one display name and differ in their number.
+  if (any(bw, "scrl", "scroll", "wheel", "msc")) {
+    const d = packedDirection(param, "scroll") || directionOf(bw);
     return d ? `scroll${d}` : "scroll";
   }
-  if (/mouse.*mo(ve|tion)|mo(ve|tion).*mouse|mmv/.test(b)) {
-    const d = packedDirection(param, "move") || directionOf(b);
+  if (any(bw, "mmv") || (any(bw, "mouse") && any(bw, "move", "motion"))) {
+    const d = packedDirection(param, "move") || directionOf(bw);
     return d ? `mouse${d}` : "move";
   }
-  if (/bluetooth/.test(b)) return "bluetooth";
-  if (/output/.test(b)) return "swap";
+  // The behavior's own name, for the ones whose parameter said nothing at all.
+  for (const [icon, test] of CONSTANT_ICONS.slice(3)) if (test(bw)) return icon;
   return null;
 }
 
@@ -169,11 +207,16 @@ export function iconFor(behavior, constant, mouse, param) {
  */
 export function badgeFor(icon, constant, param2) {
   if (!icon) return null;
-  const c = (constant ?? "").toUpperCase();
-  if (c.startsWith("BT_SEL") || c.startsWith("BT_DIS")) return String(param2 ?? 0);
-  if (c.startsWith("BT_") || c.startsWith("OUT_")) return "";
-  if (icon === "move" || /^(mouse|scroll)(Up|Down|Left|Right)$/.test(icon)) return "";
-  if (icon === "scroll") return "";
+  const w = words(constant);
+  // Selecting or dropping a profile names which one. Next and previous do not
+  // have one to name, and neither does clearing.
+  if ((icon === "bluetooth" && any(w, "sel", "select")) || icon === "btDisc") {
+    return String(param2 ?? 0);
+  }
+  if (/^(bt|out)/.test(icon) || icon === "swap" || icon === "usb"
+    || icon === "bluetooth") return "";
+  if (icon === "move" || icon === "scroll"
+    || /^(mouse|scroll)(Up|Down|Left|Right)$/.test(icon)) return "";
   return null;   // null means "keep whatever text you had"
 }
 
@@ -251,15 +294,38 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("glyphs.js")) 
     .map(([n]) => n);
   console.assert(badPairs.length === 0, `pairs naming shapes that do not exist: ${badPairs}`);
 
+  // ZMK's own identifiers.
   eq(iconFor(null, "BT_SEL", 0), "bluetooth", "a profile is a bluetooth icon");
   eq(iconFor(null, "BT_CLR", 0), "btClear", "clearing one is a bluetooth and an eraser");
-  eq(iconFor(null, "BT_DISC", 0), "btDisc", "disconnecting is a bluetooth and a bin");
-  eq(shapesOf("btClear"), ["bluetooth", "eraser"], "and that is two shapes, not one");
+  eq(iconFor(null, "BT_CLR_ALL", 0), "btClearAll", "clearing all is a bluetooth and a bin");
+  eq(iconFor(null, "BT_DISC", 0), "btDisc", "and disconnecting is an eject");
   eq(iconFor(null, "OUT_USB", 0), "outUsb", "the output, and which one");
+  eq(iconFor(null, "OUT_BLE", 0), "outBle", "either one");
   eq(iconFor(null, "OUT_TOG", 0), "swap", "toggling it is just the arrows");
+
+  // And the names this board actually sends, which are not identifiers at all.
+  // Reading BT_CLR against these is what found nothing.
+  eq(iconFor("Bluetooth", "Clear All Profiles", 0), "btClearAll", "clear all, spelled out");
+  eq(iconFor("Bluetooth", "Clear Selected Profile", 0), "btClear", "clear one, spelled out");
+  eq(iconFor("Bluetooth", "Select Profile", 0), "bluetooth", "select, spelled out");
+  eq(iconFor("Bluetooth", "Disconnect Profile", 0), "btDisc", "disconnect, spelled out");
+  eq(iconFor("Bluetooth", "Next Profile", 0), "bluetooth", "next has no number of its own");
+  eq(iconFor("Output Selection", "USB Output", 0), "outUsb", "USB output, spelled out");
+  eq(iconFor("Output Selection", "BLE Output", 0), "outBle", "BLE output, spelled out");
+  eq(iconFor("Output Selection", "Toggle Outputs", 0), "swap", "toggle, spelled out");
+  // camelCase too, since a name is only ever however someone wrote it.
+  eq(iconFor(null, "clearAllProfiles", 0), "btClearAll", "camel humps are word breaks");
+  eq(words("clearAllProfiles"), ["clear", "all", "profiles"], "and that is what words does");
+  eq(words("BT_CLR_ALL"), ["bt", "clr", "all"], "as are underscores");
+  eq(words(null), [], "and nothing is no words");
+
+  // "BLE Output" is both bluetooth-ish and output-ish; the output wins,
+  // because that is what the key does.
+  eq(iconFor(null, "BLE Output", 0), "outBle", "an output that mentions BLE is an output");
+
   eq(iconFor("Mouse Key Press", "MB2", 2), "clickR", "a named button");
   eq(iconFor("Mouse Key Press", null, 2), "clickR", "or a bare mask on a mouse behavior");
-  eq(iconFor("Bluetooth", "BT_SEL", 0), "bluetooth", "the constant over the name");
+  eq(iconFor("Mouse Key Press", "Right Click", 2), "clickR", "or a button spelled out");
   // The three that were wrong. These constants are 1, 2 and 4, and a rule that
   // looked at the value instead of the name turned them into mouse buttons.
   eq(iconFor("Output Selection", "OUT_USB", 1), "outUsb", "OUT_USB is 1 and is not a left click");
@@ -285,9 +351,13 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("glyphs.js")) 
   eq(iconFor("mouse_move", null, 0, packH(600)), "mouseRight", "right");
   eq(iconFor("mouse_scrl", null, 0, packV(10)), "scrollUp", "and a wheel has one too");
   eq(iconFor("mouse_move", null, 0, 0), "move", "with no direction to read, all four");
-  // The name is still read when there is no parameter to decode.
+  // The name is still read when there is no parameter to decode. A macro named
+  // for its direction is how these arrive when they are macros.
   eq(iconFor("mouse_move_up", null, 0), "mouseUp", "a name can still say it");
-  // "mouse_move_update" is not upward. The word has to stand alone.
+  eq(iconFor("Mouse Move Left", null, 0), "mouseLeft", "however it is written");
+  eq(iconFor("mouseMoveRight", null, 0), "mouseRight", "including camelCase");
+  // "mouse_move_update" is not upward. The word has to stand alone, which is
+  // what splitting into words gets that a substring search does not.
   eq(iconFor("mouse_move_update", null, 0), "move", "a word containing 'up' is not up");
 
   eq(iconFor("Key Press", null, 0), null, "an ordinary key has no icon");
@@ -297,12 +367,15 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("glyphs.js")) 
 
   // The badge beside an icon.
   eq(badgeFor("bluetooth", "BT_SEL", 0), "0", "profile zero still prints its number");
-  eq(badgeFor("bluetooth", "BT_SEL", 3), "3", "and so does profile three");
-  eq(badgeFor("btClear", "BT_CLR", 0), "", "clearing needs no number");
-  eq(badgeFor("outUsb", "OUT_USB", 0), "", "nor does the output");
+  eq(badgeFor("bluetooth", "Select Profile", 3), "3", "and profile three, spelled out");
+  eq(badgeFor("bluetooth", "Next Profile", 0), "", "next has no number to print");
+  eq(badgeFor("btClear", "Clear Selected Profile", 0), "", "clearing needs no number");
+  eq(badgeFor("btClearAll", "Clear All Profiles", 0), "", "nor does clearing all");
+  eq(badgeFor("btDisc", "BT_DISC", 2), "2", "disconnecting names the profile it drops");
+  eq(badgeFor("outUsb", "USB Output", 0), "", "nor does the output");
+  eq(badgeFor("swap", "Toggle Outputs", 0), "", "nor toggling it");
   eq(badgeFor("mouseUp", null, 0), "", "nor a direction");
   eq(badgeFor("clickR", "MB2", 0), null, "a mouse button keeps its words");
-  eq(badgeFor("btDisc", "BT_DISC", 2), "2", "disconnecting names the profile it drops");
   eq(badgeFor(null, "BT_SEL", 2), null, "no icon, no badge");
 
   // Path data has to be parseable as path data, which here means starting on a
