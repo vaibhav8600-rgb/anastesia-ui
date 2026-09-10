@@ -3099,3 +3099,8 @@ button.rail__item:hover { background: var(--glass-bg-3); }
 .kmap__key:not(:has(.kmap__cap:not(:empty))) .kmap__glyph { width: 2em; height: 2em; }
 /* With a hold line as well, three things share the cap and it gives ground. */
 .kmap__key:has(.kmap__sub) .kmap__glyph { width: 1.15em; height: 1.15em; }
+
+/* The model's hover card follows the pointer, so unlike the flat board's it
+   is positioned in pixels rather than in percentages of a key. */
+.board3d__card { position: absolute; z-index: 6; transform: translate(-50%, calc(-100% - 14px)); }
+.board3d__card[data-below] { transform: translate(-50%, 14px); }

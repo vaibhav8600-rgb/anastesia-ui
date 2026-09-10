@@ -24,10 +24,10 @@ const CAP_H = 10.8;
 const CASE_TOP = 13;    // top of the rim
 const TRAVEL = 2.4;     // how far a cap drops when pressed
 // The gap between one keycap and the next, in millimetres. A real MX cap is
-// 18mm on 19.05 spacing, so a tenth of this — but a board drawn at 400 pixels
-// wide needs the separation to survive being small, and the plate showing
-// through is what makes the caps read as separate objects.
-const CAP_GAP = 5.2;
+// 18mm on 19.05 spacing, so a quarter of this — but a board drawn at 400
+// pixels wide needs the separation to survive being small, and the plate
+// showing through is what makes the caps read as separate objects.
+const CAP_GAP = 4.0;
 
 // nice!view: LS011B7DH03, 1.08 inch, 160x68, module 36 x 14 x 2.9 mm, mounted
 // with its long axis running front to back so the panel is portrait.
@@ -311,13 +311,17 @@ function paintScreen(ctx, theme, info, side) {
 
 /* --------------------------------------------------------------- component */
 
-export default function Sofle({ keys, labels, active, onPick, info }) {
+export default function Sofle({ keys, labels, active, onPick, info, detail }) {
   const host = useRef(null);
   const api = useRef(null);
   const pick = useRef(onPick);
   pick.current = onPick;
   const [supported, setSupported] = useState(true);
   const [set, setSet] = useState(loadSettings);
+  // Which key the pointer is over, and where on screen to put the card. The
+  // flat board has had this since it had keycaps; the model was the view where
+  // you could see the whole keymap and not read any of it.
+  const [hover, setHover] = useState(null);
   const live = useRef(set);
   live.current = set;
 
@@ -663,6 +667,15 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
      * horizontal field has room to spare for, and then that width is fitted
      * into the vertical one. It drew the board at a third of size.
      */
+    /** The same projection as fit(), against any box. */
+    const fitBox = (box, pad = 1.06) => {
+      const at = box.getCenter(new THREE.Vector3());
+      const pts = [];
+      for (const x of [box.min.x, box.max.x])
+        for (const y of [box.min.y, box.max.y])
+          for (const z of [box.min.z, box.max.z]) pts.push(new THREE.Vector3(x, y, z));
+      return project(pts, at, pad);
+    };
     const fit = (pad = 1.06) => {
       const dir = new THREE.Vector3(
         Math.sin(cam.phi) * Math.cos(cam.theta),
@@ -685,6 +698,28 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (camera.aspect || 1));
       return Math.max(hx / Math.tan(hFov / 2), hy / Math.tan(vFov / 2)) * pad;
     };
+    // fit() reads the board's own corners; project() is the same sum for any
+    // set of points, so a half can be framed by the identical arithmetic.
+    function project(pts, at, pad) {
+      const dir = new THREE.Vector3(
+        Math.sin(cam.phi) * Math.cos(cam.theta),
+        Math.cos(cam.phi),
+        Math.sin(cam.phi) * Math.sin(cam.theta),
+      );
+      const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+      if (right.lengthSq() < 1e-8) right.set(Math.sin(cam.theta), 0, -Math.cos(cam.theta));
+      right.normalize();
+      const up = new THREE.Vector3().crossVectors(right, dir).normalize();
+      let hx = 0, hy = 0;
+      for (const c of pts) {
+        const v = c.clone().sub(at);
+        hx = Math.max(hx, Math.abs(v.dot(right)));
+        hy = Math.max(hy, Math.abs(v.dot(up)));
+      }
+      const vFov = (camera.fov * Math.PI) / 180;
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (camera.aspect || 1));
+      return Math.max(hx / Math.tan(hFov / 2), hy / Math.tan(vFov / 2)) * pad;
+    }
 
     const place3 = () => {
       cam.phi = Math.max(0.06, Math.min(Math.PI / 2 - 0.02, cam.phi));
@@ -787,12 +822,38 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       // to lose the drag.
       try { el.setPointerCapture(e.pointerId); } catch { /* not captured */ }
     };
+    // What is under the pointer, as a key position, or null.
+    const under = (e) => {
+      const r = el.getBoundingClientRect();
+      pointer.set(((e.clientX - r.left) / r.width) * 2 - 1,
+        -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(pointer, camera);
+      const rings = knobs.filter(Boolean).map((k) => k.group);
+      const spun = rings.length ? ray.intersectObjects(rings, true)[0] : null;
+      if (spun) {
+        let o = spun.object;
+        while (o && o.userData.position === undefined) o = o.parent;
+        return o?.userData.position ?? null;
+      }
+      const hit = ray.intersectObjects(caps.filter(Boolean), false)[0];
+      return hit ? hit.object.userData.position : null;
+    };
+
     const onMove = (e) => {
-      if (!drag) return;
+      if (!drag) {
+        // Where the pointer is, in the element's own coordinates, so the card
+        // can be placed without the caller knowing about the canvas.
+        const r = el.getBoundingClientRect();
+        const at = under(e);
+        setHover(at === null ? null
+          : { at, x: e.clientX - r.left, y: e.clientY - r.top, h: r.height });
+        return;
+      }
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
       moved += Math.abs(dx) + Math.abs(dy);
       touched = true;
+      setHover(null);          // looking around is not pointing at anything
       if (drag === "orbit") {
         cam.theta -= dx * 0.006;
         cam.phi -= dy * 0.006;
@@ -812,23 +873,12 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         pointer.set(((e.clientX - r.left) / r.width) * 2 - 1,
           -((e.clientY - r.top) / r.height) * 2 + 1);
         ray.setFromCamera(pointer, camera);
-        // Knobs first: they stand taller than the caps around them, and a ray
-        // grazing one should land on it rather than on the plate behind.
-        const rings = knobs.filter(Boolean).map((k) => k.group);
-        const spun = rings.length ? ray.intersectObjects(rings, true)[0] : null;
-        if (spun) {
-          let o = spun.object;
-          while (o && o.userData.position === undefined) o = o.parent;
-          const at = o?.userData.position;
-          if (at !== undefined) {
-            // A notch of turn as feedback, and the push binding opens for
-            // editing — the key position under the knob is the push.
-            knobs[at].spinTo += Math.PI / 6;
-            pick.current?.(at);
-          }
-        } else {
-          const hit = ray.intersectObjects(caps.filter(Boolean), false)[0];
-          if (hit) pick.current?.(hit.object.userData.position);
+        const at = under(e);
+        if (at !== null) {
+          // A knob turns a notch as feedback, and either way the position
+          // opens for editing — under a knob, that position is the push.
+          if (knobs[at]) knobs[at].spinTo += Math.PI / 6;
+          pick.current?.(at);
         }
       }
       drag = null;
@@ -843,6 +893,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", () => { drag = null; });
+    el.addEventListener("pointerleave", () => setHover(null));
     el.addEventListener("contextmenu", (e) => e.preventDefault());
     el.addEventListener("wheel", onWheel, { passive: false });
 
@@ -893,16 +944,24 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         else if (name === "front") { cam.theta = Math.PI / 2; cam.phi = 1.32; }
         else if (name === "thumbs") { cam.theta = Math.PI / 2 + 0.85; cam.phi = 0.62; }
         else if (name === "screen") { cam.theta = Math.PI / 2 + 0.1; cam.phi = 0.5; }
+        else if (name === "left" || name === "right") { cam.theta = Math.PI / 2; cam.phi = 0.12; }
         else { cam.theta = Math.PI / 2 + 0.3; cam.phi = 0.78; }
         cam.target.copy(focus);
-        if (name === "thumbs" || name === "screen") {
+        // One half fills the frame: sixty keys across a panel is small, and
+        // half of them at twice the size is the same board read comfortably.
+        if (name === "left" || name === "right") {
+          const h = halves[name === "left" ? 0 : halves.length - 1];
+          const b = new THREE.Box3().setFromObject(h.pivot);
+          b.getCenter(cam.target);
+          cam.dist = fitBox(b);
+        } else if (name === "thumbs" || name === "screen") {
           const at = name === "screen" ? screens[0]?.mesh : caps[caps.length - 1];
           if (at) at.getWorldPosition(cam.target);
           cam.dist = name === "screen" ? 90 : Math.max(120, fit() * 0.4);
         } else {
           cam.dist = fit();
         }
-        touched = name === "thumbs" || name === "screen";
+        touched = name !== "top" && name !== "iso";
         place3();
       },
       pose, applyTheme, applyVisibility, placeScreens,
@@ -949,6 +1008,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("wheel", onWheel);
+      setHover(null);
       api.current = null;
       for (const l of legends) l?.mesh.material.map?.dispose();
       for (const d of junk) d.dispose?.();
@@ -987,9 +1047,25 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       <div className="board3d">
         <div className="board3d__view" ref={host} tabIndex={0} role="application"
              aria-label="The board in three dimensions. Click a key to edit it." />
+        {/* The same card the flat board shows, at the pointer rather than at
+            the key: a keycap in perspective has no one edge to hang it off. */}
+        {hover && detail?.(hover.at) && (
+          <div className="keycard board3d__card" role="presentation"
+               data-below={hover.y < hover.h * 0.3 ? "" : undefined}
+               style={{ left: hover.x, top: hover.y }}>
+            <dl className="keycard__rows">
+              {detail(hover.at).filter(([, v]) => v).map(([label, value]) => (
+                <div className="keycard__row" key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
         <div className="board3d__views">
-          {[["top", "Top"], ["iso", "Iso"], ["front", "Front"],
-            ["thumbs", "Thumbs"], ["screen", "Screen"]].map(([k, label]) => (
+          {[["top", "Top"], ["iso", "Iso"], ["left", "Left"], ["right", "Right"],
+            ["front", "Front"], ["thumbs", "Thumbs"], ["screen", "Screen"]].map(([k, label]) => (
             <button key={k} className="zoom__btn" onClick={() => api.current?.view(k)}>{label}</button>
           ))}
         </div>

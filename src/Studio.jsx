@@ -9,7 +9,7 @@ import {
 } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 import Sofle from "./Sofle.jsx";
-import { GLYPHS, iconFor } from "./glyphs.js";
+import { GLYPHS, PAIR_SCALE, PAIR_X, PAIR_Y, badgeFor, iconFor, shapesOf } from "./glyphs.js";
 
 // The keymap editor: layers, key positions and bindings, read and written over
 // ZMK Studio's RPC.
@@ -158,13 +158,20 @@ const ERR_LOCKED = 1;
  * so the em size of whatever it sits in decides how big it is.
  */
 export function Glyph({ name, className = "kmap__glyph" }) {
-  const d = GLYPHS[name];
-  if (!d) return null;
+  const shapes = shapesOf(name);
+  if (!shapes) return null;
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true"
          fill="none" stroke="currentColor" strokeWidth="2"
          strokeLinecap="round" strokeLinejoin="round">
-      <path d={d} />
+      {shapes.length === 1 ? <path d={GLYPHS[shapes[0]]} /> : shapes.map((n, i) => (
+        // non-scaling-stroke so half-size shapes keep full-weight lines. The
+        // alternative is dividing the width by the scale in two places and
+        // having them disagree.
+        <g key={n + i} transform={`translate(${PAIR_X[i]} ${PAIR_Y}) scale(${PAIR_SCALE})`}>
+          <path d={GLYPHS[n]} vectorEffect="non-scaling-stroke" />
+        </g>
+      ))}
     </svg>
   );
 }
@@ -216,6 +223,11 @@ function describe(binding, behaviors, layers) {
     constName(i1, v1) ?? constName(i2, v2),
     (i1.kind === "constant" && MOUSE_BUTTONS[v1] && v1)
       || (i2.kind === "constant" && MOUSE_BUTTONS[v2] && v2) || 0);
+  // The keycap's text, once an icon is carrying the meaning. `badgeFor`
+  // returns null when the text should stand as it was, and the bluetooth
+  // profile number even when that number is zero.
+  const capOf = (icon, v1, v2, fallback) =>
+    badgeFor(icon, constName(i1, v1) ?? constName(i2, v2), v2) ?? fallback;
 
   // A key that sends one thing reads as that thing — and what that thing is
   // comes from the parameter's own declaration, never from the behavior's
@@ -224,11 +236,12 @@ function describe(binding, behaviors, layers) {
   // as a mouse button.
   if (p1 && i1.kind !== "none" && i2.kind === "none") {
     const type = typeOf(i1, p1);
+    const icon = iconOf(p1, p2);
     return {
-      name: paramShort(i1, p1, layers),
+      name: capOf(icon, p1, p2, paramShort(i1, p1, layers)),
       action: name,
       type,
-      icon: iconOf(p1, p2),
+      icon,
       full: paramValueName(i1, p1, layers),
       detail: name,
       rows: [
@@ -258,12 +271,13 @@ function describe(binding, behaviors, layers) {
     // it in smaller type, prefixed so the two are never mistaken for each other.
     // The colour follows the cap for the same reason.
     const type = typeOf(i2, p2);
+    const icon = iconOf(p1, p2);
     return {
-      name: paramShort(i2, p2, layers),
+      name: capOf(icon, p1, p2, paramShort(i2, p2, layers)),
       sub: `hold ${paramShort(i1, p1, layers)}`,
       action: name,
       type,
-      icon: iconOf(p1, p2),
+      icon,
       full: `${name} — ${parts.join(", ")}`,
       detail: null,
       rows: [
@@ -276,7 +290,8 @@ function describe(binding, behaviors, layers) {
   }
   const rows = [["Action", name], ...(parts.length ? [["Sends", parts.join(", ")]] : [])];
   if (parts.length) {
-    return { name, action: name, type: "other", icon: iconOf(p1, p2),
+    const icon = iconOf(p1, p2);
+    return { name: capOf(icon, p1, p2, name), action: name, type: "other", icon,
       full: `${name} — ${parts.join(", ")}`, detail: null, rows };
   }
   // No parameters at all: the behavior's name is the whole story, so it is the
@@ -957,6 +972,10 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
               // Bluetooth profiles and words per minute; none of that reaches
               // this app, and a drawn battery reading is worse than no reading.
               // These four are things the editor actually knows.
+              // The hover card's rows, asked for one key at a time rather than
+              // built for sixty on every render.
+              detail={(position) => describe(current?.bindings?.[position],
+                behaviors, keymap?.layers).rows}
               info={{
                 device: device?.name ?? "ZMK",
                 layer: current?.name ?? `Layer ${layer}`,
