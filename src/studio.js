@@ -356,6 +356,8 @@ export function tinyKeys(keys) {
 
 /** A third of a key unit. Well past rounding, well under any real split. */
 const SEAM_MM = 19.05 / 3;
+/** Further than this from every other key and nothing else can be there. */
+const LONE_MM = 19.05 * 1.25;
 
 /**
  * Which keys belong to which half, from the one vertical line no key crosses.
@@ -382,6 +384,41 @@ export function splitHalves(spots) {
   }
   if (best < SEAM_MM || at < 0) return [spots.map((_, i) => i)];
   return [order.slice(0, at).map((o) => o.i), order.slice(at).map((o) => o.i)];
+}
+
+/**
+ * The key positions that are encoders rather than keycaps.
+ *
+ * An encoder's push is a switch, so a board with two of them reports two more
+ * key positions than its keycaps account for — a 58-key Sofle arrives as 60.
+ * Drawing a keycap at those two and then adding knobs beside them, which is
+ * what the reference model's fixed constants amount to, puts four things on a
+ * board that has two.
+ *
+ * Found by isolation. Every key in a grid or a thumb cluster has a neighbour
+ * about one unit away; an encoder sits on its own, inboard of the column block
+ * with space around it. Nothing else on these layouts is lonely.
+ *
+ * ponytail: an encoder tucked within 1.25u of a keycap reads as a keycap. The
+ * upgrade is asking the board, and the board has no way to say — the physical
+ * layout carries no per-key kind, and sensor bindings are a separate list that
+ * does not name key positions.
+ */
+export function encoderKeys(spots) {
+  if (spots.length < 8) return new Set();
+  const out = new Set();
+  for (let i = 0; i < spots.length; i++) {
+    let best = Infinity;
+    for (let j = 0; j < spots.length; j++) {
+      if (i === j) continue;
+      best = Math.min(best, Math.hypot(spots[i].x - spots[j].x, spots[i].z - spots[j].z));
+      if (best <= LONE_MM) break;
+    }
+    if (best > LONE_MM) out.add(i);
+  }
+  // A sparse layout is not a board covered in encoders. Past four this is
+  // measuring something else, and a keycap is the safer thing to be wrong as.
+  return out.size > 4 ? new Set() : out;
 }
 
 /** Every response carries exactly one subsystem; find which. */
@@ -518,6 +555,29 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
      "thumb keys reaching inboard do not open a seam of their own");
   eq(splitHalves([]).length, 1, "no keys, one board");
   eq(splitHalves(row(0, 2)).length, 1, "too few keys to have a seam");
+
+  // Which reported positions are knobs rather than keycaps.
+  const block = [];
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+    block.push({ x: c * 19.05, z: r * 19.05 });
+  }
+  eq(encoderKeys(block).size, 0, "every key in a grid has a neighbour");
+  eq([...encoderKeys([...block, { x: 8 * 19.05, z: 0 }])], [24],
+     "a key on its own is the encoder");
+  // The near miss the threshold has to survive: one unit out is still a key.
+  eq(encoderKeys([...block, { x: 6 * 19.05, z: 0 }]).size, 0,
+     "a key one unit past the block is a key, not a knob");
+  // Two knobs, one per half, which is what a Sofle reports.
+  // Inboard of each block and two units clear of everything, including each
+  // other — put them a unit apart and they are neighbours, not encoders.
+  const pair = [...block, ...block.map((k) => ({ x: k.x + 11 * 19.05, z: k.z })),
+    { x: 7 * 19.05, z: 0 }, { x: 9 * 19.05, z: 0 }];
+  eq(encoderKeys(pair).size, 2, "one knob per half");
+  // Three keys in a row on their own are three keys, not three encoders.
+  eq(encoderKeys([{ x: 0, z: 0 }, { x: 100, z: 0 }, { x: 200, z: 0 },
+    { x: 300, z: 0 }, { x: 400, z: 0 }, { x: 500, z: 0 },
+    { x: 600, z: 0 }, { x: 700, z: 0 }]).size, 0,
+     "a sparse layout is not a board covered in encoders");
 
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");

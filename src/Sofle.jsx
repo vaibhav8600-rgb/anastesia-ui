@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { splitHalves } from "./studio.js";
+import { encoderKeys, splitHalves } from "./studio.js";
 
 // A split keyboard, in three dimensions, built from what the board reported.
 //
@@ -25,8 +25,12 @@ const TRAVEL = 2.4;     // how far a cap drops when pressed
 
 // nice!view: LS011B7DH03, 1.08 inch, 160x68, module 36 x 14 x 2.9 mm, mounted
 // with its long axis running front to back so the panel is portrait.
-const DISPLAY = { w: 14, h: 36, aw: 11.7, ah: 27.5, t: 2.9, inset: 21, down: 12 };
-const ENCODER = { r: 8.0, down: 48 };
+const DISPLAY = { w: 14, h: 36, aw: 11.7, ah: 27.5, t: 2.9, inset: 21 };
+// How far toward the top of the board the nice!view sits from its encoder. The
+// reference put the module at z 12 and the knob at 48, and the module is the
+// one of the pair that is not a key, so it is the one measured from the other.
+const DISPLAY_AHEAD = 36;
+const ENCODER = { r: 8.0 };
 
 const THEMES = {
   ink: {
@@ -53,7 +57,7 @@ const THEMES = {
 
 const SETTINGS_KEY = "anastasia-board-3d";
 const DEFAULTS = {
-  theme: "ink", tint: "type", tent: 10, splay: 8, gap: 70, knob: 17.8,
+  theme: "ink", tint: "type", tent: 10, splay: 8, gap: 70, disp: 21,
   legends: true, cases: true, screens: true, shadows: true,
 };
 
@@ -377,6 +381,9 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
     // ------------------------------------------------------------- build
     const spots = keys.map(place);
     const groups = splitHalves(spots);
+    // An encoder's push is a switch, so it arrives as a key position like any
+    // other. It gets a knob instead of a keycap rather than as well as one.
+    const knobAt = encoderKeys(spots);
     const th0 = THEMES[live.current.theme];
 
     const capGeo = new Map();   // one geometry per distinct key size, not per key
@@ -388,15 +395,16 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       plate: track(new THREE.MeshStandardMaterial({ color: th0.plate, roughness: 0.8 })),
       rim: track(new THREE.MeshStandardMaterial({ color: th0.rim, roughness: 0.74 })),
       bezel: track(new THREE.MeshStandardMaterial({ color: th0.bezel, roughness: 0.5 })),
-      knob: track(new THREE.MeshStandardMaterial({ color: th0.bezel, roughness: 0.4, metalness: 0.06 })),
       dot: track(new THREE.MeshStandardMaterial({ color: th0.accent, roughness: 0.5 })),
     };
 
     const caps = [];       // index-aligned with bindings
+    const knobs = [];      // likewise, and never both at one position
     const legends = [];
     const capMeta = [];    // { type, ramp } for recolouring without a rebuild
     const halves = [];
     const screens = [];
+    const screenAnchor = [];   // the nice!views, so the inset slider can move them
     const shells = [];     // everything the "Case" toggle hides
 
     groups.forEach((idx, side) => {
@@ -425,6 +433,46 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
           const box = track(new THREE.BoxGeometry(Math.max(2, s.w - 4.6), t, Math.max(2, s.h - 4.6)));
           box.translate(0, t / 2, 0);
           stemGeo.set(ck, box);
+        }
+
+        if (knobAt.has(position)) {
+          // A knob, at the position the board reported. Clicking it edits the
+          // push binding, which is what that key position is.
+          const body = new THREE.Mesh(
+            track(new THREE.CylinderGeometry(ENCODER.r, ENCODER.r * 0.97, 10.5, 40)),
+            track(new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.06 })),
+          );
+          body.position.y = 5.25;
+          body.castShadow = true;
+          const knob = new THREE.Group();
+          knob.add(body);
+          const ribGeo = track(new THREE.BoxGeometry(0.85, 8.6, 1.5));
+          for (let i = 0; i < 20; i++) {
+            const a = (i / 20) * Math.PI * 2;
+            const rib = new THREE.Mesh(ribGeo, body.material);
+            rib.position.set(Math.cos(a) * ENCODER.r, 5.25, Math.sin(a) * ENCODER.r);
+            rib.rotation.y = -a;
+            knob.add(rib);
+          }
+          const nub = new THREE.Mesh(track(new THREE.CylinderGeometry(1.1, 1.1, 0.6, 12)), mats.dot);
+          nub.position.set(0, 10.7, ENCODER.r * 0.55);
+          knob.add(nub);
+          knob.position.set(s.x, PLATE_Y + 2.4, s.z);
+          knob.userData = { position, isKnob: true };
+          g.add(knob);
+          shells.push(knob);
+
+          const collar = new THREE.Mesh(
+            track(new THREE.CylinderGeometry(ENCODER.r + 0.3, ENCODER.r + 0.6, 2.4, 30)), mats.bezel,
+          );
+          collar.position.set(s.x, PLATE_Y + 1.2, s.z);
+          collar.receiveShadow = true;
+          g.add(collar);
+          shells.push(collar);
+
+          knobs[position] = { group: knob, body, spin: 0, spinTo: 0, base: null };
+          capMeta[position] = { type: info2.type, ramp: rampOf(s.x), knob: true };
+          continue;
         }
 
         const mat = track(new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.02 }));
@@ -465,20 +513,28 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       const innerSign = groups.length === 1 ? 0 : (side === 0 ? 1 : -1);
       const innerX = side === 0 ? hi : lo;
 
-      let knob = null, screen = null, knobBase = null;
-      if (innerSign) {
-        const dx = innerX + innerSign * live.current.knob;
+      // The nice!view is the one module here that is not a key, so it is the
+      // only thing still placed rather than reported — measured off this half's
+      // own encoder where there is one, and off the inner edge where there is
+      // not.
+      const mine = idx.filter((p) => knobAt.has(p));
+      const anchor = mine.length ? spots[mine[0]] : null;
+      let screen = null;
+      if (innerSign || anchor) {
+        const sign = innerSign || 1;
         const bezelBevel = 0.5, bezelH = DISPLAY.t + bezelBevel * 2;
         const bezel = new THREE.Mesh(
           track(flatExtrude(roundedRect(DISPLAY.w + 3.5, DISPLAY.h + 3.5, 2), DISPLAY.t, bezelBevel)),
           mats.bezel,
         );
-        const sx = innerX + innerSign * DISPLAY.inset;
-        bezel.position.set(sx, PLATE_Y, zTop + DISPLAY.down);
+        const sx = anchor ? anchor.x : innerX + sign * live.current.disp;
+        const sz = anchor ? anchor.z - DISPLAY_AHEAD : zTop + 12;
+        bezel.position.set(sx, PLATE_Y, sz);
         bezel.castShadow = true; bezel.receiveShadow = true;
         g.add(bezel);
         shells.push(bezel);
-        parts.push({ x: sx, z: zTop + DISPLAY.down, rot: 0, w: DISPLAY.w + 4, h: DISPLAY.h + 4 });
+        screenAnchor.push({ bezel, sx, sz });
+        parts.push({ x: sx, z: sz, rot: 0, w: DISPLAY.w + 4, h: DISPLAY.h + 4 });
 
         const c = document.createElement("canvas");
         c.width = 68 * SS; c.height = 160 * SS;
@@ -491,40 +547,14 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         const sg = track(new THREE.PlaneGeometry(DISPLAY.aw, DISPLAY.ah));
         sg.rotateX(-Math.PI / 2);
         screen = new THREE.Mesh(sg, track(new THREE.MeshBasicMaterial({ map: tex })));
-        screen.position.set(sx, PLATE_Y + bezelH + 0.06, zTop + DISPLAY.down);
+        screen.position.set(sx, PLATE_Y + bezelH + 0.06, sz);
         g.add(screen);
         screens.push({ mesh: screen, ctx: c.getContext("2d"), tex, side });
+        screenAnchor[screenAnchor.length - 1].screen = screen;
+        screenAnchor[screenAnchor.length - 1].home = sx;
+        screenAnchor[screenAnchor.length - 1].fixed = !!anchor;
+        screenAnchor[screenAnchor.length - 1].sign = sign;
 
-        knobBase = new THREE.Mesh(
-          track(new THREE.CylinderGeometry(ENCODER.r + 0.3, ENCODER.r + 0.6, 2.4, 30)), mats.bezel,
-        );
-        knobBase.position.set(dx, PLATE_Y + 1.2, zTop + ENCODER.down);
-        knobBase.receiveShadow = true;
-        g.add(knobBase);
-        shells.push(knobBase);
-
-        knob = new THREE.Group();
-        const body = new THREE.Mesh(
-          track(new THREE.CylinderGeometry(ENCODER.r, ENCODER.r * 0.97, 10.5, 40)), mats.knob,
-        );
-        body.position.y = 5.25; body.castShadow = true;
-        knob.add(body);
-        const ribGeo = track(new THREE.BoxGeometry(0.85, 8.6, 1.5));
-        for (let i = 0; i < 20; i++) {
-          const a = (i / 20) * Math.PI * 2;
-          const rib = new THREE.Mesh(ribGeo, mats.knob);
-          rib.position.set(Math.cos(a) * ENCODER.r, 5.25, Math.sin(a) * ENCODER.r);
-          rib.rotation.y = -a;
-          knob.add(rib);
-        }
-        const nub = new THREE.Mesh(track(new THREE.CylinderGeometry(1.1, 1.1, 0.6, 12)), mats.dot);
-        nub.position.set(0, 10.7, ENCODER.r * 0.55);
-        knob.add(nub);
-        knob.position.set(dx, PLATE_Y + 2.4, zTop + ENCODER.down);
-        knob.userData.isKnob = true;
-        g.add(knob);
-        shells.push(knob);
-        parts.push({ x: dx, z: zTop + ENCODER.down, rot: 0, w: (ENCODER.r + 4) * 2, h: (ENCODER.r + 4) * 2 });
       }
 
       // Stacked bottom up: a baseplate proud of the walls, walls with the key
@@ -557,12 +587,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       g.position.z = -(box.min.z + box.max.z) / 2;
 
       board.add(pivot);
-      halves.push({
-        pivot, side, knob, knobBase,
-        knobHome: knob ? knob.position.x : 0,
-        width: (box.max.x - box.min.x) / 2,
-        spin: 0, spinTo: 0,
-      });
+      halves.push({ pivot, side, width: (box.max.x - box.min.x) / 2 });
     });
 
     // --------------------------------------------------------------- pose
@@ -658,7 +683,11 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       mats.rim.color.set(th.rim);
       mats.stem.color.set(th.stem);
       mats.bezel.color.set(th.bezel);
-      mats.knob.color.set(th.bezel);
+      for (const k of knobs) {
+        if (!k) continue;
+        k.base = new THREE.Color(th.bezel);
+        k.body.material.color.copy(k.base);
+      }
       mats.dot.color.set(th.accent);
       const outer = new THREE.Color(th.outer), inner = new THREE.Color(th.inner);
       caps.forEach((cap, i) => {
@@ -706,16 +735,16 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
       ground.visible = s.shadows;
     };
 
-    const placeKnobs = () => {
+    // Only the display moves. The knob is where the board said its key is, and
+    // sliding that would be drawing a switch somewhere it is not.
+    const placeScreens = () => {
       const s = live.current;
-      halves.forEach((h) => {
-        if (!h.knob) return;
-        const m = h.side === 0 ? 1 : -1;
-        const shift = (s.knob - DEFAULTS.knob) * m;
-        h.knob.position.x = h.knobHome + shift;
-        // The collar goes with it, or the knob floats off its own base.
-        if (h.knobBase) h.knobBase.position.x = h.knobHome + shift;
-      });
+      for (const a of screenAnchor) {
+        if (a.fixed) continue;
+        const x = a.home + (s.disp - DEFAULTS.disp) * a.sign;
+        a.bezel.position.x = x;
+        if (a.screen) a.screen.position.x = x;
+      }
     };
 
     applyTheme();
@@ -759,13 +788,20 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         pointer.set(((e.clientX - r.left) / r.width) * 2 - 1,
           -((e.clientY - r.top) / r.height) * 2 + 1);
         ray.setFromCamera(pointer, camera);
-        const knobs = halves.map((h) => h.knob).filter(Boolean);
-        const spun = knobs.length ? ray.intersectObjects(knobs, true)[0] : null;
+        // Knobs first: they stand taller than the caps around them, and a ray
+        // grazing one should land on it rather than on the plate behind.
+        const rings = knobs.filter(Boolean).map((k) => k.group);
+        const spun = rings.length ? ray.intersectObjects(rings, true)[0] : null;
         if (spun) {
           let o = spun.object;
-          while (o && !o.userData.isKnob) o = o.parent;
-          const h = halves.find((x) => x.knob === o);
-          if (h) h.spinTo += Math.PI / 6;
+          while (o && o.userData.position === undefined) o = o.parent;
+          const at = o?.userData.position;
+          if (at !== undefined) {
+            // A notch of turn as feedback, and the push binding opens for
+            // editing — the key position under the knob is the push.
+            knobs[at].spinTo += Math.PI / 6;
+            pick.current?.(at);
+          }
         } else {
           const hit = ray.intersectObjects(caps.filter(Boolean), false)[0];
           if (hit) pick.current?.(hit.object.userData.position);
@@ -807,12 +843,19 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
     const target = new Float32Array(caps.length);
     api.current = {
       highlight(position) {
+        const lift = (mat, base, on) => {
+          mat.color.copy(base);
+          if (on) mat.color.lerp(new THREE.Color(0xffffff), dark ? 0.36 : 0.22);
+          mat.emissive.setHex(on ? 0x2a2438 : 0x000000);
+        };
         caps.forEach((cap, i) => {
           if (!cap?.userData.base) return;
-          const on = i === position;
-          cap.material.color.copy(cap.userData.base);
-          if (on) cap.material.color.lerp(new THREE.Color(0xffffff), dark ? 0.36 : 0.22);
-          cap.material.emissive.setHex(on ? 0x2a2438 : 0x000000);
+          lift(cap.material, cap.userData.base, i === position);
+        });
+        // A knob is selectable like any other key position, so it shows it.
+        knobs.forEach((k, i) => {
+          if (!k?.base) return;
+          lift(k.body.material, k.base, i === position);
         });
       },
       tap(position) {
@@ -838,7 +881,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         touched = name === "thumbs" || name === "screen";
         place3();
       },
-      pose, applyTheme, applyVisibility, placeKnobs,
+      pose, applyTheme, applyVisibility, placeScreens,
       png() {
         renderer.render(scene, camera);
         return renderer.domElement.toDataURL("image/png");
@@ -865,10 +908,10 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
         caps[i].position.y = CAP_BOT - a * TRAVEL;
         if (legends[i]) legends[i].mesh.position.y = CAP_BOT + CAP_H + 0.06 - a * TRAVEL;
       }
-      for (const h of halves) {
-        if (!h.knob || Math.abs(h.spinTo - h.spin) < 0.0005) continue;
-        h.spin += (h.spinTo - h.spin) * Math.min(1, dt * 9);
-        h.knob.rotation.y = h.spin;
+      for (const k of knobs) {
+        if (!k || Math.abs(k.spinTo - k.spin) < 0.0005) continue;
+        k.spin += (k.spinTo - k.spin) * Math.min(1, dt * 9);
+        k.group.rotation.y = k.spin;
       }
       renderer.render(scene, camera);
     };
@@ -894,7 +937,7 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
   useEffect(() => { api.current?.applyTheme(); }, [set.theme, set.tint]);
   useEffect(() => { api.current?.applyVisibility(); }, [set.legends, set.cases, set.screens, set.shadows]);
   useEffect(() => { api.current?.pose(); }, [set.tent, set.splay, set.gap]);
-  useEffect(() => { api.current?.placeKnobs(); }, [set.knob]);
+  useEffect(() => { api.current?.placeScreens(); }, [set.disp]);
 
   const put = (k) => (v) => setSet((s) => ({ ...s, [k]: v }));
   const savePng = () => {
@@ -959,8 +1002,10 @@ export default function Sofle({ keys, labels, active, onPick, info }) {
                value={set.splay} onChange={put("splay")} />
         <Slide label="Split gap" unit=" mm" min={0} max={240} step={2}
                value={set.gap} onChange={put("gap")} />
-        <Slide label="Knob inset" unit=" mm" min={13} max={26} step={0.2}
-               value={set.knob} onChange={put("knob")} />
+        {/* The knob is at a reported key position, so there is nothing to
+            inset. The display is the piece that was placed. */}
+        <Slide label="Display inset" unit=" mm" min={8} max={34} step={0.5}
+               value={set.disp} onChange={put("disp")} />
 
         <h5 className="codes__title">Show</h5>
         <div className="row row--wrap">
