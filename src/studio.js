@@ -354,6 +354,36 @@ export function tinyKeys(keys) {
   return out;
 }
 
+/** A third of a key unit. Well past rounding, well under any real split. */
+const SEAM_MM = 19.05 / 3;
+
+/**
+ * Which keys belong to which half, from the one vertical line no key crosses.
+ *
+ * Measured edge to edge, not centre to centre. Centres were the first attempt
+ * and they do not work: a Sofle's thumb clusters reach inboard past its inner
+ * column, so the widest gap between centres is inside a half rather than
+ * between them, and the board came out as one piece with a notch in it.
+ *
+ * Keys within a half abut, so any real emptiness spanning the board is the
+ * seam. A third of a key unit is well past rounding and well under the
+ * narrowest gap anyone leaves.
+ */
+export function splitHalves(spots) {
+  if (spots.length < 4) return [spots.map((_, i) => i)];
+  const order = spots
+    .map((s, i) => ({ i, l: s.x - s.w / 2, r: s.x + s.w / 2 }))
+    .sort((a, b) => a.l - b.l);
+  let reach = order[0].r, best = 0, at = -1;
+  for (let n = 1; n < order.length; n++) {
+    const gap = order[n].l - reach;
+    if (gap > best) { best = gap; at = n; }
+    reach = Math.max(reach, order[n].r);
+  }
+  if (best < SEAM_MM || at < 0) return [spots.map((_, i) => i)];
+  return [order.slice(0, at).map((o) => o.i), order.slice(at).map((o) => o.i)];
+}
+
 /** Every response carries exactly one subsystem; find which. */
 export function subsystemOf(rr) {
   for (const k of ["meta", "core", "behaviors", "keymap"]) if (rr?.[k]) return k;
@@ -463,6 +493,31 @@ if (typeof process !== "undefined" && process.argv?.[1]?.endsWith("studio.js")) 
   eq(tinyKeys([]).size, 0, "no keys, no slivers");
   // A board of nothing but slivers is a board of ordinary keys.
   eq(tinyKeys(trackball.slice(8)).size, 0, "smallness is relative, so all-small is all-normal");
+
+  // Where a split board comes apart. Positions here are millimetres, the
+  // shape the 3D view works in.
+  const row = (x0, n) => Array.from({ length: n }, (_, i) => ({ x: x0 + i * 19.05, w: 19.05 }));
+  eq(splitHalves(row(0, 12)).length, 1, "a board with no gap is one board");
+  const apart = [...row(0, 6), ...row(6 * 19.05 + 40, 6)];
+  eq(splitHalves(apart).map((h) => h.length), [6, 6], "a real gap comes apart in the middle");
+  // The shape that broke the first attempt. A Sofle's thumb cluster reaches
+  // inboard past its own inner column, so the seam it leaves is about one key
+  // unit — and the first rule measured centre to centre and wanted two and a
+  // half before it would believe in a split. It found none, and the board was
+  // drawn as one piece with a notch in it. Edge to edge, a thumb key that
+  // overlaps the column above it opens no gap at all, and the only emptiness
+  // spanning the board is the seam.
+  // Written out in key units rather than generated, because the first version
+  // of this fixture put the thumbs outboard by arithmetic slip and passed a
+  // board with no seam in it at all.
+  const at = (n) => ({ x: n * 19.05, w: 19.05 });
+  //                columns    thumbs, the last reaching inboard past column 5
+  const lhs = [0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 6].map(at);
+  const rhs = [8, 9, 10, 11, 12, 13, 8, 9, 10, 11, 12].map(at);
+  eq(splitHalves([...lhs, ...rhs]).map((h) => h.length), [11, 11],
+     "thumb keys reaching inboard do not open a seam of their own");
+  eq(splitHalves([]).length, 1, "no keys, one board");
+  eq(splitHalves(row(0, 2)).length, 1, "too few keys to have a seam");
 
   eq(subsystemOf({ request_id: 1, keymap: {} }), "keymap", "subsystem is found");
   eq(subsystemOf({ request_id: 1 }), null, "a bare response has no subsystem");

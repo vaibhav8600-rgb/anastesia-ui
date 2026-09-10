@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { splitHalves } from "./studio.js";
 
 // A split keyboard, in three dimensions, built from what the board reported.
 //
@@ -11,10 +12,6 @@ import * as THREE from "three";
 // orders agreed. They are read from the physical layout instead, so key n in
 // this scene is binding n by construction, and there is nothing to keep in
 // step.
-//
-// Which is also why this is not Sofle-specific in anything but its name: it
-// draws whatever shape the layout describes. The name is the gate because it is
-// the one board this has been looked at on.
 
 /** One key unit in millimetres. ZMK reports hundredths of a unit. */
 const U = 19.05;
@@ -26,24 +23,48 @@ const CAP_H = 10.8;
 const CASE_TOP = 13;    // top of the rim
 const TRAVEL = 2.4;     // how far a cap drops when pressed
 
-// Pose. A split board tented and splayed reads as two halves of one keyboard;
-// laid flat it reads as a picture of a keyboard. Fixed rather than adjustable —
-// this is a keymap editor, and the angles are here to make the shape legible,
-// not to design a case.
-const TENT = (10 * Math.PI) / 180;
-const SPLAY = (8 * Math.PI) / 180;
-const GAP = 70;
+// nice!view: LS011B7DH03, 1.08 inch, 160x68, module 36 x 14 x 2.9 mm, mounted
+// with its long axis running front to back so the panel is portrait.
+const DISPLAY = { w: 14, h: 36, aw: 11.7, ah: 27.5, t: 2.9, inset: 21, down: 12 };
+const ENCODER = { r: 8.0, down: 48 };
 
-// Two palettes rather than the reference's four colourways, picked to sit under
-// this app's own ground rather than to be chosen.
-const DARK = {
-  case: "#2F2B29", rim: "#3A3533", plate: "#171514",
-  cap: "#4A433F", stem: "#141312", legend: "#F4EFE9",
+const THEMES = {
+  ink: {
+    name: "Ink & ember", case: "#2F2B29", rim: "#3A3533", plate: "#171514",
+    outer: "#E0704B", inner: "#4E4744", legend: "#F2ECE5", accent: "#E0704B",
+    lcd: "#BFC5BB", lcdInk: "#12160F", stem: "#141312", bezel: "#3A3533",
+  },
+  peach: {
+    name: "Peach & cream", case: "#F7F3EB", rim: "#F2EDE4", plate: "#E4DFD6",
+    outer: "#F2A48D", inner: "#F8EAD9", legend: "#C2664B", accent: "#F2A48D",
+    lcd: "#D7DDD2", lcdInk: "#141A15", stem: "#3A3633", bezel: "#FBF8F3",
+  },
+  milktea: {
+    name: "Milk tea", case: "#EFE7DC", rim: "#E9DFD2", plate: "#DDD2C3",
+    outer: "#BC9370", inner: "#EDDFCB", legend: "#5A4433", accent: "#BC9370",
+    lcd: "#D7DDD2", lcdInk: "#141A15", stem: "#3A3633", bezel: "#F6F0E7",
+  },
+  matcha: {
+    name: "Matcha", case: "#F1F3EE", rim: "#E7EBE2", plate: "#DCE2D5",
+    outer: "#8FAF87", inner: "#EAF0E3", legend: "#3D573A", accent: "#8FAF87",
+    lcd: "#D7DDD2", lcdInk: "#141A15", stem: "#3A3633", bezel: "#F7F9F4",
+  },
 };
-const LIGHT = {
-  case: "#F7F3EB", rim: "#EFE9DF", plate: "#DFD9CF",
-  cap: "#F2EADF", stem: "#3A3633", legend: "#332C26",
+
+const SETTINGS_KEY = "anastasia-board-3d";
+const DEFAULTS = {
+  theme: "ink", tint: "type", tent: 10, splay: 8, gap: 70, knob: 17.8,
+  legends: true, cases: true, screens: true, shadows: true,
 };
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
+    // Merged rather than trusted: a stored blob from an older build is missing
+    // whatever was added since, and a missing toggle reads as "off".
+    return { ...DEFAULTS, ...saved, theme: THEMES[saved.theme] ? saved.theme : DEFAULTS.theme };
+  } catch { return { ...DEFAULTS }; }
+}
 
 /* ------------------------------------------------------------------ shapes */
 
@@ -173,9 +194,9 @@ function tracePolygon(target, poly, radius) {
  *
  * ZMK turns a key about (rx, ry) rather than about itself, which is how a
  * thumb cluster is described — but proto3 leaves a zero out, so an absent
- * origin and an origin at the top-left corner of the board are the same bytes.
- * A zero origin is read as "about itself", which is what the flat board does
- * and what these layouts mean.
+ * origin and an origin at the very corner of the board are the same bytes. A
+ * zero origin is read as "about itself", which is what the flat board does and
+ * what these layouts mean.
  */
 function place(k) {
   const ang = ((k.r ?? 0) / 100) * (Math.PI / 180);
@@ -190,27 +211,6 @@ function place(k) {
     x: mm(cx), z: mm(cy), rot: -ang,
     w: mm(k.width ?? 100), h: mm(k.height ?? 100),
   };
-}
-
-/**
- * Which keys belong to which half, from the widest empty column in the middle.
- *
- * A split board leaves a gap no key crosses; a one-piece board does not, and
- * gets a single half, which the pose code then leaves alone. Nothing here needs
- * to know how many columns a Sofle has.
- */
-export function splitHalves(spots) {
-  if (spots.length < 4) return [spots.map((_, i) => i)];
-  const order = spots.map((s, i) => ({ i, x: s.x })).sort((a, b) => a.x - b.x);
-  let best = 0, at = -1;
-  for (let n = 1; n < order.length; n++) {
-    const d = order[n].x - order[n - 1].x;
-    if (d > best) { best = d; at = n; }
-  }
-  // One key unit of empty space is a stagger; three is a split. Below that,
-  // treat the board as one piece rather than inventing a seam in it.
-  if (best < U * 2.5 || at < 0) return [spots.map((_, i) => i)];
-  return [order.slice(0, at).map((o) => o.i), order.slice(at).map((o) => o.i)];
 }
 
 /* ---------------------------------------------------------------- textures */
@@ -238,14 +238,64 @@ function labelCanvas(text, colour) {
   return c;
 }
 
+// The panel is 11.7mm across, which is very few screen pixels, and mipmapping
+// averages hairline strokes straight into the background until the display
+// reads as blank. Drawn at 4x and minified with a plain linear filter.
+const SS = 4;
+
+/**
+ * What the displays show.
+ *
+ * The reference painted battery, Bluetooth profiles and a words-per-minute
+ * graph. None of that is knowable here: ZMK Studio's RPC carries a keymap and
+ * nothing else, so a battery reading on this screen would be a drawing of a
+ * battery reading. It shows what the editor actually knows — which board, which
+ * layer, and how many there are.
+ */
+function paintScreen(ctx, theme, info, side) {
+  const th = THEMES[theme], W = 68, H = 160;
+  ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  ctx.fillStyle = th.lcd; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = th.lcdInk; ctx.strokeStyle = th.lcdInk; ctx.lineWidth = 1.6;
+  ctx.textAlign = "left";
+
+  ctx.font = '500 8px system-ui, sans-serif';
+  ctx.fillText((info.device ?? "ZMK").slice(0, 12), 5, 13);
+  ctx.beginPath(); ctx.moveTo(5, 19); ctx.lineTo(W - 5, 19); ctx.stroke();
+
+  if (side === 0) {
+    ctx.font = '500 8px system-ui, sans-serif';
+    ctx.fillText("LAYER", 5, 34);
+    const name = (info.layer ?? "").slice(0, 9) || `L${info.index ?? 0}`;
+    ctx.font = `700 ${name.length > 6 ? 12 : 15}px system-ui, sans-serif`;
+    ctx.fillText(name, 5, 52);
+    // One box per layer, the current one filled. Real, and it is the thing you
+    // most want to see from across the desk.
+    for (let i = 0; i < Math.min(info.layers ?? 1, 6); i++) {
+      if (i === info.index) ctx.fillRect(5 + i * 10, 64, 7, 7);
+      else ctx.strokeRect(5.5 + i * 10, 64.5, 6, 6);
+    }
+  } else {
+    ctx.font = '500 8px system-ui, sans-serif';
+    ctx.fillText("KEYS", 5, 34);
+    ctx.font = '700 20px system-ui, sans-serif';
+    ctx.fillText(String(info.keys ?? 0), 5, 55);
+    ctx.font = '500 8px system-ui, sans-serif';
+    ctx.fillText(info.dirty ? "unsaved" : "saved", 5, 72);
+  }
+}
+
 /* --------------------------------------------------------------- component */
 
-export default function Sofle({ keys, labels, active, onPick }) {
+export default function Sofle({ keys, labels, active, onPick, info }) {
   const host = useRef(null);
   const api = useRef(null);
   const pick = useRef(onPick);
   pick.current = onPick;
   const [supported, setSupported] = useState(true);
+  const [set, setSet] = useState(loadSettings);
+  const live = useRef(set);
+  live.current = set;
 
   // Both dependencies are compared by value. React hands a fresh array every
   // render, so depending on the arrays themselves would tear down and rebuild
@@ -253,6 +303,11 @@ export default function Sofle({ keys, labels, active, onPick }) {
   // the layer-name field.
   const shape = JSON.stringify(keys);
   const legendKey = JSON.stringify(labels);
+  const screenKey = JSON.stringify(info ?? null);
+
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(set)); } catch { /* blocked */ }
+  }, [set]);
 
   useEffect(() => {
     const el = host.current;
@@ -260,7 +315,9 @@ export default function Sofle({ keys, labels, active, onPick }) {
 
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      // preserveDrawingBuffer so "Save a PNG" has something to read. Without it
+      // the buffer is cleared on composite and the file comes out empty.
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     } catch {
       setSupported(false);
       return undefined;
@@ -278,34 +335,32 @@ export default function Sofle({ keys, labels, active, onPick }) {
     const junk = [];
     const track = (x) => { junk.push(x); return x; };
 
-    // The page decides whether this is a dark room or a lit one, and the key
-    // type colours come from the same tokens the flat board and the legend use
-    // — so a modifier is the same violet in both views or the legend is a lie.
     const css = getComputedStyle(document.documentElement);
     const bg = new THREE.Color(css.getPropertyValue("--bg").trim() || "#141828");
     const dark = bg.r * 0.299 + bg.g * 0.587 + bg.b * 0.114 < 0.5;
-    const pal = dark ? DARK : LIGHT;
+    // Key type colours come from the same tokens the flat board and the legend
+    // use, so a modifier is the same violet in both views or the legend lies.
     const typeColour = (slug) => {
       const raw = css.getPropertyValue(`--kt-${slug}`).trim();
       if (!raw) return null;
       try { return new THREE.Color(raw); } catch { return null; }
     };
 
-    scene.add(new THREE.HemisphereLight(0xfff4e8, dark ? 0x2a2530 : 0xb9b4c6, 1.05));
-    const key = new THREE.DirectionalLight(0xfff3e2, 1.6);
-    key.position.set(-190, 340, 240);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    scene.add(new THREE.HemisphereLight(0xfff4e8, dark ? 0x2a2530 : 0xb9b4c6, 1.0));
+    const keyLight = new THREE.DirectionalLight(0xfff3e2, 1.5);
+    keyLight.position.set(-190, 340, 240);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
     const D = 340;
-    key.shadow.camera.left = -D; key.shadow.camera.right = D;
-    key.shadow.camera.top = D; key.shadow.camera.bottom = -D;
-    key.shadow.camera.near = 60; key.shadow.camera.far = 1000;
-    key.shadow.bias = -0.0013;
-    key.shadow.camera.updateProjectionMatrix();
-    scene.add(key);
-    const fill = new THREE.DirectionalLight(0xd6e4ff, 0.45);
-    fill.position.set(260, 180, -200);
-    scene.add(fill);
+    keyLight.shadow.camera.left = -D; keyLight.shadow.camera.right = D;
+    keyLight.shadow.camera.top = D; keyLight.shadow.camera.bottom = -D;
+    keyLight.shadow.camera.near = 60; keyLight.shadow.camera.far = 1000;
+    keyLight.shadow.bias = -0.0013;
+    keyLight.shadow.camera.updateProjectionMatrix();
+    scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xd6e4ff, 0.42);
+    fillLight.position.set(260, 180, -200);
+    scene.add(fillLight);
 
     const ground = new THREE.Mesh(
       track(new THREE.PlaneGeometry(2600, 2600)),
@@ -322,30 +377,43 @@ export default function Sofle({ keys, labels, active, onPick }) {
     // ------------------------------------------------------------- build
     const spots = keys.map(place);
     const groups = splitHalves(spots);
+    const th0 = THEMES[live.current.theme];
 
-    // One geometry per distinct key size, not per key. A sixty-key board has
-    // two or three sizes on it.
-    const capGeo = new Map();
+    const capGeo = new Map();   // one geometry per distinct key size, not per key
     const stemGeo = new Map();
 
-    const stemMat = track(new THREE.MeshStandardMaterial({ color: pal.stem, roughness: 0.88 }));
-    const caseMat = track(new THREE.MeshStandardMaterial({ color: pal.case, roughness: 0.68 }));
-    const plateMat = track(new THREE.MeshStandardMaterial({ color: pal.plate, roughness: 0.8 }));
-    const rimMat = track(new THREE.MeshStandardMaterial({ color: pal.rim, roughness: 0.74 }));
+    const mats = {
+      stem: track(new THREE.MeshStandardMaterial({ color: th0.stem, roughness: 0.88 })),
+      case: track(new THREE.MeshStandardMaterial({ color: th0.case, roughness: 0.68, metalness: 0.02 })),
+      plate: track(new THREE.MeshStandardMaterial({ color: th0.plate, roughness: 0.8 })),
+      rim: track(new THREE.MeshStandardMaterial({ color: th0.rim, roughness: 0.74 })),
+      bezel: track(new THREE.MeshStandardMaterial({ color: th0.bezel, roughness: 0.5 })),
+      knob: track(new THREE.MeshStandardMaterial({ color: th0.bezel, roughness: 0.4, metalness: 0.06 })),
+      dot: track(new THREE.MeshStandardMaterial({ color: th0.accent, roughness: 0.5 })),
+    };
 
-    const caps = [];      // one per key position, index-aligned with bindings
+    const caps = [];       // index-aligned with bindings
     const legends = [];
+    const capMeta = [];    // { type, ramp } for recolouring without a rebuild
     const halves = [];
+    const screens = [];
+    const shells = [];     // everything the "Case" toggle hides
 
-    for (const idx of groups) {
+    groups.forEach((idx, side) => {
       const pivot = new THREE.Group();
       const g = new THREE.Group();
       pivot.add(g);
       const parts = [];
 
+      // Where a key sits across its own half, for the gradient colouring. The
+      // outer edge is the little finger's; for the right half that is +x.
+      const xs = idx.map((p) => spots[p].x);
+      const lo = Math.min(...xs), hi = Math.max(...xs);
+      const rampOf = (x) => (hi - lo < 1e-6 ? 0 : (side === 0 ? x - lo : hi - x) / (hi - lo));
+
       for (const position of idx) {
         const s = spots[position];
-        const info = labels?.[position] ?? {};
+        const info2 = labels?.[position] ?? {};
         parts.push(s);
 
         const ck = `${s.w.toFixed(1)}x${s.h.toFixed(1)}`;
@@ -359,31 +427,23 @@ export default function Sofle({ keys, labels, active, onPick }) {
           stemGeo.set(ck, box);
         }
 
-        const base = new THREE.Color(pal.cap);
-        const tint = typeColour(info.type);
-        // Letters are left alone here for the same reason they are on the flat
-        // board: they are most of a keyboard, and a board where every cap is
-        // coloured is a board where the colour says nothing.
-        const colour = tint && !["letter", "none", "other"].includes(info.type)
-          ? base.clone().lerp(tint, dark ? 0.42 : 0.3)
-          : base;
-
-        const mat = track(new THREE.MeshStandardMaterial({ color: colour, roughness: 0.6 }));
+        const mat = track(new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.02 }));
         const cap = new THREE.Mesh(capGeo.get(ck), mat);
         cap.position.set(s.x, CAP_BOT, s.z);
         cap.rotation.y = s.rot;
         cap.castShadow = true;
         cap.receiveShadow = true;
-        cap.userData = { position, base: colour.clone() };
+        cap.userData = { position };
         g.add(cap);
         caps[position] = cap;
+        capMeta[position] = { type: info2.type, ramp: rampOf(s.x) };
 
-        const stem = new THREE.Mesh(stemGeo.get(ck), stemMat);
+        const stem = new THREE.Mesh(stemGeo.get(ck), mats.stem);
         stem.position.set(s.x, PLATE_Y - 0.3, s.z);
         stem.rotation.y = s.rot;
         g.add(stem);
 
-        const tex = track(new THREE.CanvasTexture(labelCanvas(info.cap, pal.legend)));
+        const tex = track(new THREE.CanvasTexture(labelCanvas(info2.cap, th0.legend)));
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = 8;
         const lg = track(new THREE.PlaneGeometry(Math.min(s.w, s.h) * 0.74, Math.min(s.w, s.h) * 0.74));
@@ -394,69 +454,165 @@ export default function Sofle({ keys, labels, active, onPick }) {
         legend.position.set(s.x, CAP_BOT + CAP_H + 0.06, s.z);
         legend.rotation.y = s.rot;
         g.add(legend);
-        legends[position] = legend;
+        legends[position] = { mesh: legend, text: info2.cap };
+      }
+
+      // The inner edge of this half — where a Sofle puts its display and its
+      // encoder. Derived from the key field rather than from a constant,
+      // because the key field is the only thing here that was measured.
+      const zs = idx.map((p) => spots[p].z);
+      const zTop = Math.min(...zs);
+      const innerSign = groups.length === 1 ? 0 : (side === 0 ? 1 : -1);
+      const innerX = side === 0 ? hi : lo;
+
+      let knob = null, screen = null, knobBase = null;
+      if (innerSign) {
+        const dx = innerX + innerSign * live.current.knob;
+        const bezelBevel = 0.5, bezelH = DISPLAY.t + bezelBevel * 2;
+        const bezel = new THREE.Mesh(
+          track(flatExtrude(roundedRect(DISPLAY.w + 3.5, DISPLAY.h + 3.5, 2), DISPLAY.t, bezelBevel)),
+          mats.bezel,
+        );
+        const sx = innerX + innerSign * DISPLAY.inset;
+        bezel.position.set(sx, PLATE_Y, zTop + DISPLAY.down);
+        bezel.castShadow = true; bezel.receiveShadow = true;
+        g.add(bezel);
+        shells.push(bezel);
+        parts.push({ x: sx, z: zTop + DISPLAY.down, rot: 0, w: DISPLAY.w + 4, h: DISPLAY.h + 4 });
+
+        const c = document.createElement("canvas");
+        c.width = 68 * SS; c.height = 160 * SS;
+        const tex = track(new THREE.CanvasTexture(c));
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+        tex.anisotropy = 8;
+        const sg = track(new THREE.PlaneGeometry(DISPLAY.aw, DISPLAY.ah));
+        sg.rotateX(-Math.PI / 2);
+        screen = new THREE.Mesh(sg, track(new THREE.MeshBasicMaterial({ map: tex })));
+        screen.position.set(sx, PLATE_Y + bezelH + 0.06, zTop + DISPLAY.down);
+        g.add(screen);
+        screens.push({ mesh: screen, ctx: c.getContext("2d"), tex, side });
+
+        knobBase = new THREE.Mesh(
+          track(new THREE.CylinderGeometry(ENCODER.r + 0.3, ENCODER.r + 0.6, 2.4, 30)), mats.bezel,
+        );
+        knobBase.position.set(dx, PLATE_Y + 1.2, zTop + ENCODER.down);
+        knobBase.receiveShadow = true;
+        g.add(knobBase);
+        shells.push(knobBase);
+
+        knob = new THREE.Group();
+        const body = new THREE.Mesh(
+          track(new THREE.CylinderGeometry(ENCODER.r, ENCODER.r * 0.97, 10.5, 40)), mats.knob,
+        );
+        body.position.y = 5.25; body.castShadow = true;
+        knob.add(body);
+        const ribGeo = track(new THREE.BoxGeometry(0.85, 8.6, 1.5));
+        for (let i = 0; i < 20; i++) {
+          const a = (i / 20) * Math.PI * 2;
+          const rib = new THREE.Mesh(ribGeo, mats.knob);
+          rib.position.set(Math.cos(a) * ENCODER.r, 5.25, Math.sin(a) * ENCODER.r);
+          rib.rotation.y = -a;
+          knob.add(rib);
+        }
+        const nub = new THREE.Mesh(track(new THREE.CylinderGeometry(1.1, 1.1, 0.6, 12)), mats.dot);
+        nub.position.set(0, 10.7, ENCODER.r * 0.55);
+        knob.add(nub);
+        knob.position.set(dx, PLATE_Y + 2.4, zTop + ENCODER.down);
+        knob.userData.isKnob = true;
+        g.add(knob);
+        shells.push(knob);
+        parts.push({ x: dx, z: zTop + ENCODER.down, rot: 0, w: (ENCODER.r + 4) * 2, h: (ENCODER.r + 4) * 2 });
       }
 
       // Stacked bottom up: a baseplate proud of the walls, walls with the key
       // field cut through them, then the switch plate the caps sit on.
       const bottom = new THREE.Mesh(
         track(flatExtrude(tracePolygon(new THREE.Shape(), outline(parts, 6.5, 0.6), 7.0), 2.2, 0.4)),
-        rimMat,
+        mats.rim,
       );
       bottom.castShadow = true; bottom.receiveShadow = true;
       g.add(bottom);
 
       const caseShape = tracePolygon(new THREE.Shape(), outline(parts, 4.0, 0.6), 6.5);
       caseShape.holes.push(tracePolygon(new THREE.Path(), outline(parts, 1.2, 0.6).reverse(), 4.0));
-      const walls = new THREE.Mesh(track(flatExtrude(caseShape, CASE_TOP - 3.0 - 1.2, 0.6)), caseMat);
+      const walls = new THREE.Mesh(track(flatExtrude(caseShape, CASE_TOP - 3.0 - 1.2, 0.6)), mats.case);
       walls.position.y = 3.0;
       walls.castShadow = true; walls.receiveShadow = true;
       g.add(walls);
 
       const plate = new THREE.Mesh(
         track(flatExtrude(tracePolygon(new THREE.Shape(), outline(parts, 2.4, 0.6), 4.5), 2, 0)),
-        plateMat,
+        mats.plate,
       );
       plate.position.y = PLATE_Y - 2;
       plate.receiveShadow = true;
       g.add(plate);
+      shells.push(bottom, walls, plate);
 
       const box = new THREE.Box3().setFromObject(g);
       g.position.x = -(box.min.x + box.max.x) / 2;
       g.position.z = -(box.min.z + box.max.z) / 2;
 
       board.add(pivot);
-      halves.push({ pivot, width: (box.max.x - box.min.x) / 2 });
-    }
-
-    // Tent and splay each half about its own inner edge, then sit the lowest
-    // corner on the desk. One half means a one-piece board: leave it flat.
-    halves.forEach((h, i) => {
-      const m = halves.length === 1 ? 0 : (i === 0 ? 1 : -1);
-      h.pivot.rotation.set(0, SPLAY * m, TENT * m);
-      h.pivot.position.set(-(GAP / 2 + h.width) * m, 0, 0);
-      const b = new THREE.Box3().setFromObject(h.pivot);
-      h.pivot.position.y = -b.min.y;
+      halves.push({
+        pivot, side, knob, knobBase,
+        knobHome: knob ? knob.position.x : 0,
+        width: (box.max.x - box.min.x) / 2,
+        spin: 0, spinTo: 0,
+      });
     });
 
-    const span = new THREE.Box3().setFromObject(board);
-    const focus = span.getCenter(new THREE.Vector3());
-    const corners = [];
-    for (const x of [span.min.x, span.max.x])
-      for (const y of [span.min.y, span.max.y])
-        for (const z of [span.min.z, span.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    // --------------------------------------------------------------- pose
+    // Declared up here because pose() refits the camera and pose() runs first.
+    const cam = { theta: Math.PI / 2 + 0.3, phi: 0.78, dist: 0, target: new THREE.Vector3() };
+    let touched = false;
+    let span, focus, corners = [];
+    const remeasure = () => {
+      span = new THREE.Box3().setFromObject(board);
+      focus = span.getCenter(new THREE.Vector3());
+      corners = [];
+      for (const x of [span.min.x, span.max.x])
+        for (const y of [span.min.y, span.max.y])
+          for (const z of [span.min.z, span.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    };
+
+    const pose = () => {
+      const s = live.current;
+      const tent = (s.tent * Math.PI) / 180;
+      const splay = (s.splay * Math.PI) / 180;
+      halves.forEach((h) => {
+        const m = halves.length === 1 ? 0 : (h.side === 0 ? 1 : -1);
+        h.pivot.rotation.set(0, splay * m, tent * m);
+        h.pivot.position.set(-(s.gap / 2 + h.width) * m, 0, 0);
+        const b = new THREE.Box3().setFromObject(h.pivot);
+        h.pivot.position.y = -b.min.y;
+      });
+      remeasure();
+      // Tenting a board or pushing the halves apart changes both where it is
+      // and how big it is. Without this the camera kept aiming at where the
+      // middle used to be and the board slid off the top corner of the frame.
+      // Skipped once someone has moved the camera themselves — their view is
+      // theirs, and a slider should not snatch it back.
+      if (!touched) {
+        cam.target.copy(focus);
+        cam.dist = fit();
+        place3();
+      }
+    };
 
     // ------------------------------------------------------------ camera
     /**
      * How far back to stand so the whole board is in frame.
      *
-     * The box is projected onto the view plane and each axis is fitted to its
-     * own field of view. A bounding sphere fitted to the tighter of the two
-     * fields — which is the obvious version — is badly wrong for this shape: a
-     * keyboard seen from above is wide and shallow, so the sphere is sized by a
-     * width that the horizontal field has room to spare for, and then that
-     * width is fitted into the vertical one. It put the board on screen at
-     * about a third of the size it should have been.
+     * The box is projected onto the view plane and each axis fitted to its own
+     * field of view. A bounding sphere fitted to the tighter of the two is the
+     * obvious version and is badly wrong for this shape: a keyboard seen from
+     * above is wide and shallow, so the sphere is sized by a width the
+     * horizontal field has room to spare for, and then that width is fitted
+     * into the vertical one. It drew the board at a third of size.
      */
     const fit = (pad = 1.06) => {
       const dir = new THREE.Vector3(
@@ -480,11 +636,10 @@ export default function Sofle({ keys, labels, active, onPick }) {
       const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (camera.aspect || 1));
       return Math.max(hx / Math.tan(hFov / 2), hy / Math.tan(vFov / 2)) * pad;
     };
-    const cam = { theta: Math.PI / 2 + 0.3, phi: 0.78, dist: 0, target: focus.clone() };
-    cam.dist = fit();
+
     const place3 = () => {
       cam.phi = Math.max(0.06, Math.min(Math.PI / 2 - 0.02, cam.phi));
-      cam.dist = Math.max(120, Math.min(2000, cam.dist));
+      cam.dist = Math.max(60, Math.min(3000, cam.dist));
       camera.position.set(
         cam.target.x + cam.dist * Math.sin(cam.phi) * Math.cos(cam.theta),
         cam.target.y + cam.dist * Math.cos(cam.phi),
@@ -493,10 +648,83 @@ export default function Sofle({ keys, labels, active, onPick }) {
       camera.lookAt(cam.target);
     };
 
+    pose();
+
+    // ------------------------------------------------------------- looks
+    const applyTheme = () => {
+      const s = live.current, th = THEMES[s.theme];
+      mats.case.color.set(th.case);
+      mats.plate.color.set(th.plate);
+      mats.rim.color.set(th.rim);
+      mats.stem.color.set(th.stem);
+      mats.bezel.color.set(th.bezel);
+      mats.knob.color.set(th.bezel);
+      mats.dot.color.set(th.accent);
+      const outer = new THREE.Color(th.outer), inner = new THREE.Color(th.inner);
+      caps.forEach((cap, i) => {
+        if (!cap) return;
+        const meta = capMeta[i] ?? {};
+        let colour;
+        if (s.tint === "gradient") {
+          colour = outer.clone().lerp(inner, Math.min(1, meta.ramp / 0.8));
+        } else {
+          const tint = typeColour(meta.type);
+          // Letters are left alone for the same reason as on the flat board:
+          // they are most of a keyboard, and a board where every cap is
+          // coloured is a board where the colour says nothing.
+          colour = tint && !["letter", "none", "other"].includes(meta.type)
+            ? inner.clone().lerp(tint, dark ? 0.55 : 0.4)
+            : inner.clone();
+        }
+        cap.userData.base = colour.clone();
+        cap.material.color.copy(colour);
+      });
+      legends.forEach((l) => {
+        if (!l) return;
+        l.mesh.material.map?.dispose();
+        const t = new THREE.CanvasTexture(labelCanvas(l.text, th.legend));
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 8;
+        l.mesh.material.map = t;
+        l.mesh.material.needsUpdate = true;
+      });
+      for (const sc of screens) {
+        paintScreen(sc.ctx, s.theme, info ?? {}, sc.side);
+        sc.tex.needsUpdate = true;
+      }
+      api.current?.highlight(active ?? -1);
+    };
+
+    const applyVisibility = () => {
+      const s = live.current;
+      legends.forEach((l) => { if (l) l.mesh.visible = s.legends; });
+      for (const m of shells) m.visible = s.cases;
+      for (const sc of screens) sc.mesh.visible = s.cases && s.screens;
+      caps.forEach((c) => { if (c) c.castShadow = s.shadows; });
+      renderer.shadowMap.enabled = s.shadows;
+      renderer.shadowMap.needsUpdate = true;
+      ground.visible = s.shadows;
+    };
+
+    const placeKnobs = () => {
+      const s = live.current;
+      halves.forEach((h) => {
+        if (!h.knob) return;
+        const m = h.side === 0 ? 1 : -1;
+        const shift = (s.knob - DEFAULTS.knob) * m;
+        h.knob.position.x = h.knobHome + shift;
+        // The collar goes with it, or the knob floats off its own base.
+        if (h.knobBase) h.knobBase.position.x = h.knobHome + shift;
+      });
+    };
+
+    applyTheme();
+    applyVisibility();
+
     // ------------------------------------------------------------- input
     const ray = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    let drag = null, lastX = 0, lastY = 0, moved = 0, touched = false;
+    let drag = null, lastX = 0, lastY = 0, moved = 0;
 
     const onDown = (e) => {
       drag = e.button === 2 || e.shiftKey ? "pan" : "orbit";
@@ -531,8 +759,17 @@ export default function Sofle({ keys, labels, active, onPick }) {
         pointer.set(((e.clientX - r.left) / r.width) * 2 - 1,
           -((e.clientY - r.top) / r.height) * 2 + 1);
         ray.setFromCamera(pointer, camera);
-        const hit = ray.intersectObjects(caps.filter(Boolean), false)[0];
-        if (hit) pick.current?.(hit.object.userData.position);
+        const knobs = halves.map((h) => h.knob).filter(Boolean);
+        const spun = knobs.length ? ray.intersectObjects(knobs, true)[0] : null;
+        if (spun) {
+          let o = spun.object;
+          while (o && !o.userData.isKnob) o = o.parent;
+          const h = halves.find((x) => x.knob === o);
+          if (h) h.spinTo += Math.PI / 6;
+        } else {
+          const hit = ray.intersectObjects(caps.filter(Boolean), false)[0];
+          if (hit) pick.current?.(hit.object.userData.position);
+        }
       }
       drag = null;
     };
@@ -571,7 +808,7 @@ export default function Sofle({ keys, labels, active, onPick }) {
     api.current = {
       highlight(position) {
         caps.forEach((cap, i) => {
-          if (!cap) return;
+          if (!cap?.userData.base) return;
           const on = i === position;
           cap.material.color.copy(cap.userData.base);
           if (on) cap.material.color.lerp(new THREE.Color(0xffffff), dark ? 0.36 : 0.22);
@@ -587,11 +824,24 @@ export default function Sofle({ keys, labels, active, onPick }) {
       view(name) {
         if (name === "top") { cam.theta = Math.PI / 2; cam.phi = 0.07; }
         else if (name === "front") { cam.theta = Math.PI / 2; cam.phi = 1.32; }
+        else if (name === "thumbs") { cam.theta = Math.PI / 2 + 0.85; cam.phi = 0.62; }
+        else if (name === "screen") { cam.theta = Math.PI / 2 + 0.1; cam.phi = 0.5; }
         else { cam.theta = Math.PI / 2 + 0.3; cam.phi = 0.78; }
-        cam.dist = fit();
         cam.target.copy(focus);
-        touched = false;
+        if (name === "thumbs" || name === "screen") {
+          const at = name === "screen" ? screens[0]?.mesh : caps[caps.length - 1];
+          if (at) at.getWorldPosition(cam.target);
+          cam.dist = name === "screen" ? 90 : Math.max(120, fit() * 0.4);
+        } else {
+          cam.dist = fit();
+        }
+        touched = name === "thumbs" || name === "screen";
         place3();
+      },
+      pose, applyTheme, applyVisibility, placeKnobs,
+      png() {
+        renderer.render(scene, camera);
+        return renderer.domElement.toDataURL("image/png");
       },
     };
 
@@ -613,7 +863,12 @@ export default function Sofle({ keys, labels, active, onPick }) {
         if (Math.abs(a - press[i]) < 0.0004 && a < 0.0004) continue;
         press[i] = a;
         caps[i].position.y = CAP_BOT - a * TRAVEL;
-        legends[i].position.y = CAP_BOT + CAP_H + 0.06 - a * TRAVEL;
+        if (legends[i]) legends[i].mesh.position.y = CAP_BOT + CAP_H + 0.06 - a * TRAVEL;
+      }
+      for (const h of halves) {
+        if (!h.knob || Math.abs(h.spinTo - h.spin) < 0.0005) continue;
+        h.spin += (h.spinTo - h.spin) * Math.min(1, dt * 9);
+        h.knob.rotation.y = h.spin;
       }
       renderer.render(scene, camera);
     };
@@ -628,13 +883,28 @@ export default function Sofle({ keys, labels, active, onPick }) {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("wheel", onWheel);
       api.current = null;
+      for (const l of legends) l?.mesh.material.map?.dispose();
       for (const d of junk) d.dispose?.();
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [shape, legendKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shape, legendKey, screenKey]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { api.current?.highlight(active ?? -1); }, [active]);
+  useEffect(() => { api.current?.applyTheme(); }, [set.theme, set.tint]);
+  useEffect(() => { api.current?.applyVisibility(); }, [set.legends, set.cases, set.screens, set.shadows]);
+  useEffect(() => { api.current?.pose(); }, [set.tent, set.splay, set.gap]);
+  useEffect(() => { api.current?.placeKnobs(); }, [set.knob]);
+
+  const put = (k) => (v) => setSet((s) => ({ ...s, [k]: v }));
+  const savePng = () => {
+    const data = api.current?.png();
+    if (!data) return;
+    const a = document.createElement("a");
+    a.download = `keyboard-${set.theme}.png`;
+    a.href = data;
+    a.click();
+  };
 
   if (!supported) {
     return (
@@ -646,14 +916,82 @@ export default function Sofle({ keys, labels, active, onPick }) {
   }
 
   return (
-    <div className="board3d">
-      <div className="board3d__view" ref={host} tabIndex={0} role="application"
-           aria-label="The board in three dimensions. Click a key to edit it." />
-      <div className="board3d__views">
-        <button className="zoom__btn" onClick={() => api.current?.view("iso")}>Iso</button>
-        <button className="zoom__btn" onClick={() => api.current?.view("top")}>Top</button>
-        <button className="zoom__btn" onClick={() => api.current?.view("front")}>Front</button>
+    <>
+      <div className="board3d">
+        <div className="board3d__view" ref={host} tabIndex={0} role="application"
+             aria-label="The board in three dimensions. Click a key to edit it." />
+        <div className="board3d__views">
+          {[["iso", "Iso"], ["top", "Top"], ["front", "Front"],
+            ["thumbs", "Thumbs"], ["screen", "Screen"]].map(([k, label]) => (
+            <button key={k} className="zoom__btn" onClick={() => api.current?.view(k)}>{label}</button>
+          ))}
+        </div>
       </div>
+
+      <details className="board3d__panel">
+        <summary>Board appearance</summary>
+
+        <h5 className="codes__title">Keycap colourway</h5>
+        <div className="swatches">
+          {Object.entries(THEMES).map(([k, t]) => (
+            <button key={k} className={"sw" + (set.theme === k ? " is-active" : "")}
+                    aria-pressed={set.theme === k} onClick={() => put("theme")(k)}>
+              <i style={{ background: `linear-gradient(135deg, ${t.outer} 0 50%, ${t.inner} 50% 100%)` }} />
+              {t.name}
+            </button>
+          ))}
+        </div>
+
+        <h5 className="codes__title">Colour the caps by</h5>
+        <div className="row row--wrap">
+          {/* Type is the default because it is the only one that tells you
+              anything: the same colours the legend and the flat board use. */}
+          <button className={"pill" + (set.tint === "type" ? " is-active" : "")}
+                  onClick={() => put("tint")("type")}>Key type</button>
+          <button className={"pill" + (set.tint === "gradient" ? " is-active" : "")}
+                  onClick={() => put("tint")("gradient")}>Gradient</button>
+        </div>
+
+        <h5 className="codes__title">Ergonomics</h5>
+        <Slide label="Tenting" unit="°" min={0} max={35} step={1}
+               value={set.tent} onChange={put("tent")} />
+        <Slide label="Splay" unit="°" min={0} max={30} step={1}
+               value={set.splay} onChange={put("splay")} />
+        <Slide label="Split gap" unit=" mm" min={0} max={240} step={2}
+               value={set.gap} onChange={put("gap")} />
+        <Slide label="Knob inset" unit=" mm" min={13} max={26} step={0.2}
+               value={set.knob} onChange={put("knob")} />
+
+        <h5 className="codes__title">Show</h5>
+        <div className="row row--wrap">
+          {[["legends", "Legends"], ["cases", "Case"],
+            ["screens", "Displays"], ["shadows", "Shadows"]].map(([k, label]) => (
+            <button key={k} className={"pill" + (set[k] ? " is-active" : "")}
+                    aria-pressed={!!set[k]} onClick={() => put(k)(!set[k])}>{label}</button>
+          ))}
+        </div>
+
+        <div className="row row--wrap">
+          <button className="btn" onClick={savePng}>Save a PNG</button>
+          <button className="btn btn--ghost" onClick={() => setSet({ ...DEFAULTS })}>
+            Back to defaults
+          </button>
+        </div>
+      </details>
+    </>
+  );
+}
+
+function Slide({ label, unit, min, max, step, value, onChange }) {
+  const id = `b3d-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  return (
+    <div className="ctl">
+      <div className="ctl__head">
+        <label className="ctl__label" htmlFor={id}>{label}</label>
+        <span className="ctl__value">{value}{unit}</span>
+      </div>
+      <input id={id} className="range" type="range" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </div>
   );
 }

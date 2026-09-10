@@ -3041,3 +3041,47 @@ button.rail__item:hover { background: var(--glass-bg-3); }
   color: var(--text);
   font-weight: 600;
 }
+
+/* The 3D board's own settings. A disclosure rather than a panel: they are
+   worth having and not worth looking at every time. */
+.board3d__panel {
+  margin: 0 0 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--glass-bg-2);
+}
+.board3d__panel > summary {
+  padding: 0.6rem 0;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-label);
+  cursor: pointer;
+}
+.board3d__panel .codes__title { margin-top: 0.75rem; }
+.board3d__panel .ctl { margin-bottom: 0.5rem; }
+
+/* A colourway: the two cap colours it uses, and its name. */
+.sw {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--glass-bg-3);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+  text-align: left;
+  cursor: pointer;
+}
+.sw:hover { border-color: var(--line); }
+.sw.is-active { border-color: var(--accent); }
+.sw i {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 18%, transparent);
+}

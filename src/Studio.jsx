@@ -920,6 +920,18 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
               labels={legends}
               active={picking}
               onPick={(position) => setPicking(picking === position ? null : position)}
+              // What the nice!views show. The reference painted battery,
+              // Bluetooth profiles and words per minute; none of that reaches
+              // this app, and a drawn battery reading is worse than no reading.
+              // These four are things the editor actually knows.
+              info={{
+                device: device?.name ?? "ZMK",
+                layer: current?.name ?? `Layer ${layer}`,
+                index: layer,
+                layers: keymap?.layers?.length ?? 1,
+                keys: keys.length,
+                dirty,
+              }}
             />
             <p className="ctl__hint">
               Drag to look around, wheel to zoom, click a key to change it. The
