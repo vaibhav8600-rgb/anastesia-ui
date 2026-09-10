@@ -9,7 +9,9 @@ import {
 } from "./keycodes.js";
 import Loading from "./Loading.jsx";
 import Sofle from "./Sofle.jsx";
-import { GLYPHS, PAIR_SCALE, PAIR_X, PAIR_Y, badgeFor, iconFor, shapesOf } from "./glyphs.js";
+import {
+  GLYPHS, PAIR_SCALE, PAIR_X, PAIR_Y, badgeFor, iconFor, shapesOf,
+} from "./glyphs.js";
 
 // The keymap editor: layers, key positions and bindings, read and written over
 // ZMK Studio's RPC.
@@ -194,7 +196,7 @@ function describe(binding, behaviors, layers) {
   const name = b?.display_name ?? `#${id}`;
   const p1 = binding.param1 ?? 0;
   const p2 = binding.param2 ?? 0;
-  const meta = b?.metadata?.[0] ?? {};
+  const meta = metaOf(b?.metadata, p1);
   const i1 = paramInfo(meta.param1);
   const i2 = paramInfo(meta.param2);
 
@@ -222,7 +224,8 @@ function describe(binding, behaviors, layers) {
   const iconOf = (v1, v2) => iconFor(name,
     constName(i1, v1) ?? constName(i2, v2),
     (i1.kind === "constant" && MOUSE_BUTTONS[v1] && v1)
-      || (i2.kind === "constant" && MOUSE_BUTTONS[v2] && v2) || 0);
+      || (i2.kind === "constant" && MOUSE_BUTTONS[v2] && v2) || 0,
+    v1);
   // The keycap's text, once an icon is carrying the meaning. `badgeFor`
   // returns null when the text should stand as it was, and the bluetooth
   // profile number even when that number is zero.
@@ -234,7 +237,11 @@ function describe(binding, behaviors, layers) {
   // name. Matching names is a guess about one firmware's naming habits dressed
   // up as a rule, and it is how "Hold/tap (layer/mouse key)" got its layer read
   // as a mouse button.
-  if (p1 && i1.kind !== "none" && i2.kind === "none") {
+  // Not `if (p1 && ...)`. Whether a parameter exists is what its metadata
+  // says, not whether its value happens to be non-zero — BT_CLR is 0 and so is
+  // layer 0, and both were falling through to "this behavior takes no
+  // parameters" and printing the behavior's name instead of the binding.
+  if (i1.kind !== "none" && i2.kind === "none") {
     const type = typeOf(i1, p1);
     const icon = iconOf(p1, p2);
     return {
@@ -274,7 +281,10 @@ function describe(binding, behaviors, layers) {
     const icon = iconOf(p1, p2);
     return {
       name: capOf(icon, p1, p2, paramShort(i2, p2, layers)),
-      sub: `hold ${paramShort(i1, p1, layers)}`,
+      // "hold" belongs to a hold-tap. Anything else with two parameters gets
+      // the first one plainly, or nothing at all when an icon already says it.
+      sub: holdTap ? `hold ${paramShort(i1, p1, layers)}`
+        : (icon ? null : paramShort(i1, p1, layers)),
       action: name,
       type,
       icon,
@@ -1200,6 +1210,36 @@ export default function Studio({ onNote, onKeyLabels, onWheelLabels }) {
 }
 
 /**
+ * The metadata set a binding's value actually belongs to.
+ *
+ * `metadata` is repeated, and only the first was ever read. That is wrong for
+ * any behavior that declares more than one shape, and `&bt` is exactly that:
+ * one set holds the constants that take no profile — clear, next, previous —
+ * and another holds BT_SEL and BT_DISC together with the profile range. Read
+ * the first set only, and selecting a profile finds no constant list at all:
+ * no name to choose an icon from, no range for the number, and a cap printing
+ * the raw 3 that BT_SEL happens to equal.
+ *
+ * So: the set whose first parameter can actually hold this value. Failing
+ * that, the set that declares the most, because offering every control the
+ * behavior has beats offering the fewest.
+ */
+export function metaOf(sets, p1) {
+  if (!sets?.length) return {};
+  if (sets.length === 1) return sets[0];
+  for (const set of sets) {
+    const info = paramInfo(set.param1);
+    if (info.kind === "constant" && info.options.some((o) => o.constant === p1)) return set;
+  }
+  for (const set of sets) {
+    const { range } = paramInfo(set.param1);
+    if (range && p1 >= range.min && p1 <= range.max) return set;
+  }
+  const size = (s) => (s.param1?.length ?? 0) + (s.param2?.length ?? 0);
+  return [...sets].sort((a, b) => size(b) - size(a))[0];
+}
+
+/**
  * What one parameter actually is, read from its own descriptors.
  *
  * This has to be per parameter, not per behavior. "Hold/tap (layer/mouse key)"
@@ -1237,7 +1277,7 @@ const TYPE_WORD = {
 export function pairings(behaviors) {
   return [...behaviors.values()]
     .map((b) => {
-      const set = b.metadata?.[0] ?? {};
+      const set = metaOf(b.metadata, 0);
       const i1 = paramInfo(set.param1);
       const i2 = paramInfo(set.param2);
       return { id: b.id, name: b.display_name || `#${b.id}`, i1, i2 };
@@ -1263,7 +1303,11 @@ export function paramShort(info, value, layers) {
   if (info.kind === "layer") return layers?.[value]?.name || `L${value}`;
   if (info.kind === "constant") {
     const found = info.options.find((o) => o.constant === value);
-    return MOUSE_BUTTONS[value] ?? found?.name ?? String(value);
+    // The name says whether this is a mouse button, not the number. Reading
+    // MOUSE_BUTTONS by value alone made OUT_USB, which is 1, print as "Left
+    // Click" — the same mistake the icons were making, in the text.
+    if (/^mb\d/i.test(found?.name ?? "")) return usageShort(value, "mouse") ?? found.name;
+    return found?.name ?? String(value);
   }
   if (info.kind === "range") return String(value);
   return usageShort(value) ?? String(value);
@@ -1427,7 +1471,7 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick, layers }
     : list;
 
   const chosen = behaviors.get(id);
-  const set = chosen?.metadata?.[0] ?? {};
+  const set = metaOf(chosen?.metadata, param1);
   const i1 = paramInfo(set.param1);
   const i2 = paramInfo(set.param2);
   const pairs = pairings(behaviors);

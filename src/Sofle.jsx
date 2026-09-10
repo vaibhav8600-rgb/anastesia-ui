@@ -239,10 +239,13 @@ function labelCanvas(text, colour, icon) {
 
   // An icon takes the middle of the cap and the text drops under it — the same
   // order the flat board uses, drawn from the same path data.
-  if (icon && drawGlyph(g, icon, 64, text ? 48 : 64, text ? 52 : 68, colour, 2.2)) {
+  if (icon && drawGlyph(g, icon, 64, text ? 46 : 64, text ? 54 : 70, colour, 2.2)) {
     if (text) {
-      g.font = "600 26px system-ui, sans-serif";
-      g.fillText(text.length > 5 ? text.slice(0, 5) : text, 64, 100);
+      // Sized to what is there rather than cut to five characters — "Middle"
+      // came out as "Middl", which is not a shorter word for anything.
+      const px = text.length > 7 ? 17 : text.length > 5 ? 21 : 27;
+      g.font = `600 ${px}px system-ui, sans-serif`;
+      g.fillText(text, 64, 102);
     }
     return c;
   }
