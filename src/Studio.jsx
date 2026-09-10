@@ -1244,6 +1244,31 @@ export function metaOf(sets, p1) {
 }
 
 /**
+ * The first parameter's choices, gathered across every set.
+ *
+ * `metaOf` picks the one set a value belongs to, which is right for reading a
+ * binding and wrong for offering one. A behavior can split its constants
+ * across sets — `&bt` puts clear, next and previous in one and Select Profile
+ * and Disconnect in another — and the picker resets the value to 0 when you
+ * change behavior, so it landed in the set holding constant 0 and the other
+ * set's constants were unreachable. Bluetooth profiles could not be bound at
+ * all.
+ *
+ * Merged only when every set declares constants there. Mixing descriptor
+ * kinds across sets is how a layer parameter gets read as a mouse button, and
+ * that is a mistake worth only making once.
+ */
+export function firstParamInfo(sets) {
+  const infos = (sets ?? []).map((set) => paramInfo(set.param1));
+  if (infos.length < 2 || !infos.every((i) => i.kind === "constant")) {
+    return infos[0] ?? { kind: "none" };
+  }
+  const seen = new Map();
+  for (const i of infos) for (const o of i.options) seen.set(o.constant, o);
+  return { kind: "constant", options: [...seen.values()] };
+}
+
+/**
  * What one parameter actually is, read from its own descriptors.
  *
  * This has to be per parameter, not per behavior. "Hold/tap (layer/mouse key)"
@@ -1475,8 +1500,12 @@ function Picker({ position, behaviors, binding, busy, onCancel, onPick, layers }
     : list;
 
   const chosen = behaviors.get(id);
+  // Every constant the behavior has for its first parameter, and then the
+  // second parameter of whichever set the chosen value actually belongs to —
+  // so the profile number appears exactly when a profile-taking constant is
+  // picked, and not before.
   const set = metaOf(chosen?.metadata, param1);
-  const i1 = paramInfo(set.param1);
+  const i1 = firstParamInfo(chosen?.metadata);
   const i2 = paramInfo(set.param2);
   const pairs = pairings(behaviors);
 

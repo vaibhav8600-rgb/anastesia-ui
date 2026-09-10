@@ -21,8 +21,7 @@ export const GLYPHS = {
   // Four ways at once, for a move with no direction to read.
   move: "M12 3V21M3 12H21M12 3L9.5 5.5M12 3L14.5 5.5M12 21L9.5 18.5M12 21L14.5 18.5"
     + "M3 12L5.5 9.5M3 12L5.5 14.5M21 12L18.5 9.5M21 12L18.5 14.5",
-  // A mouse seen from above, with and without its wheel.
-  mouseBody: "M7 9A5 5 0 0 1 17 9V16A5 5 0 0 1 7 16Z",
+  // A mouse seen from above, with its wheel.
   scroll: "M7 9A5 5 0 0 1 17 9V16A5 5 0 0 1 7 16Z M12 6.5V11",
   clickL: "M7 9A5 5 0 0 1 17 9V16A5 5 0 0 1 7 16Z M12 4.5V11M12 11H7.2",
   clickR: "M7 9A5 5 0 0 1 17 9V16A5 5 0 0 1 7 16Z M12 4.5V11M12 11H16.8",
