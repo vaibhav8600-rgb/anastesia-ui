@@ -203,16 +203,6 @@
 
     color-scheme: light;
   }
-
-  body {
-    background:
-      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
-      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
-      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
-      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
-      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
-    background-attachment: fixed;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -250,6 +240,26 @@ body {
   font-size: var(--fs-body);
   line-height: 1.5;
   overflow-wrap: break-word;
+}
+
+/* The pale wash. It has to come after the rule above: it sat in the light
+   block at the top of the sheet, same specificity, earlier in the file — so
+   the dark wash won in light mode and dark ink landed on it at about 1:1.
+   Five layers against the dark wash's six, so the grain's tiling and blend
+   are reset rather than inherited onto a gradient. */
+@media (prefers-color-scheme: light) {
+  body {
+    background:
+      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
+      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
+      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
+      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
+      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
+    background-size: auto;
+    background-repeat: no-repeat;
+    background-blend-mode: normal;
+    background-attachment: fixed;
+  }
 }
 
 button, input { font: inherit; color: inherit; }
@@ -426,6 +436,11 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   border-color: color-mix(in srgb, #fff 30%, transparent);
   color: var(--accent-ink);
   box-shadow: var(--glow), var(--sheen);
+}
+/* The 12% that shows through is dark ground in dark mode and near-white in
+   light, where it thinned the fill under white ink to 4.23:1. */
+@media (prefers-color-scheme: light) {
+  .tab.is-active { background: var(--accent); }
 }
 
 .panel {
@@ -1100,6 +1115,9 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 }
 @media (prefers-color-scheme: light) {
   .logs__body { background: #0b0d14; }
+  /* The terminal stays dark, so its empty line cannot take light mode's dark
+     muted ink: that put it at 2.22:1. */
+  .logs__body .empty { color: #99a0bd; }
 }
 
 .logrow {
@@ -1185,11 +1203,16 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
    ratio instead. The panel's own ceiling is the measure now. */
 .panel > div { max-width: 100%; min-width: 0; }
 
-.panel > div > * + * { margin-top: 1rem; }
+/* The standalone editor's column is the same container for the same content,
+   so it takes the same rhythm. Without it the connect hint sat 2px above the
+   primary button, on that button's glow, and its last line fell to 3.95:1. */
+.panel > div > * + *,
+.studio-only__col > * + * { margin-top: 1rem; }
 
 /* A heading owns what follows it: the space belongs above the title, not
    between the title and its content. */
-.panel > div > .sec + * { margin-top: 0rem; }
+.panel > div > .sec + *,
+.studio-only__col > .sec + * { margin-top: 0rem; }
 
 /* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
 .knobs > .sec {
@@ -1898,7 +1921,21 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    later rule of equal specificity wins — so the board sat 1400 wide, the prose
    900, and the picker pinned itself to the far left of the window. Three
    widths and no shared edge is what "scattered" looks like. */
-.studio-only__col { width: min(100%, 1400px); margin-inline: auto; }
+/* And the same tier-1 surface the editor has on the Keymap tab. Its text was
+   set against that fill; on its own it sat on the bare wash instead, and the
+   connect hint measured 2.65:1 against the brightest pixel under it. */
+.studio-only__col {
+  width: min(100%, 1400px);
+  margin-inline: auto;
+  padding: clamp(0.75rem, 2.5vw, 1.5rem);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
+    linear-gradient(var(--glass-bg-1), var(--glass-bg-1)) padding-box,
+    var(--glass-border-1) border-box;
+  box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
+}
 
 /* A keyboard wants the width. A sentence does not, and neither does a form:
    `.ctl--inline` puts the label at one edge and the control at the other, which
@@ -2450,7 +2487,12 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --bg: #f4f6fc;
     --text: #141828;
     --muted: #5b6280;
-    --accent: #0f7fb8;
+    /* #0f7fb8 put white ink on it at 4.42:1 — every primary button and the
+       active tab. A shade darker clears it without changing what it looks like. */
+    --accent: #0e7ab1;
+    /* Never set here, so links inherited flat dark's #7cd4ff: pale cyan on a
+       pale ground, 1.53:1, on the link to the keymap editor. */
+    --accent-text: #0b6a9a;
     --accent-ink: #ffffff;
     --warn: #a4551d;
     --danger: #c0344f;
@@ -2589,6 +2631,17 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --glass-scrim-3: transparent;
   }
 }
+/* The same thickening in the light palette. The branch above outranks the
+   light block's bare :root, so without this, light mode with transparency
+   effects off drew every panel in the dark fill under dark ink. */
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: light) {
+  :root:not([data-theme="flat"]) {
+    --glass-bg-1: rgba(255, 255, 255, 0.72);
+    --glass-bg-view: rgba(255, 255, 255, 0.34);
+    --glass-bg-2: rgba(255, 255, 255, 0.8);
+    --glass-bg-3: rgba(255, 255, 255, 0.88);
+  }
+}
 
 /* The sheen is decoration; the surfaces it sits on are unaffected. */
 @media (prefers-reduced-motion: reduce) {
@@ -2616,6 +2669,22 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --glass-border-3: linear-gradient(145deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.38));
   }
 }
+/* Light, the same way round: darker ink, paler scrims, and edges drawn in ink
+   rather than light, since a white hairline is no boundary on a pale ground. */
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root:not([data-theme="flat"]) {
+    --text: #0e0a22;
+    --muted: #2e2856;
+    --line: rgba(60, 50, 110, 0.45);
+    --line-soft: rgba(60, 50, 110, 0.28);
+    --glass-scrim-1: rgba(255, 255, 255, 0.5);
+    --glass-scrim-2: rgba(255, 255, 255, 0.52);
+    --glass-scrim-3: rgba(255, 255, 255, 0.54);
+    --glass-border-1: linear-gradient(145deg, rgba(60, 50, 110, 0.55), rgba(60, 50, 110, 0.34));
+    --glass-border-2: linear-gradient(145deg, rgba(60, 50, 110, 0.45), rgba(60, 50, 110, 0.28));
+    --glass-border-3: linear-gradient(145deg, rgba(60, 50, 110, 0.6), rgba(60, 50, 110, 0.38));
+  }
+}
 
 
 /* ---------- flat: keep the native border ----------
@@ -2627,7 +2696,8 @@ textarea.search::-webkit-scrollbar-thumb:hover {
    the two themes draw their edge by different means. */
 
 :root[data-theme="flat"] .stage__view,
-:root[data-theme="flat"] .stage__panel {
+:root[data-theme="flat"] .stage__panel,
+:root[data-theme="flat"] .studio-only__col {
   border-color: var(--line);
   background: var(--glass-bg-1);
 }

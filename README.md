@@ -378,6 +378,23 @@ near-white base, and the two neumorphic shadows change meaning: the highlight
 becomes near-white and the shadow a soft violet-grey, which is what stops the
 style turning into grey mud on a pale ground.
 
+For a while none of it reached the screen. The pale wash sat in the light block
+at the top of the sheet, and the main `body` rule — same specificity, later in
+the file — replaced it, so light mode drew dark ink on the dark wash at about
+1:1. The reduced-transparency and more-contrast branches had the same problem
+one level up: `:root:not([data-theme="flat"])` outranks the light block's bare
+`:root`, and both held only dark values, so light mode with Windows'
+transparency effects off painted every panel in the dark fill. Each branch now
+has a light counterpart, and the wash comes after the rule it overrides.
+
+With the wash back, one thing surfaced that had been hidden under it: the
+active tab mixes its accent at 88% with whatever is behind, which is dark
+ground in dark mode and near-white in light, where white ink on it came to
+4.23:1. It is solid in light. Flat's light palette had two of its own: it never
+set `--accent-text`, so links inherited flat dark's pale cyan and the link to
+the keymap editor sat at 1.53:1, and white on its accent was 4.42:1. Both
+clear now, and every light screen measured passes in both themes.
+
 ### Motion
 
 Two things move, both specular, so they read as one material:
@@ -785,6 +802,10 @@ that asks for a trackball first.
 So there is a second door on the connect screen. Same editor, no stage, no
 tabs, one centred column and a way back. It is offered wherever Web Serial is,
 which is the only thing it needs.
+
+The column is a tier-1 panel with the Keymap tab's spacing, because that is
+what the editor was written against. Without either, its connect hint sat on
+the bare wash at 2.65:1, and its last line sat on the primary button's glow.
 
 ### The board in three dimensions
 
