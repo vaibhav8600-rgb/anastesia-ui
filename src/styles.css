@@ -1576,10 +1576,16 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   box-shadow: var(--nm-in);
   overflow: hidden;
 }
+/* Full width, slid into place: the value is a translate, never a width. A
+   width transition relaid out and repainted the page every frame it ran, and
+   with a reading every 700ms and a 220ms ease that was a third of the time —
+   ~29 repaints a second on an idle Sensor(s) tab, ~45% of a core on an Intel
+   UHD 620. A transform eases on the compositor with no layout or paint. The
+   track's clip keeps the hidden part hidden and the fill keeps its own cap. */
 .gauges__fill {
   height: 100%;
   border-radius: var(--pill);
-  transition: width 220ms ease, background-color 220ms ease;
+  transition: transform 220ms ease, background-color 220ms ease;
 }
 /* Bright, saturated green when tracking is good — the reading you want to see. */
 .gauges__fill--high { background: var(--ok); }

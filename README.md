@@ -193,6 +193,23 @@ cap. Both now issue none, including on the tab with live readings. Dragging,
 clicking a key, moving a slider and saving a PNG all still draw, and each goes
 quiet again once it settles.
 
+Then on a real GPU (Chrome on an Intel UHD 620, CPU time of the whole browser
+process tree): idle on the Keymap tab went from 66% of a core to about 1%, and
+the landing page from about 55% to 2%. Nothing caps the frame rate any more —
+a flicked ball drew every animation frame the browser offered, 89 a second
+there, so on a real screen it is the screen's own rate. A drag draws one frame
+per pointer move.
+
+The Sensor(s) tab still sat at about 45% with nothing drawn in 3D, and hiding
+the model did not lower it. A trace found the page repainting 29 times a
+second: the surface-quality bars eased their `width` over 220ms, a reading
+arrives every 700ms in demo mode, and a width transition lays out and
+repaints the page on every frame it runs. The bars now slide a full-width fill
+with `transform` instead, which the compositor animates without layout or
+paint. Repaints fell to 3 a second (one per reading) and the tab to about 15%,
+the same with or without the model. A real board reads once a second, so it
+costs less than demo mode does.
+
 ## Choosing a control's shape
 
 A page of forty sliders reads as a spreadsheet and a page of forty dials reads

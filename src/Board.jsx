@@ -222,7 +222,7 @@ export function Surface({ live, onNote, active = true }) {
                   <div className="gauges__track">
                     <div
                       className={"gauges__fill gauges__fill--" + qualityBand(s.quality, s.max)}
-                      style={{ width: Math.min(100, (s.quality / s.max) * 100) + "%" }}
+                      style={{ transform: `translateX(${Math.min(100, (s.quality / s.max) * 100) - 100}%)` }}
                     />
                   </div>
                   <Spark values={history.current.get(s.sensor)} max={s.max} />
@@ -747,7 +747,7 @@ function StorageBackup({ live, onNote }) {
       {busy === "restore" && (
         <>
           <div className="gauges__track">
-            <div className="gauges__fill gauges__fill--high" style={{ width: progress + "%" }} />
+            <div className="gauges__fill gauges__fill--high" style={{ transform: `translateX(${progress - 100}%)` }} />
           </div>
           <button className="pill" onClick={() => { cancelled.current = true; }}>Stop</button>
         </>
