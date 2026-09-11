@@ -6,10 +6,18 @@
    Two systems, kept separate so they cannot fight:
 
    GLASS is for anything that floats — the two stage panels, the header chips,
-   the popovers. Translucent fill, a bright hairline edge, and a blur of what
-   is behind it. Only the large surfaces carry `backdrop-filter`; nesting it
-   inside them costs a second full-screen blur pass and looks identical,
-   because there is nothing between an inner card and its parent to blur.
+   the popovers. Translucent fill and a bright hairline edge, and deliberately
+   no blur. `backdrop-filter` used to sit on every large surface, and it was
+   the single most expensive thing on the page: two full-height panels
+   blurring 24px of wash, a WebGL canvas redrawing inside one of them so the
+   blur recomputed every frame. On Firefox, taking the blur away in devtools
+   was reported as the difference between completely unusable and laggy but
+   usable. It bought almost nothing to see — what is behind these panels is
+   a smooth gradient and a fine grain, and blurring a smooth gradient gives
+   back the same gradient. What it did change was the grain, from softened to
+   sharp, and exactly one text run sitting a hair from 4.5:1 fell under it.
+   Tier 1 thickened from 0.41 to 0.46 to clear it; measured over every text
+   run on every tab, the result fails no check the blurred original passed.
 
    NEUMORPHISM is for anything you touch — buttons, switches, sliders, fields.
    One light source, top-left, for every one of them: raised things take a pale
@@ -62,15 +70,15 @@
      distinguished by how much of the ground it lets through, how hard its
      edge catches light, and how far it sits off the surface below.
 
-     Tier 2 carries NO blur, deliberately. It sits inside a tier-1 panel whose
-     backdrop is already blurred and near-flat, so blurring it again changes
-     almost nothing while costing a second full-screen pass. Its separation
-     comes from alpha, edge and shadow instead — which is what the eye reads
-     as "closer" anyway. */
-  --glass-saturate: 1.6;
-
-  --glass-blur-1: 24px;
-  --glass-bg-1: rgba(20, 15, 42, 0.41);
+     No tier blurs. Separation comes from alpha, edge and shadow, which is
+     what the eye reads as "closer" anyway — and what tier 2 was already
+     doing on its own, inside a tier-1 panel, without anyone noticing it had
+     no blur. */
+  /* 0.46, up from 0.41 when the blur went. Blur averages the grain behind a
+     glyph; without it the lightest speck under a line of muted text is
+     lighter, and one panel blurb at 4.47:1 noticed. 0.46 clears it, and
+     every other run on every tab stays where it was or improves. */
+  --glass-bg-1: rgba(20, 15, 42, 0.46);
   /* The model panel is the same tier but carries a fraction of the fill:
      nothing on it owes 4.5:1 to the panel itself, so hiding the wash behind it
      bought nothing. Its two labels get their own backing instead. */
@@ -88,14 +96,12 @@
   --glass-highlight-view: inset 0 1px 0 rgba(255, 255, 255, 0.30), inset 0 -1px 0 rgba(0, 0, 0, 0.30);
   --glass-shadow-view: 0 0 0 1px rgba(8, 6, 22, 0.32), 0 18px 40px -18px rgba(4, 2, 14, 0.7), 0 2px 6px -2px rgba(4, 2, 14, 0.55);
 
-  --glass-blur-2: none;
   --glass-bg-2: rgba(44, 35, 78, 0.20);
   --glass-scrim-2: transparent;
   --glass-highlight-2: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
   --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.15) 40%, rgba(255, 255, 255, 0.05));
   --glass-shadow-2: 0 14px 30px -14px rgba(4, 2, 14, 0.62), 0 2px 5px -2px rgba(4, 2, 14, 0.62);
 
-  --glass-blur-3: 12px;
   --glass-bg-3: rgba(30, 23, 58, 0.62);
   --glass-scrim-3: transparent;
   --glass-highlight-3: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.26);
@@ -107,9 +113,6 @@
 
   --line: rgba(255, 255, 255, 0.15);
   --line-soft: rgba(255, 255, 255, 0.08);
-  --blur: var(--glass-blur-1);
-  --glass-filter: blur(var(--glass-blur-1)) saturate(var(--glass-saturate));
-  --glass-filter-3: blur(var(--glass-blur-3)) saturate(var(--glass-saturate));
 
   /* Names the rest of the sheet already uses, now pointing at a tier. */
   --glass: var(--glass-bg-1);
@@ -200,43 +203,55 @@
 
     color-scheme: light;
   }
-
-  body {
-    background:
-      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
-      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
-      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
-      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
-      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
-    background-attachment: fixed;
-  }
 }
 
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
 
-body {
-  margin: 0;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
-    /* A dark base with a bright core, rather than a bright base throughout.
-       The old field floored at luma 77 because its base gradient was light
-       (#3f4569 alone is 70), not because the blooms covered too much. So the
-       base carries the darkness now — #1b1836 floors at 27 on its own — and
-       the blooms are free to be strong and saturated over it. Range 27..114
-       instead of 77..130: the same lit core, but with somewhere dark to fall.
+/* The wash, as tokens: the body paints it, and so does the model's panel,
+   which needs its own copy (see .stage__view). */
+:root {
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  /* A dark base with a bright core, rather than a bright base throughout.
+     The old field floored at luma 77 because its base gradient was light
+     (#3f4569 alone is 70), not because the blooms covered too much. So the
+     base carries the darkness now — #1b1836 floors at 27 on its own — and
+     the blooms are free to be strong and saturated over it. Range 27..114
+     instead of 77..130: the same lit core, but with somewhere dark to fall.
 
-       Darkening uniformly would have been the wrong move. Panel separation is
-       alpha x (ground - fill) and the fills are darker than the ground, so a
-       dimmer ground shrinks every edge. A vignette measured exactly that way:
-       floor 23 but the settings edge fell 2.09:1 to 1.52:1. Wide range, lit
-       core, dark corners is the only shape that serves both. */
+     Darkening uniformly would have been the wrong move. Panel separation is
+     alpha x (ground - fill) and the fills are darker than the ground, so a
+     dimmer ground shrinks every edge. A vignette measured exactly that way:
+     floor 23 but the settings edge fell 2.09:1 to 1.52:1. Wide range, lit
+     core, dark corners is the only shape that serves both. */
+  --wash:
     radial-gradient(1120px 940px at 29% 28%, rgba(176, 112, 255, 0.70), transparent 66%),
     radial-gradient(1080px 900px at 81% 23%, rgba(96, 152, 255, 0.66), transparent 68%),
     radial-gradient(900px 760px at 13% 87%, rgba(255, 108, 142, 0.38), transparent 62%),
     radial-gradient(840px 700px at 66% 95%, rgba(255, 150, 196, 0.24), transparent 60%),
     linear-gradient(155deg, #4a3f7a 0%, #2e2a55 52%, #1b1836 100%);
+}
+
+/* The pale wash, and no grain on it. As a rule of its own this once sat in
+   the light block at the top of the sheet, same specificity as the body rule
+   and earlier in the file, so the dark wash won and dark ink landed on it at
+   about 1:1. As tokens, order only matters among :root rules. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --grain: none;
+    --wash:
+      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
+      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
+      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
+      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
+      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--grain), var(--wash);
   /* Grain tiles; every gradient below it covers once. Without this the wash
      bands visibly across a wide panel. */
   background-size: 140px 140px, auto, auto, auto, auto, auto;
@@ -339,12 +354,27 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 0;
   border: 1px solid transparent;
   border-radius: var(--radius);
+  /* The fill is thin on purpose: this panel's job is to show the scene. But
+     its edge is drawn the usual way — a gradient filling the whole box, under
+     fills meant to cover it — and at 13% they do not, so the white bevel lay
+     over the entire interior. Behind a 24px backdrop blur that read as frost.
+     With the blur gone it read as grey haze: the panel came out duller than
+     the page around it, mean saturation 0.20 against the wash's 0.35. So the
+     wash is painted in again above the border layer, pinned to the viewport
+     like the body's so the two meet without a seam, and the bevel is left to
+     the 1px ring it was drawn for. Static paint; nothing runs per frame.
+     Nine layers: scrim, fill, grain, the five of the wash, the border. */
   background:
-    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
-    linear-gradient(var(--glass-bg-view), var(--glass-bg-view)) padding-box,
-    var(--glass-border-view) border-box;
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
+    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)),
+    linear-gradient(var(--glass-bg-view), var(--glass-bg-view)),
+    var(--grain),
+    var(--wash),
+    var(--glass-border-view);
+  background-clip: padding-box, padding-box, padding-box, padding-box, padding-box,
+    padding-box, padding-box, padding-box, border-box;
+  background-attachment: scroll, scroll, fixed, fixed, fixed, fixed, fixed, fixed, scroll;
+  background-size: auto, auto, 140px 140px, auto, auto, auto, auto, auto, auto;
+  background-blend-mode: normal, normal, overlay, normal, normal, normal, normal, normal, normal;
   box-shadow: var(--glass-shadow-view), var(--glass-highlight-view);
   overflow: hidden;
 }
@@ -395,8 +425,6 @@ button, input[type="range"], input[type="search"], input[type="number"] {
     linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
     linear-gradient(var(--glass-bg-1), var(--glass-bg-1)) padding-box,
     var(--glass-border-1) border-box;
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
   overflow: hidden;
 }
@@ -427,6 +455,11 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   border-color: color-mix(in srgb, #fff 30%, transparent);
   color: var(--accent-ink);
   box-shadow: var(--glow), var(--sheen);
+}
+/* The 12% that shows through is dark ground in dark mode and near-white in
+   light, where it thinned the fill under white ink to 4.23:1. */
+@media (prefers-color-scheme: light) {
+  .tab.is-active { background: var(--accent); }
 }
 
 .panel {
@@ -658,8 +691,6 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--glass-bg-3);
-  backdrop-filter: var(--glass-filter-3);
-  -webkit-backdrop-filter: var(--glass-filter-3);
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
   animation: toast-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
@@ -1103,6 +1134,9 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
 }
 @media (prefers-color-scheme: light) {
   .logs__body { background: #0b0d14; }
+  /* The terminal stays dark, so its empty line cannot take light mode's dark
+     muted ink: that put it at 2.22:1. */
+  .logs__body .empty { color: #99a0bd; }
 }
 
 .logrow {
@@ -1188,11 +1222,16 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
    ratio instead. The panel's own ceiling is the measure now. */
 .panel > div { max-width: 100%; min-width: 0; }
 
-.panel > div > * + * { margin-top: 1rem; }
+/* The standalone editor's column is the same container for the same content,
+   so it takes the same rhythm. Without it the connect hint sat 2px above the
+   primary button, on that button's glow, and its last line fell to 3.95:1. */
+.panel > div > * + *,
+.studio-only__col > * + * { margin-top: 1rem; }
 
 /* A heading owns what follows it: the space belongs above the title, not
    between the title and its content. */
-.panel > div > .sec + * { margin-top: 0rem; }
+.panel > div > .sec + *,
+.studio-only__col > .sec + * { margin-top: 0rem; }
 
 /* Inside a card the group name is the card's title, not a micro-caps eyebrow. */
 .knobs > .sec {
@@ -1537,10 +1576,16 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
   box-shadow: var(--nm-in);
   overflow: hidden;
 }
+/* Full width, slid into place: the value is a translate, never a width. A
+   width transition relaid out and repainted the page every frame it ran, and
+   with a reading every 700ms and a 220ms ease that was a third of the time —
+   ~29 repaints a second on an idle Sensor(s) tab, ~45% of a core on an Intel
+   UHD 620. A transform eases on the compositor with no layout or paint. The
+   track's clip keeps the hidden part hidden and the fill keeps its own cap. */
 .gauges__fill {
   height: 100%;
   border-radius: var(--pill);
-  transition: width 220ms ease, background-color 220ms ease;
+  transition: transform 220ms ease, background-color 220ms ease;
 }
 /* Bright, saturated green when tracking is good — the reading you want to see. */
 .gauges__fill--high { background: var(--ok); }
@@ -1759,8 +1804,6 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
     linear-gradient(var(--glass-scrim-3), var(--glass-scrim-3)) padding-box,
     linear-gradient(var(--glass-bg-3), var(--glass-bg-3)) padding-box,
     var(--glass-border-3) border-box;
-  backdrop-filter: var(--glass-filter-3);
-  -webkit-backdrop-filter: var(--glass-filter-3);
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
   z-index: 2;
 }
@@ -1903,7 +1946,21 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
    later rule of equal specificity wins — so the board sat 1400 wide, the prose
    900, and the picker pinned itself to the far left of the window. Three
    widths and no shared edge is what "scattered" looks like. */
-.studio-only__col { width: min(100%, 1400px); margin-inline: auto; }
+/* And the same tier-1 surface the editor has on the Keymap tab. Its text was
+   set against that fill; on its own it sat on the bare wash instead, and the
+   connect hint measured 2.65:1 against the brightest pixel under it. */
+.studio-only__col {
+  width: min(100%, 1400px);
+  margin-inline: auto;
+  padding: clamp(0.75rem, 2.5vw, 1.5rem);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
+    linear-gradient(var(--glass-bg-1), var(--glass-bg-1)) padding-box,
+    var(--glass-border-1) border-box;
+  box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
+}
 
 /* A keyboard wants the width. A sentence does not, and neither does a form:
    `.ctl--inline` puts the label at one edge and the control at the other, which
@@ -1949,8 +2006,6 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   place-items: center;
   padding: var(--pad);
   background: rgba(8, 6, 22, 0.62);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   animation: modal-in 180ms ease;
 }
 
@@ -1962,8 +2017,6 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--glass-bg-3);
-  backdrop-filter: var(--glass-filter-3);
-  -webkit-backdrop-filter: var(--glass-filter-3);
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
 }
 
@@ -2410,8 +2463,6 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   --line: #262c44;
   --line-soft: #262c44;
 
-  --glass-filter: none;
-  --glass-filter-3: none;
   --sheen: none;
 
   /* Flat had no depth and no scrim: one solid fill, one hairline border. */
@@ -2461,7 +2512,12 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --bg: #f4f6fc;
     --text: #141828;
     --muted: #5b6280;
-    --accent: #0f7fb8;
+    /* #0f7fb8 put white ink on it at 4.42:1 — every primary button and the
+       active tab. A shade darker clears it without changing what it looks like. */
+    --accent: #0e7ab1;
+    /* Never set here, so links inherited flat dark's #7cd4ff: pale cyan on a
+       pale ground, 1.53:1, on the link to the keymap editor. */
+    --accent-text: #0b6a9a;
     --accent-ink: #ffffff;
     --warn: #a4551d;
     --danger: #c0344f;
@@ -2584,34 +2640,13 @@ textarea.search::-webkit-scrollbar-thumb:hover {
    All four branches reassign the same tokens rather than restating rules, so
    a surface never has two definitions to keep in step. */
 
-/* No backdrop-filter at all: go opaque rather than leaving text over a
-   raw gradient. This, not prefers-reduced-transparency, is the branch that
-   catches most browsers that cannot do the effect. */
-/* No backdrop-filter at all. Nothing can blur, so the fill alone has to carry
-   legibility — but it stays translucent, because "cannot blur" is not "must be
-   a solid box". Alpha is raised until text clears its target over the lightest
-   point of the wash, and no further. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root:not([data-theme="flat"]) {
-    --glass-bg-1: rgba(20, 15, 42, 0.86);
-    --glass-bg-view: rgba(20, 15, 42, 0.5);
-    --glass-bg-2: rgba(44, 35, 78, 0.80);
-    --glass-bg-3: rgba(30, 23, 58, 0.92);
-    --glass-scrim-1: transparent;
-    --glass-scrim-2: transparent;
-    --glass-scrim-3: transparent;
-  }
-}
-
 /* REDUCE transparency, not remove it. The first version of this branch swapped
-   in fully opaque fills and killed the blur outright, which is over-compliance:
-   it deleted the theme for anyone with Windows "Transparency effects" off, and
-   that is most of why the glass read as solid. The preference asks for less
-   see-through, so the blur shrinks and the fill thickens — both stay. */
+   in fully opaque fills, which is over-compliance: it deleted the theme for
+   anyone with Windows "Transparency effects" off, and that is most of why the
+   glass read as solid. The preference asks for less see-through, so the fill
+   thickens and stays a fill. */
 @media (prefers-reduced-transparency: reduce) {
   :root:not([data-theme="flat"]) {
-    --glass-blur-1: 10px;
-    --glass-blur-3: 6px;
     --glass-bg-1: rgba(20, 15, 42, 0.72);
     --glass-bg-view: rgba(20, 15, 42, 0.34);
     --glass-bg-2: rgba(44, 35, 78, 0.68);
@@ -2619,6 +2654,17 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --glass-scrim-1: transparent;
     --glass-scrim-2: transparent;
     --glass-scrim-3: transparent;
+  }
+}
+/* The same thickening in the light palette. The branch above outranks the
+   light block's bare :root, so without this, light mode with transparency
+   effects off drew every panel in the dark fill under dark ink. */
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: light) {
+  :root:not([data-theme="flat"]) {
+    --glass-bg-1: rgba(255, 255, 255, 0.72);
+    --glass-bg-view: rgba(255, 255, 255, 0.34);
+    --glass-bg-2: rgba(255, 255, 255, 0.8);
+    --glass-bg-3: rgba(255, 255, 255, 0.88);
   }
 }
 
@@ -2648,6 +2694,22 @@ textarea.search::-webkit-scrollbar-thumb:hover {
     --glass-border-3: linear-gradient(145deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.38));
   }
 }
+/* Light, the same way round: darker ink, paler scrims, and edges drawn in ink
+   rather than light, since a white hairline is no boundary on a pale ground. */
+@media (prefers-contrast: more) and (prefers-color-scheme: light) {
+  :root:not([data-theme="flat"]) {
+    --text: #0e0a22;
+    --muted: #2e2856;
+    --line: rgba(60, 50, 110, 0.45);
+    --line-soft: rgba(60, 50, 110, 0.28);
+    --glass-scrim-1: rgba(255, 255, 255, 0.5);
+    --glass-scrim-2: rgba(255, 255, 255, 0.52);
+    --glass-scrim-3: rgba(255, 255, 255, 0.54);
+    --glass-border-1: linear-gradient(145deg, rgba(60, 50, 110, 0.55), rgba(60, 50, 110, 0.34));
+    --glass-border-2: linear-gradient(145deg, rgba(60, 50, 110, 0.45), rgba(60, 50, 110, 0.28));
+    --glass-border-3: linear-gradient(145deg, rgba(60, 50, 110, 0.6), rgba(60, 50, 110, 0.38));
+  }
+}
 
 
 /* ---------- flat: keep the native border ----------
@@ -2659,7 +2721,8 @@ textarea.search::-webkit-scrollbar-thumb:hover {
    the two themes draw their edge by different means. */
 
 :root[data-theme="flat"] .stage__view,
-:root[data-theme="flat"] .stage__panel {
+:root[data-theme="flat"] .stage__panel,
+:root[data-theme="flat"] .studio-only__col {
   border-color: var(--line);
   background: var(--glass-bg-1);
 }

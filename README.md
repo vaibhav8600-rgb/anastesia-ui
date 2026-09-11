@@ -159,8 +159,55 @@ device plus its throw with four times the texels, it reads as contact.
 
 Two things keep it cheap: the shadow pass runs once and is then frozen (only
 the ball and wheels move, and both are surfaces of revolution turning about
-their own axis, so their shadows never change), and the loop is capped at 30fps
-and pauses when the page is hidden or the canvas is scrolled out of view.
+their own axis, so their shadows never change), and nothing is drawn while
+nothing moves.
+
+### Drawn only when something changes
+
+Both 3D views used to draw every frame whether or not anything had moved — the
+trackball at a 30fps cap, the Sofle at the display's full rate — so a model
+sitting still on screen cost as much as one being spun, and on a machine
+without GPU acceleration that was most of a core. The cap also made motion
+look choppy.
+
+Now the loop sleeps. Anything that changes the picture calls `wake()`: a drag,
+a zoom, a click, a slider, a colour, a relabelled key. The loop then runs at
+the display's own rate until the last thing stops moving and goes back to
+sleep. Every ease has to *finish* for that to work — a lerp only ever gets
+closer — so each one snaps to its target once the difference can't be seen,
+and the trackball's glow ramps per second rather than per frame, or a slow
+machine would take forty seconds to stop drawing it.
+
+The Sofle also stopped re-rendering React on every mouse move. The hover card's
+position was state, so each move re-rendered the view and restringified the
+layout to learn nothing had changed; the card is now moved directly, and state
+changes only when the key under the pointer does. Its shadow map is frozen the
+same way the trackball's is, redrawn when the pose, the displays or what's
+visible changes, and it no longer keeps a preserved drawing buffer for the PNG
+export — the export renders and reads back in the same task instead.
+
+Counted from outside the app by wrapping WebGL's draw calls: an idle Sofle
+used to issue 297 draw calls every frame, and an idle trackball redrew at its
+cap. Both now issue none, including on the tab with live readings. Dragging,
+clicking a key, moving a slider and saving a PNG all still draw, and each goes
+quiet again once it settles.
+
+Then on a real GPU (Chrome on an Intel UHD 620, CPU time of the whole browser
+process tree): idle on the Keymap tab went from 66% of a core to about 1%, and
+the landing page from about 55% to 2%. Nothing caps the frame rate any more —
+a flicked ball drew every animation frame the browser offered, 89 a second
+there, so on a real screen it is the screen's own rate. A drag draws one frame
+per pointer move.
+
+The Sensor(s) tab still sat at about 45% with nothing drawn in 3D, and hiding
+the model did not lower it. A trace found the page repainting 29 times a
+second: the surface-quality bars eased their `width` over 220ms, a reading
+arrives every 700ms in demo mode, and a width transition lays out and
+repaints the page on every frame it runs. The bars now slide a full-width fill
+with `transform` instead, which the compositor animates without layout or
+paint. Repaints fell to 3 a second (one per reading) and the tab to about 15%,
+the same with or without the model. A real board reads once a second, so it
+costs less than demo mode does.
 
 ## Choosing a control's shape
 
@@ -263,8 +310,8 @@ it reads "steady" and draws flat rather than amplifying noise into a mountain.
 Two systems, kept separate in `src/styles.css` so they cannot fight:
 
 **Glass** is for anything that *floats* — the two stage panels, the header
-chips, the popovers. A translucent fill, a bright hairline edge, and a blur of
-what is behind it. The page itself is a fixed wash, which is the thing the
+chips, the popovers. A translucent fill and a bright hairline edge, and no
+blur — see below. The page itself is a fixed wash, which is the thing the
 glass has to be glass *of*; the 3D canvas is `alpha: true`, so the wash shows
 through behind the model too.
 
@@ -287,11 +334,9 @@ sense of glass comes from the ground being brighter than the pane.
 
 Glass comes in **three elevation tiers**, distinguished by how much ground they
 let through, how hard the edge catches light, and how far they sit off the
-surface below. Tier 1 is the two stage panels (fill 0.41), tier 2 the cards
-inside them (0.20, deliberately *without* blur — it sits on an already-blurred
-backdrop, so a second full-screen pass would buy nothing), tier 3 the things
-floating over the model: the caption, the pointer pad, the palette and the
-viewport's tool buttons.
+surface below. Tier 1 is the two stage panels (fill 0.46), tier 2 the cards
+inside them (0.20), tier 3 the things floating over the model: the caption, the
+pointer pad, the palette and the viewport's tool buttons.
 
 The viewport is the exception that proves the rule. Its job is to show the
 scene, so its fill stays at 0.13 and cannot separate it from the ground the way
@@ -306,28 +351,87 @@ highlight up-left and a soft shadow down-right, sunken things take exactly the
 reverse, and pressing a button swaps its raise for the matching well. Mixing
 the direction per element is what makes this style look cheap.
 
-Two costs are deliberately not paid:
+### Why there is no blur
 
-- **Cards do not blur.** Nesting `backdrop-filter` inside an already-blurred
-  panel buys nothing — there is nothing between an inner card and its parent to
-  blur — and costs a second full-screen pass.
-- **The viewport buttons do not blur either.** Six of them sit on top of a
-  canvas that redraws at 30fps, so each would force a re-composite every frame.
-  They are tier 3 in every other respect. Tier 3 therefore has two expressions:
-  the palette blurs its backdrop, the three overlay elements do not. That is a
-  known seam, not an oversight.
+The glass used to blur what was behind it: `backdrop-filter: blur(24px)
+saturate(1.6)` on both stage panels, 12px on the toast, the palette and the
+lock dialog, and a 3px full-screen blur behind that dialog. It was the single
+most expensive thing on the page. A backdrop filter re-samples and re-blurs
+everything beneath it whenever anything beneath it changes, and the model
+panel had a WebGL canvas redrawing *inside* it — so the blur recomputed every
+frame, over most of the screen. On Firefox, removing the blur variable in
+devtools was reported as taking the page from completely unusable to laggy but
+usable. The rest of the lag was the 3D view redrawing every frame whether or
+not anything moved — see [Drawn only when something changes](#drawn-only-when-something-changes).
+
+It also bought very little to see. What sits behind these panels is a smooth
+gradient and a fine grain, and blurring a smooth gradient gives back the same
+gradient. Blur preserves the average brightness of the ground, which is what
+contrast is measured against; what it changed was the grain, which went from
+softened to sharp.
+
+That is the one thing it cost. Measured by the rendered-ink method below —
+every text run on every tab, against the lightest real pixel under it — the
+blur-free build failed exactly the checks the blurred one did, except for one
+run sitting a hair from the line: a panel blurb at 4.47, where sharp grain
+under it outweighed the smoothed version. Tier 1's fill went from 0.41 to 0.46
+to clear it, which is the lever the tiers already name for this: raise alpha
+until the text clears, and no further. The result fails no check the blurred
+original passed, and — since a thicker fill only helps light text on it — a
+few fewer overall.
+
+Comparing the two builds had one trap worth recording. Taking each run's six
+worst failures and diffing the lists made a separator dot look newly broken;
+it had been failing with the blur on as well, and only moved into the top six
+once others dropped out. Failures are compared as full sets, keyed by where
+they are on the page, or the diff reports shuffling as regressions.
+
+The `@supports not (backdrop-filter …)` fallback went with it — its job was to
+thicken the fills for browsers that could not blur, and now none of them do.
+
+One panel did change how it looked, and the contrast audit could not see it
+because it has no text of its own: the model's. Its edge is drawn the usual
+way, a gradient filling the whole box under fills meant to cover it, and its
+fills are 13% and 14% — so the white bevel lay across the entire interior.
+Behind the blur that read as frost. Without it, it read as grey haze, and the
+panel measured duller than the page around it: mean saturation 0.20 against
+the wash's 0.35 (0.30 with the blur). It now paints the wash itself above its
+border layer, pinned to the viewport so it meets the page without a seam,
+and the bevel stays in the 1px ring it was drawn for. The wash became two
+tokens, `--grain` and `--wash`, so the body and the panel paint the same one;
+the light scheme overrides the tokens rather than the body rule. Saturation
+inside the panel now matches the page, the body is pixel-identical to before,
+flat is untouched, and no contrast check moved.
 
 Light mode is not the dark palette with swapped text. It gets its own wash on a
 near-white base, and the two neumorphic shadows change meaning: the highlight
 becomes near-white and the shadow a soft violet-grey, which is what stops the
 style turning into grey mud on a pale ground.
 
+For a while none of it reached the screen. The pale wash sat in the light block
+at the top of the sheet, and the main `body` rule — same specificity, later in
+the file — replaced it, so light mode drew dark ink on the dark wash at about
+1:1. The reduced-transparency and more-contrast branches had the same problem
+one level up: `:root:not([data-theme="flat"])` outranks the light block's bare
+`:root`, and both held only dark values, so light mode with Windows'
+transparency effects off painted every panel in the dark fill. Each branch now
+has a light counterpart, and the pale wash is a token override now, so rule
+order no longer decides it.
+
+With the wash back, one thing surfaced that had been hidden under it: the
+active tab mixes its accent at 88% with whatever is behind, which is dark
+ground in dark mode and near-white in light, where white ink on it came to
+4.23:1. It is solid in light. Flat's light palette had two of its own: it never
+set `--accent-text`, so links inherited flat dark's pale cyan and the link to
+the keymap editor sat at 1.53:1, and white on its accent was 4.42:1. Both
+clear now, and every light screen measured passes in both themes.
+
 ### Motion
 
 Two things move, both specular, so they read as one material:
 
 - a **sheen** slides across a button on hover, opacity and transform only —
-  never the blur radius, which cannot be animated cheaply;
+  the two properties a compositor can animate without repainting anything;
 - a **droplet** spreads from where you pressed. `src/ripple.js` is one
   delegated `pointerdown` listener that writes the pointer position into two
   custom properties and flips an attribute; the animation itself is CSS, so
@@ -418,8 +522,8 @@ rule is duplicated. The four shadow tokens resolving to `none` is what actually
 flattens it: every rule still asks for them.
 
 Adding a theme is therefore a token block, not a second stylesheet. The traits
-worth knowing are the non-obvious ones: `--glass-filter` (the `backdrop-filter`
-value, `none` when flat), `--knob-radius` (round knobs are a neumorphic trait),
+worth knowing are the non-obvious ones: `--knob-radius` (round knobs are a
+neumorphic trait),
 `--dial-cap` and `--dial-glow`, and `--bar-rule` / `--tabs-rule`, since the flat
 build separated regions with hairlines where the glass one uses depth.
 
@@ -729,6 +833,10 @@ that asks for a trackball first.
 So there is a second door on the connect screen. Same editor, no stage, no
 tabs, one centred column and a way back. It is offered wherever Web Serial is,
 which is the only thing it needs.
+
+The column is a tier-1 panel with the Keymap tab's spacing, because that is
+what the editor was written against. Without either, its connect hint sat on
+the bare wash at 2.65:1, and its last line sat on the primary button's glow.
 
 ### The board in three dimensions
 

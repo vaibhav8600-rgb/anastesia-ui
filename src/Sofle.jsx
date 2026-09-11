@@ -325,6 +325,13 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
   // flat board has had this since it had keycaps; the model was the view where
   // you could see the whole keymap and not read any of it.
   const [hover, setHover] = useState(null);
+  // Where the card sits, written straight to the element as the pointer moves.
+  // Holding the position in state re-rendered this whole component on every
+  // mouse move — and restringified the layout, the labels and the display
+  // info to decide nothing had changed. State now changes only when the key
+  // under the pointer does.
+  const card = useRef(null);
+  const hoverAt = useRef({ x: 0, y: 0 });
   const live = useRef(set);
   live.current = set;
 
@@ -346,9 +353,11 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
 
     let renderer;
     try {
-      // preserveDrawingBuffer so "Save a PNG" has something to read. Without it
-      // the buffer is cleared on composite and the file comes out empty.
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      // No preserveDrawingBuffer. It kept every frame's buffer alive for the
+      // one moment "Save a PNG" needs it, and on many GPUs that is a copy per
+      // frame. png() renders and reads back in the same task instead, before
+      // the browser has had a chance to clear anything.
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     } catch {
       setSupported(false);
       return undefined;
@@ -358,7 +367,21 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
     renderer.shadowMap.enabled = true;
     // Not PCFSoftShadowMap: three deprecates it and substitutes this anyway.
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    // The light never moves and neither does the board unless a slider moves
+    // it, so the shadow map is drawn once and redrawn only when the pose, the
+    // display or what is visible changes. Orbiting is the camera moving, which
+    // shadows do not care about. Before this it was a second full render of
+    // every shadow-casting mesh, every frame.
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
     el.appendChild(renderer.domElement);
+
+    // Drawn on demand, the same way as the trackball. See there for the why;
+    // the short version is that a still board used to cost as much as a moving
+    // one. `ready` holds wake() off until tick exists.
+    let raf = 0, ready = false;
+    const wake = () => { if (ready && !raf) raf = requestAnimationFrame(tick); };
+    const reshadow = () => { renderer.shadowMap.needsUpdate = true; wake(); };
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, 1, 1, 4000);
@@ -647,6 +670,7 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
         h.pivot.position.y = -b.min.y;
       });
       remeasure();
+      reshadow();          // the halves moved, so their shadows did
       // Tenting a board or pushing the halves apart changes both where it is
       // and how big it is. Without this the camera kept aiming at where the
       // middle used to be and the board slid off the top corner of the frame.
@@ -733,6 +757,7 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
         cam.target.z + cam.dist * Math.sin(cam.phi) * Math.sin(cam.theta),
       );
       camera.lookAt(cam.target);
+      wake();
     };
 
     pose();
@@ -784,6 +809,7 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
         sc.tex.needsUpdate = true;
       }
       api.current?.highlight(active ?? -1);
+      wake();
     };
 
     const applyVisibility = () => {
@@ -793,8 +819,8 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
       for (const sc of screens) sc.mesh.visible = s.cases && s.screens;
       caps.forEach((c) => { if (c) c.castShadow = s.shadows; });
       renderer.shadowMap.enabled = s.shadows;
-      renderer.shadowMap.needsUpdate = true;
       ground.visible = s.shadows;
+      reshadow();
     };
 
     // Only the display moves. The knob is where the board said its key is, and
@@ -807,6 +833,7 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
         a.bezel.position.x = x;
         if (a.screen) a.screen.position.x = x;
       }
+      reshadow();          // the display casts one
     };
 
     applyTheme();
@@ -842,21 +869,37 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
       return hit ? hit.object.userData.position : null;
     };
 
+    // Hover is worked out at most once a frame, however many move events
+    // arrive in it, and React only hears about it when the answer changes.
+    let hoverEvt = null, hoverRaf = 0, hoverLast = null, belowLast = false;
+    const doHover = () => {
+      hoverRaf = 0;
+      const e = hoverEvt;
+      if (!e) return;
+      const r = el.getBoundingClientRect();
+      const at = under(e);
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const below = y < r.height * 0.3;
+      hoverAt.current = { x, y };
+      if (card.current) { card.current.style.left = `${x}px`; card.current.style.top = `${y}px`; }
+      if (at !== hoverLast || below !== belowLast) {
+        hoverLast = at; belowLast = below;
+        setHover(at === null ? null : { at, below });
+      }
+    };
+    const clearHover = () => { hoverEvt = null; hoverLast = null; setHover(null); };
+
     const onMove = (e) => {
       if (!drag) {
-        // Where the pointer is, in the element's own coordinates, so the card
-        // can be placed without the caller knowing about the canvas.
-        const r = el.getBoundingClientRect();
-        const at = under(e);
-        setHover(at === null ? null
-          : { at, x: e.clientX - r.left, y: e.clientY - r.top, h: r.height });
+        hoverEvt = e;
+        if (!hoverRaf) hoverRaf = requestAnimationFrame(doHover);
         return;
       }
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
       moved += Math.abs(dx) + Math.abs(dy);
       touched = true;
-      setHover(null);          // looking around is not pointing at anything
+      if (hoverLast !== null) clearHover();   // looking around is not pointing at anything
       if (drag === "orbit") {
         cam.theta -= dx * 0.006;
         cam.phi -= dy * 0.006;
@@ -880,7 +923,7 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
         if (at !== null) {
           // A knob turns a notch as feedback, and either way the position
           // opens for editing — under a knob, that position is the push.
-          if (knobs[at]) knobs[at].spinTo += Math.PI / 6;
+          if (knobs[at]) { knobs[at].spinTo += Math.PI / 6; wake(); }
           pick.current?.(at);
         }
       }
@@ -896,7 +939,7 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", () => { drag = null; });
-    el.addEventListener("pointerleave", () => setHover(null));
+    el.addEventListener("pointerleave", clearHover);
     el.addEventListener("contextmenu", (e) => e.preventDefault());
     el.addEventListener("wheel", onWheel, { passive: false });
 
@@ -935,11 +978,13 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
           if (!k?.base) return;
           lift(k.body.material, k.base, i === position);
         });
+        wake();
       },
       tap(position) {
         if (caps[position]) {
           target[position] = 1;
-          setTimeout(() => { target[position] = 0; }, 140);
+          wake();
+          setTimeout(() => { target[position] = 0; wake(); }, 140);
         }
       },
       view(name) {
@@ -975,38 +1020,53 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
     };
 
     // -------------------------------------------------------------- loop
-    const timer = new THREE.Timer();
-    let raf, visible = true;
-    const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
+    let last = 0, visible = true;
+    const io = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible) wake();
+    });
     io.observe(el);
+    const onShow = () => { if (!document.hidden) wake(); };
+    document.addEventListener("visibilitychange", onShow);
 
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      timer.update();
-      const dt = Math.min(timer.getDelta(), 0.05);
-      if (!visible || document.hidden) return;
+    const tick = (now) => {
+      raf = 0;
+      if (!visible || document.hidden) { last = 0; return; }
+      // The frame's own timestamp, reset on sleep, so the first frame after a
+      // wake is one frame long rather than the length of the nap.
+      const dt = last ? Math.min((now - last) / 1000, 0.05) : 1 / 60;
+      last = now;
+      let moving = false;
       const k = Math.min(1, dt * 22);
       for (let i = 0; i < caps.length; i++) {
-        if (!caps[i]) continue;
-        const a = press[i] + (target[i] - press[i]) * k;
-        if (Math.abs(a - press[i]) < 0.0004 && a < 0.0004) continue;
+        if (!caps[i] || press[i] === target[i]) continue;
+        // Snap once it is too close to see, or the ease never finishes and the
+        // board never gets to sleep.
+        let a = press[i] + (target[i] - press[i]) * k;
+        if (Math.abs(target[i] - a) < 0.002) a = target[i]; else moving = true;
         press[i] = a;
         caps[i].position.y = CAP_BOT - a * TRAVEL;
         if (legends[i]) legends[i].mesh.position.y = CAP_BOT + CAP_H + 0.06 - a * TRAVEL;
       }
-      for (const k of knobs) {
-        if (!k || Math.abs(k.spinTo - k.spin) < 0.0005) continue;
-        k.spin += (k.spinTo - k.spin) * Math.min(1, dt * 9);
-        k.group.rotation.y = k.spin;
+      for (const kn of knobs) {
+        if (!kn || kn.spin === kn.spinTo) continue;
+        kn.spin += (kn.spinTo - kn.spin) * Math.min(1, dt * 9);
+        if (Math.abs(kn.spinTo - kn.spin) < 0.0005) kn.spin = kn.spinTo; else moving = true;
+        kn.group.rotation.y = kn.spin;
       }
       renderer.render(scene, camera);
+      if (moving) wake(); else last = 0;
     };
-    tick();
+    ready = true;
+    wake();
 
     return () => {
+      ready = false;
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(hoverRaf);
       ro.disconnect();
       io.disconnect();
+      document.removeEventListener("visibilitychange", onShow);
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
@@ -1053,9 +1113,9 @@ export default function Sofle({ keys, labels, active, onPick, info, detail }) {
         {/* The same card the flat board shows, at the pointer rather than at
             the key: a keycap in perspective has no one edge to hang it off. */}
         {hover && detail?.(hover.at) && (
-          <div className="keycard board3d__card" role="presentation"
-               data-below={hover.y < hover.h * 0.3 ? "" : undefined}
-               style={{ left: hover.x, top: hover.y }}>
+          <div ref={card} className="keycard board3d__card" role="presentation"
+               data-below={hover.below ? "" : undefined}
+               style={{ left: hoverAt.current.x, top: hoverAt.current.y }}>
             <dl className="keycard__rows">
               {detail(hover.at).filter(([, v]) => v).map(([label, value]) => (
                 <div className="keycard__row" key={label}>
