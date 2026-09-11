@@ -160,8 +160,38 @@ device plus its throw with four times the texels, it reads as contact.
 
 Two things keep it cheap: the shadow pass runs once and is then frozen (only
 the ball and wheels move, and both are surfaces of revolution turning about
-their own axis, so their shadows never change), and the loop is capped at 30fps
-and pauses when the page is hidden or the canvas is scrolled out of view.
+their own axis, so their shadows never change), and nothing is drawn while
+nothing moves.
+
+### Drawn only when something changes
+
+Both 3D views used to draw every frame whether or not anything had moved — the
+trackball at a 30fps cap, the Sofle at the display's full rate — so a model
+sitting still on screen cost as much as one being spun, and on a machine
+without GPU acceleration that was most of a core. The cap also made motion
+look choppy.
+
+Now the loop sleeps. Anything that changes the picture calls `wake()`: a drag,
+a zoom, a click, a slider, a colour, a relabelled key. The loop then runs at
+the display's own rate until the last thing stops moving and goes back to
+sleep. Every ease has to *finish* for that to work — a lerp only ever gets
+closer — so each one snaps to its target once the difference can't be seen,
+and the trackball's glow ramps per second rather than per frame, or a slow
+machine would take forty seconds to stop drawing it.
+
+The Sofle also stopped re-rendering React on every mouse move. The hover card's
+position was state, so each move re-rendered the view and restringified the
+layout to learn nothing had changed; the card is now moved directly, and state
+changes only when the key under the pointer does. Its shadow map is frozen the
+same way the trackball's is, redrawn when the pose, the displays or what's
+visible changes, and it no longer keeps a preserved drawing buffer for the PNG
+export — the export renders and reads back in the same task instead.
+
+Counted from outside the app by wrapping WebGL's draw calls: an idle Sofle
+used to issue 297 draw calls every frame, and an idle trackball redrew at its
+cap. Both now issue none, including on the tab with live readings. Dragging,
+clicking a key, moving a slider and saving a PNG all still draw, and each goes
+quiet again once it settles.
 
 ## Choosing a control's shape
 
@@ -315,8 +345,8 @@ everything beneath it whenever anything beneath it changes, and the model
 panel had a WebGL canvas redrawing *inside* it — so the blur recomputed every
 frame, over most of the screen. On Firefox, removing the blur variable in
 devtools was reported as taking the page from completely unusable to laggy but
-usable. The lag that remains is most likely the 3D view redrawing every frame
-whether or not anything moved, which is a separate fix.
+usable. The rest of the lag was the 3D view redrawing every frame whether or
+not anything moved — see [Drawn only when something changes](#drawn-only-when-something-changes).
 
 It also bought very little to see. What sits behind these panels is a smooth
 gradient and a fine grain, and blurring a smooth gradient gives back the same

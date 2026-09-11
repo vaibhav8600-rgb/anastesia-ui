@@ -598,6 +598,18 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
     }
 
     const view = { ...VIEWS.home };
+    // Drawn on demand. The loop used to run at a fixed 30fps whether or not
+    // anything moved, which on an idle page is thirty identical frames a second
+    // forever — and the cap that kept that affordable is also why motion looked
+    // choppy. Now nothing runs while the scene is still, and anything that
+    // changes it calls wake(): the loop then runs at the display's own rate
+    // until the last thing stops moving, and goes back to sleep.
+    //
+    // `ready` guards the setup phase: resize() moves the camera before tick is
+    // defined, and waking then would reach for a function that is not there.
+    let raf = 0, ready = false;
+    const wake = () => { if (ready && !raf) raf = requestAnimationFrame(tick); };
+
     let fitDist = 24;
 
     /**
@@ -660,6 +672,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         aim();
       }
       renderer.shadowMap.needsUpdate = true;
+      wake();
     };
 
     // ---------------------------------------------------------- input
@@ -688,6 +701,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       // Below the threshold the firmware reports nothing at all.
       if (v.deadzone && mag <= (v.deadzoneSize ?? 0) * 0.4) {
         deadFlash = 1;
+        wake();
         return;
       }
       // A rotated tracking plane turns the movement before it is applied.
@@ -706,6 +720,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       cursor.x += rx * 0.55 * (v.sens ?? 1) * 0.4;
       cursor.y += ry * 0.55 * (v.sens ?? 1) * 0.4;
 
+      wake();
       if (v.twist) {
         twistAcc += Math.abs(rx) * (v.twistSens ?? 1);
         if (twistAcc > 60) {
@@ -734,6 +749,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         if (hitWheel) hitWheel.object.userData.spin = 7.5;
         const hitKey = raycaster.intersectObjects(buttons)[0];
         if (hitKey) hitKey.object.userData.press = 1;
+        if (hitWheel || hitKey) wake();
         mode = "orbit";
       }
       el.dataset.grabbing = "1";
@@ -834,6 +850,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         ballMat.color.set(c.ball);
         wheelMat.color.set(c.wheel);
         c.keys.forEach((hex, i) => keyMats[i]?.color.set(hex));
+        wake();
       },
       setView(name) {
         Object.assign(view, VIEWS[name] ?? VIEWS.home);
@@ -843,30 +860,39 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       flick() {
         velX = 26 + Math.random() * 16;
         velY = -9 + Math.random() * 18;
+        wake();
       },
+      // For changes made from React: the settings, and the labels on the keys.
+      wake,
     };
 
     // ---------------------------------------------------------- loop
-    const timer = new THREE.Timer();   // Clock is deprecated
-    let raf;
+    // The frame's own timestamp, not a running clock: after a sleep, a clock
+    // reports the whole sleep as one frame and the first step of a key press
+    // jumps. Reset on sleep, so waking starts from a single frame's worth.
+    let last = 0;
     let visible = true;
-    let acc = 0;
-    const FRAME = 1 / 30;
-    const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
+    const io = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible) wake();
+    });
     io.observe(el);
+    const onShow = () => { if (!document.hidden) wake(); };
+    document.addEventListener("visibilitychange", onShow);
 
     const spinAxis = new THREE.Vector3(0, 1, 0);
 
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      timer.update();
-      const dt = Math.min(timer.getDelta(), 0.05);
-      if (!visible || document.hidden) return;
-      acc += dt;
-      if (acc < FRAME) return;
-      const step = acc;
-      acc = 0;
+    const tick = (now) => {
+      raf = 0;
+      // Off screen or in a background tab: stay asleep. The observer and the
+      // visibility listener wake it when it can be seen again.
+      if (!visible || document.hidden) { last = 0; return; }
+      const step = last ? Math.min((now - last) / 1000, 0.05) : 1 / 60;
+      last = now;
       const v = live.current;
+      // Whether anything is still in motion after this frame. If nothing is,
+      // this is the last frame until something wakes the loop.
+      let moving = false;
 
       // The ball keeps rolling after you let go. Smoothing lengthens the
       // coast, the way a larger averaging window does on the hardware.
@@ -875,6 +901,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         const d = Math.pow(DAMP, (step * 60) / Math.max(1, (v.sma ?? 1) * 0.4));
         velX *= d;
         velY *= d;
+        moving = true;
       }
 
       // Bindings float over their own keys. Positions are written straight to
@@ -931,6 +958,7 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
         if (b.userData.press > 0) {
           b.userData.press = Math.max(0, b.userData.press - step * 3.6);
           b.position.y = BTN_REST - Math.sin(b.userData.press * Math.PI) * 0.11;
+          moving = true;
         }
       }
 
@@ -939,14 +967,29 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
           w.rotateOnAxis(spinAxis, w.userData.spin * step);
           cursor.y -= w.userData.spin * step * 5;
           w.userData.spin *= Math.pow(0.94, step * 60);
+          moving = true;
         }
       }
 
-      deadFlash = Math.max(0, deadFlash - step * 2.4);
+      if (deadFlash > 0) {
+        deadFlash = Math.max(0, deadFlash - step * 2.4);
+        moving = true;
+      }
       deadRing.material.opacity = deadFlash * 0.9;
 
+      // A lerp never arrives; it only gets closer. Left alone this one kept the
+      // scene "moving" forever, so it snaps once it is close enough to see no
+      // difference, and stops.
       const bright = v.glow ? (v.brightness ?? 60) / 100 : 0;
-      glow.intensity = THREE.MathUtils.lerp(glow.intensity, bright * 26, 0.08);
+      const glowTo = bright * 26;
+      if (Math.abs(glow.intensity - glowTo) > 0.05) {
+        // Per second, not per frame: 8% a frame was a second at 60Hz and
+        // forty at the 1.3fps of a software renderer.
+        glow.intensity = THREE.MathUtils.lerp(glow.intensity, glowTo, 1 - Math.pow(0.92, step * 60));
+        moving = true;
+      } else {
+        glow.intensity = glowTo;
+      }
 
       // Pointer output readout. Written straight to the DOM: it changes every
       // frame, and routing that through React state would re-render the panel.
@@ -965,16 +1008,20 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       }
 
       renderer.render(scene, camera);
+      if (moving) wake(); else last = 0;
     };
-    tick();
+    ready = true;
+    wake();
 
     // A gentle roll on arrival, so it reads as a thing that moves.
-    if (!reduced) { velX = 12; velY = 4; }
+    if (!reduced) { velX = 12; velY = 4; wake(); }
 
     return () => {
+      ready = false;
       cancelAnimationFrame(raf);
       ro.disconnect();
       io.disconnect();
+      document.removeEventListener("visibilitychange", onShow);
       api.current = null;
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointermove", onPointerMove);
@@ -990,6 +1037,11 @@ export default function Trackball({ values, onScrollTick, tools = true, keyLabel
       el.removeChild(renderer.domElement);
     };
   }, [onScrollTick]);
+
+  // Settings and key labels live in React, and the scene only draws when told.
+  // A new brightness has to reach the glow, and a relabelled key has to be
+  // reprojected, even though nothing on the canvas moved to cause it.
+  useEffect(() => { api.current?.wake(); }, [values, keyLabels, wheelLabels, showTags]);
 
   // Colours live in React so the pickers are controlled; the scene is told
   // whenever they change, including on first mount.
