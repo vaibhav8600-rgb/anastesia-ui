@@ -6,10 +6,18 @@
    Two systems, kept separate so they cannot fight:
 
    GLASS is for anything that floats — the two stage panels, the header chips,
-   the popovers. Translucent fill, a bright hairline edge, and a blur of what
-   is behind it. Only the large surfaces carry `backdrop-filter`; nesting it
-   inside them costs a second full-screen blur pass and looks identical,
-   because there is nothing between an inner card and its parent to blur.
+   the popovers. Translucent fill and a bright hairline edge, and deliberately
+   no blur. `backdrop-filter` used to sit on every large surface, and it was
+   the single most expensive thing on the page: two full-height panels
+   blurring 24px of wash, a WebGL canvas redrawing inside one of them so the
+   blur recomputed every frame. On Firefox, taking the blur away in devtools
+   was reported as the difference between completely unusable and laggy but
+   usable. It bought almost nothing to see — what is behind these panels is
+   a smooth gradient and a fine grain, and blurring a smooth gradient gives
+   back the same gradient. What it did change was the grain, from softened to
+   sharp, and exactly one text run sitting a hair from 4.5:1 fell under it.
+   Tier 1 thickened from 0.41 to 0.46 to clear it; measured over every text
+   run on every tab, the result fails no check the blurred original passed.
 
    NEUMORPHISM is for anything you touch — buttons, switches, sliders, fields.
    One light source, top-left, for every one of them: raised things take a pale
@@ -62,15 +70,15 @@
      distinguished by how much of the ground it lets through, how hard its
      edge catches light, and how far it sits off the surface below.
 
-     Tier 2 carries NO blur, deliberately. It sits inside a tier-1 panel whose
-     backdrop is already blurred and near-flat, so blurring it again changes
-     almost nothing while costing a second full-screen pass. Its separation
-     comes from alpha, edge and shadow instead — which is what the eye reads
-     as "closer" anyway. */
-  --glass-saturate: 1.6;
-
-  --glass-blur-1: 24px;
-  --glass-bg-1: rgba(20, 15, 42, 0.41);
+     No tier blurs. Separation comes from alpha, edge and shadow, which is
+     what the eye reads as "closer" anyway — and what tier 2 was already
+     doing on its own, inside a tier-1 panel, without anyone noticing it had
+     no blur. */
+  /* 0.46, up from 0.41 when the blur went. Blur averages the grain behind a
+     glyph; without it the lightest speck under a line of muted text is
+     lighter, and one panel blurb at 4.47:1 noticed. 0.46 clears it, and
+     every other run on every tab stays where it was or improves. */
+  --glass-bg-1: rgba(20, 15, 42, 0.46);
   /* The model panel is the same tier but carries a fraction of the fill:
      nothing on it owes 4.5:1 to the panel itself, so hiding the wash behind it
      bought nothing. Its two labels get their own backing instead. */
@@ -88,14 +96,12 @@
   --glass-highlight-view: inset 0 1px 0 rgba(255, 255, 255, 0.30), inset 0 -1px 0 rgba(0, 0, 0, 0.30);
   --glass-shadow-view: 0 0 0 1px rgba(8, 6, 22, 0.32), 0 18px 40px -18px rgba(4, 2, 14, 0.7), 0 2px 6px -2px rgba(4, 2, 14, 0.55);
 
-  --glass-blur-2: none;
   --glass-bg-2: rgba(44, 35, 78, 0.20);
   --glass-scrim-2: transparent;
   --glass-highlight-2: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.22);
   --glass-border-2: linear-gradient(145deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.15) 40%, rgba(255, 255, 255, 0.05));
   --glass-shadow-2: 0 14px 30px -14px rgba(4, 2, 14, 0.62), 0 2px 5px -2px rgba(4, 2, 14, 0.62);
 
-  --glass-blur-3: 12px;
   --glass-bg-3: rgba(30, 23, 58, 0.62);
   --glass-scrim-3: transparent;
   --glass-highlight-3: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.26);
@@ -107,9 +113,6 @@
 
   --line: rgba(255, 255, 255, 0.15);
   --line-soft: rgba(255, 255, 255, 0.08);
-  --blur: var(--glass-blur-1);
-  --glass-filter: blur(var(--glass-blur-1)) saturate(var(--glass-saturate));
-  --glass-filter-3: blur(var(--glass-blur-3)) saturate(var(--glass-saturate));
 
   /* Names the rest of the sheet already uses, now pointing at a tier. */
   --glass: var(--glass-bg-1);
@@ -343,8 +346,6 @@ button, input[type="range"], input[type="search"], input[type="number"] {
     linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
     linear-gradient(var(--glass-bg-view), var(--glass-bg-view)) padding-box,
     var(--glass-border-view) border-box;
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-shadow-view), var(--glass-highlight-view);
   overflow: hidden;
 }
@@ -395,8 +396,6 @@ button, input[type="range"], input[type="search"], input[type="number"] {
     linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
     linear-gradient(var(--glass-bg-1), var(--glass-bg-1)) padding-box,
     var(--glass-border-1) border-box;
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-shadow-1), var(--glass-highlight-1);
   overflow: hidden;
 }
@@ -658,8 +657,6 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--glass-bg-3);
-  backdrop-filter: var(--glass-filter-3);
-  -webkit-backdrop-filter: var(--glass-filter-3);
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
   animation: toast-in 220ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
@@ -1759,8 +1756,6 @@ textarea.search { min-height: 0; resize: vertical; font-family: ui-monospace, SF
     linear-gradient(var(--glass-scrim-3), var(--glass-scrim-3)) padding-box,
     linear-gradient(var(--glass-bg-3), var(--glass-bg-3)) padding-box,
     var(--glass-border-3) border-box;
-  backdrop-filter: var(--glass-filter-3);
-  -webkit-backdrop-filter: var(--glass-filter-3);
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
   z-index: 2;
 }
@@ -1949,8 +1944,6 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   place-items: center;
   padding: var(--pad);
   background: rgba(8, 6, 22, 0.62);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   animation: modal-in 180ms ease;
 }
 
@@ -1962,8 +1955,6 @@ textarea.search { height: auto; min-height: 0; padding-block: 0.5rem; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--glass-bg-3);
-  backdrop-filter: var(--glass-filter-3);
-  -webkit-backdrop-filter: var(--glass-filter-3);
   box-shadow: var(--glass-shadow-3), var(--glass-highlight-3);
 }
 
@@ -2410,8 +2401,6 @@ textarea.search::-webkit-scrollbar-thumb:hover {
   --line: #262c44;
   --line-soft: #262c44;
 
-  --glass-filter: none;
-  --glass-filter-3: none;
   --sheen: none;
 
   /* Flat had no depth and no scrim: one solid fill, one hairline border. */
@@ -2584,34 +2573,13 @@ textarea.search::-webkit-scrollbar-thumb:hover {
    All four branches reassign the same tokens rather than restating rules, so
    a surface never has two definitions to keep in step. */
 
-/* No backdrop-filter at all: go opaque rather than leaving text over a
-   raw gradient. This, not prefers-reduced-transparency, is the branch that
-   catches most browsers that cannot do the effect. */
-/* No backdrop-filter at all. Nothing can blur, so the fill alone has to carry
-   legibility — but it stays translucent, because "cannot blur" is not "must be
-   a solid box". Alpha is raised until text clears its target over the lightest
-   point of the wash, and no further. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root:not([data-theme="flat"]) {
-    --glass-bg-1: rgba(20, 15, 42, 0.86);
-    --glass-bg-view: rgba(20, 15, 42, 0.5);
-    --glass-bg-2: rgba(44, 35, 78, 0.80);
-    --glass-bg-3: rgba(30, 23, 58, 0.92);
-    --glass-scrim-1: transparent;
-    --glass-scrim-2: transparent;
-    --glass-scrim-3: transparent;
-  }
-}
-
 /* REDUCE transparency, not remove it. The first version of this branch swapped
-   in fully opaque fills and killed the blur outright, which is over-compliance:
-   it deleted the theme for anyone with Windows "Transparency effects" off, and
-   that is most of why the glass read as solid. The preference asks for less
-   see-through, so the blur shrinks and the fill thickens — both stay. */
+   in fully opaque fills, which is over-compliance: it deleted the theme for
+   anyone with Windows "Transparency effects" off, and that is most of why the
+   glass read as solid. The preference asks for less see-through, so the fill
+   thickens and stays a fill. */
 @media (prefers-reduced-transparency: reduce) {
   :root:not([data-theme="flat"]) {
-    --glass-blur-1: 10px;
-    --glass-blur-3: 6px;
     --glass-bg-1: rgba(20, 15, 42, 0.72);
     --glass-bg-view: rgba(20, 15, 42, 0.34);
     --glass-bg-2: rgba(44, 35, 78, 0.68);

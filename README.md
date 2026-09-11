@@ -264,8 +264,8 @@ it reads "steady" and draws flat rather than amplifying noise into a mountain.
 Two systems, kept separate in `src/styles.css` so they cannot fight:
 
 **Glass** is for anything that *floats* — the two stage panels, the header
-chips, the popovers. A translucent fill, a bright hairline edge, and a blur of
-what is behind it. The page itself is a fixed wash, which is the thing the
+chips, the popovers. A translucent fill and a bright hairline edge, and no
+blur — see below. The page itself is a fixed wash, which is the thing the
 glass has to be glass *of*; the 3D canvas is `alpha: true`, so the wash shows
 through behind the model too.
 
@@ -288,11 +288,9 @@ sense of glass comes from the ground being brighter than the pane.
 
 Glass comes in **three elevation tiers**, distinguished by how much ground they
 let through, how hard the edge catches light, and how far they sit off the
-surface below. Tier 1 is the two stage panels (fill 0.41), tier 2 the cards
-inside them (0.20, deliberately *without* blur — it sits on an already-blurred
-backdrop, so a second full-screen pass would buy nothing), tier 3 the things
-floating over the model: the caption, the pointer pad, the palette and the
-viewport's tool buttons.
+surface below. Tier 1 is the two stage panels (fill 0.46), tier 2 the cards
+inside them (0.20), tier 3 the things floating over the model: the caption, the
+pointer pad, the palette and the viewport's tool buttons.
 
 The viewport is the exception that proves the rule. Its job is to show the
 scene, so its fill stays at 0.13 and cannot separate it from the ground the way
@@ -307,16 +305,43 @@ highlight up-left and a soft shadow down-right, sunken things take exactly the
 reverse, and pressing a button swaps its raise for the matching well. Mixing
 the direction per element is what makes this style look cheap.
 
-Two costs are deliberately not paid:
+### Why there is no blur
 
-- **Cards do not blur.** Nesting `backdrop-filter` inside an already-blurred
-  panel buys nothing — there is nothing between an inner card and its parent to
-  blur — and costs a second full-screen pass.
-- **The viewport buttons do not blur either.** Six of them sit on top of a
-  canvas that redraws at 30fps, so each would force a re-composite every frame.
-  They are tier 3 in every other respect. Tier 3 therefore has two expressions:
-  the palette blurs its backdrop, the three overlay elements do not. That is a
-  known seam, not an oversight.
+The glass used to blur what was behind it: `backdrop-filter: blur(24px)
+saturate(1.6)` on both stage panels, 12px on the toast, the palette and the
+lock dialog, and a 3px full-screen blur behind that dialog. It was the single
+most expensive thing on the page. A backdrop filter re-samples and re-blurs
+everything beneath it whenever anything beneath it changes, and the model
+panel had a WebGL canvas redrawing *inside* it — so the blur recomputed every
+frame, over most of the screen. On Firefox, removing the blur variable in
+devtools was reported as taking the page from completely unusable to laggy but
+usable. The lag that remains is most likely the 3D view redrawing every frame
+whether or not anything moved, which is a separate fix.
+
+It also bought very little to see. What sits behind these panels is a smooth
+gradient and a fine grain, and blurring a smooth gradient gives back the same
+gradient. Blur preserves the average brightness of the ground, which is what
+contrast is measured against; what it changed was the grain, which went from
+softened to sharp.
+
+That is the one thing it cost. Measured by the rendered-ink method below —
+every text run on every tab, against the lightest real pixel under it — the
+blur-free build failed exactly the checks the blurred one did, except for one
+run sitting a hair from the line: a panel blurb at 4.47, where sharp grain
+under it outweighed the smoothed version. Tier 1's fill went from 0.41 to 0.46
+to clear it, which is the lever the tiers already name for this: raise alpha
+until the text clears, and no further. The result fails no check the blurred
+original passed, and — since a thicker fill only helps light text on it — a
+few fewer overall.
+
+Comparing the two builds had one trap worth recording. Taking each run's six
+worst failures and diffing the lists made a separator dot look newly broken;
+it had been failing with the blur on as well, and only moved into the top six
+once others dropped out. Failures are compared as full sets, keyed by where
+they are on the page, or the diff reports shuffling as regressions.
+
+The `@supports not (backdrop-filter …)` fallback went with it — its job was to
+thicken the fills for browsers that could not blur, and now none of them do.
 
 Light mode is not the dark palette with swapped text. It gets its own wash on a
 near-white base, and the two neumorphic shadows change meaning: the highlight
@@ -328,7 +353,7 @@ style turning into grey mud on a pale ground.
 Two things move, both specular, so they read as one material:
 
 - a **sheen** slides across a button on hover, opacity and transform only —
-  never the blur radius, which cannot be animated cheaply;
+  the two properties a compositor can animate without repainting anything;
 - a **droplet** spreads from where you pressed. `src/ripple.js` is one
   delegated `pointerdown` listener that writes the pointer position into two
   custom properties and flips an attribute; the animation itself is CSS, so
@@ -419,8 +444,8 @@ rule is duplicated. The four shadow tokens resolving to `none` is what actually
 flattens it: every rule still asks for them.
 
 Adding a theme is therefore a token block, not a second stylesheet. The traits
-worth knowing are the non-obvious ones: `--glass-filter` (the `backdrop-filter`
-value, `none` when flat), `--knob-radius` (round knobs are a neumorphic trait),
+worth knowing are the non-obvious ones: `--knob-radius` (round knobs are a
+neumorphic trait),
 `--dial-cap` and `--dial-glow`, and `--bar-rule` / `--tabs-rule`, since the flat
 build separated regions with hairlines where the glass one uses depth.
 
