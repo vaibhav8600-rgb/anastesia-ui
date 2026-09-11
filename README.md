@@ -373,6 +373,20 @@ they are on the page, or the diff reports shuffling as regressions.
 The `@supports not (backdrop-filter …)` fallback went with it — its job was to
 thicken the fills for browsers that could not blur, and now none of them do.
 
+One panel did change how it looked, and the contrast audit could not see it
+because it has no text of its own: the model's. Its edge is drawn the usual
+way, a gradient filling the whole box under fills meant to cover it, and its
+fills are 13% and 14% — so the white bevel lay across the entire interior.
+Behind the blur that read as frost. Without it, it read as grey haze, and the
+panel measured duller than the page around it: mean saturation 0.20 against
+the wash's 0.35 (0.30 with the blur). It now paints the wash itself above its
+border layer, pinned to the viewport so it meets the page without a seam,
+and the bevel stays in the 1px ring it was drawn for. The wash became two
+tokens, `--grain` and `--wash`, so the body and the panel paint the same one;
+the light scheme overrides the tokens rather than the body rule. Saturation
+inside the panel now matches the page, the body is pixel-identical to before,
+flat is untouched, and no contrast check moved.
+
 Light mode is not the dark palette with swapped text. It gets its own wash on a
 near-white base, and the two neumorphic shadows change meaning: the highlight
 becomes near-white and the shadow a soft violet-grey, which is what stops the
@@ -385,7 +399,8 @@ the file — replaced it, so light mode drew dark ink on the dark wash at about
 one level up: `:root:not([data-theme="flat"])` outranks the light block's bare
 `:root`, and both held only dark values, so light mode with Windows'
 transparency effects off painted every panel in the dark fill. Each branch now
-has a light counterpart, and the wash comes after the rule it overrides.
+has a light counterpart, and the pale wash is a token override now, so rule
+order no longer decides it.
 
 With the wash back, one thing surfaced that had been hidden under it: the
 active tab mixes its accent at 88% with whatever is behind, which is dark

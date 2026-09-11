@@ -209,27 +209,49 @@
 
 html, body, #root { height: 100%; }
 
-body {
-  margin: 0;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E"),
-    /* A dark base with a bright core, rather than a bright base throughout.
-       The old field floored at luma 77 because its base gradient was light
-       (#3f4569 alone is 70), not because the blooms covered too much. So the
-       base carries the darkness now — #1b1836 floors at 27 on its own — and
-       the blooms are free to be strong and saturated over it. Range 27..114
-       instead of 77..130: the same lit core, but with somewhere dark to fall.
+/* The wash, as tokens: the body paints it, and so does the model's panel,
+   which needs its own copy (see .stage__view). */
+:root {
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  /* A dark base with a bright core, rather than a bright base throughout.
+     The old field floored at luma 77 because its base gradient was light
+     (#3f4569 alone is 70), not because the blooms covered too much. So the
+     base carries the darkness now — #1b1836 floors at 27 on its own — and
+     the blooms are free to be strong and saturated over it. Range 27..114
+     instead of 77..130: the same lit core, but with somewhere dark to fall.
 
-       Darkening uniformly would have been the wrong move. Panel separation is
-       alpha x (ground - fill) and the fills are darker than the ground, so a
-       dimmer ground shrinks every edge. A vignette measured exactly that way:
-       floor 23 but the settings edge fell 2.09:1 to 1.52:1. Wide range, lit
-       core, dark corners is the only shape that serves both. */
+     Darkening uniformly would have been the wrong move. Panel separation is
+     alpha x (ground - fill) and the fills are darker than the ground, so a
+     dimmer ground shrinks every edge. A vignette measured exactly that way:
+     floor 23 but the settings edge fell 2.09:1 to 1.52:1. Wide range, lit
+     core, dark corners is the only shape that serves both. */
+  --wash:
     radial-gradient(1120px 940px at 29% 28%, rgba(176, 112, 255, 0.70), transparent 66%),
     radial-gradient(1080px 900px at 81% 23%, rgba(96, 152, 255, 0.66), transparent 68%),
     radial-gradient(900px 760px at 13% 87%, rgba(255, 108, 142, 0.38), transparent 62%),
     radial-gradient(840px 700px at 66% 95%, rgba(255, 150, 196, 0.24), transparent 60%),
     linear-gradient(155deg, #4a3f7a 0%, #2e2a55 52%, #1b1836 100%);
+}
+
+/* The pale wash, and no grain on it. As a rule of its own this once sat in
+   the light block at the top of the sheet, same specificity as the body rule
+   and earlier in the file, so the dark wash won and dark ink landed on it at
+   about 1:1. As tokens, order only matters among :root rules. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --grain: none;
+    --wash:
+      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
+      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
+      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
+      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
+      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--grain), var(--wash);
   /* Grain tiles; every gradient below it covers once. Without this the wash
      bands visibly across a wide panel. */
   background-size: 140px 140px, auto, auto, auto, auto, auto;
@@ -240,26 +262,6 @@ body {
   font-size: var(--fs-body);
   line-height: 1.5;
   overflow-wrap: break-word;
-}
-
-/* The pale wash. It has to come after the rule above: it sat in the light
-   block at the top of the sheet, same specificity, earlier in the file — so
-   the dark wash won in light mode and dark ink landed on it at about 1:1.
-   Five layers against the dark wash's six, so the grain's tiling and blend
-   are reset rather than inherited onto a gradient. */
-@media (prefers-color-scheme: light) {
-  body {
-    background:
-      radial-gradient(1200px 850px at 8% 14%, rgba(186, 150, 255, 0.40), transparent 62%),
-      radial-gradient(950px 760px at 88% 8%, rgba(140, 190, 255, 0.36), transparent 64%),
-      radial-gradient(1050px 900px at 76% 92%, rgba(255, 160, 205, 0.32), transparent 62%),
-      radial-gradient(820px 660px at 18% 90%, rgba(150, 255, 228, 0.20), transparent 60%),
-      linear-gradient(160deg, #f6f3ff, #eae7f7 58%, #e3e7f6);
-    background-size: auto;
-    background-repeat: no-repeat;
-    background-blend-mode: normal;
-    background-attachment: fixed;
-  }
 }
 
 button, input { font: inherit; color: inherit; }
@@ -352,10 +354,27 @@ button, input[type="range"], input[type="search"], input[type="number"] {
   min-height: 0;
   border: 1px solid transparent;
   border-radius: var(--radius);
+  /* The fill is thin on purpose: this panel's job is to show the scene. But
+     its edge is drawn the usual way — a gradient filling the whole box, under
+     fills meant to cover it — and at 13% they do not, so the white bevel lay
+     over the entire interior. Behind a 24px backdrop blur that read as frost.
+     With the blur gone it read as grey haze: the panel came out duller than
+     the page around it, mean saturation 0.20 against the wash's 0.35. So the
+     wash is painted in again above the border layer, pinned to the viewport
+     like the body's so the two meet without a seam, and the bevel is left to
+     the 1px ring it was drawn for. Static paint; nothing runs per frame.
+     Nine layers: scrim, fill, grain, the five of the wash, the border. */
   background:
-    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)) padding-box,
-    linear-gradient(var(--glass-bg-view), var(--glass-bg-view)) padding-box,
-    var(--glass-border-view) border-box;
+    linear-gradient(var(--glass-scrim-1), var(--glass-scrim-1)),
+    linear-gradient(var(--glass-bg-view), var(--glass-bg-view)),
+    var(--grain),
+    var(--wash),
+    var(--glass-border-view);
+  background-clip: padding-box, padding-box, padding-box, padding-box, padding-box,
+    padding-box, padding-box, padding-box, border-box;
+  background-attachment: scroll, scroll, fixed, fixed, fixed, fixed, fixed, fixed, scroll;
+  background-size: auto, auto, 140px 140px, auto, auto, auto, auto, auto, auto;
+  background-blend-mode: normal, normal, overlay, normal, normal, normal, normal, normal, normal;
   box-shadow: var(--glass-shadow-view), var(--glass-highlight-view);
   overflow: hidden;
 }
