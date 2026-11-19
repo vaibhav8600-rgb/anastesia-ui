@@ -31,6 +31,10 @@ draws whatever the device reports over ZMK Studio's RPC, so it works with any
 ZMK board that has Studio enabled — no trackball, no stage, none of the twelve
 tabs of settings another firmware has never heard of.
 
+A polling-rate test opens the same way, and needs no connection at all: it
+reads the pointer, not the device, so it works for any mouse. See
+[Polling rate](#polling-rate).
+
 | Tab | What it covers |
 | --- | --- |
 | Keymap | A live key binding editor over ZMK Studio's RPC, plus profile slots, per-connection assignment, autoswitch, Windows/macOS mode |
@@ -66,6 +70,7 @@ tabs of settings another firmware has never heard of.
 | `src/ripple.js` | the droplet on press: one delegated listener, no per-button handlers |
 | `src/Heatmap.jsx` | the live sensor image |
 | `src/RollMap.jsx` | tracking quality by roll direction and speed |
+| `src/PollRate.jsx` | the polling-rate test and its chart |
 | `src/Loading.jsx` | the one spinner, shared by every panel that waits |
 | `src/Theme.jsx` | the glass/flat switch and where the choice is kept |
 | `src/Logs.jsx` | the console tab |
@@ -304,6 +309,39 @@ its own window rather than to 0-max, because a good surface sits around 700±40
 and against a 1000 axis that is a flat line. That makes the vertical scale
 data-dependent, so the window's range is printed beside it; below a 2% spread
 it reads "steady" and draws flat rather than amplifying noise into a mountain.
+
+## Polling rate
+
+`src/PollRate.jsx`, opened from "Test its polling rate" on the connect screen.
+It needs no connection, so it is not behind one: the reports it counts are the
+pointer events the page already receives.
+
+**What it counts.** `pointerrawupdate` fires once per report the OS hands
+over, where `pointermove` fires at most once per frame — on a 60Hz screen a
+1000Hz mouse would read 60. Where `pointerrawupdate` is missing (outside
+Chromium, or on a page that is not https or localhost) it falls back to
+`pointermove`'s coalesced events and says so on the page.
+
+**How it averages.** The rate is reports divided by the time spent *moving*.
+Any gap over 50ms is the pointer at rest and is left out of the time base, so a
+pause does not drag the figure down — which matters for a trackball, rolled in
+strokes. Dividing a count by a total, rather than inverting single intervals,
+also survives the browser's 0.1ms timestamp coarsening, finer than which an
+8kHz interval (0.125ms) cannot be resolved. "Current" reads "—" at rest rather
+than holding its last value.
+
+**The chart.** Fast, Normal and Slow add a point every 100ms, 250ms or 1s, and
+changing it starts over, as Reset does. Points arrive in steps, so drawn as-is
+the line jumped once per point; between points it now slides left by the
+elapsed fraction of a step, written straight to the element each frame with no
+React render, and the slide stops once a full step is reached so a still
+pointer costs nothing. It is drawn at its box's real pixel size: scaled from a
+fixed viewBox, the axis labels shrank to about 6px on a phone.
+
+No pointer lock. It kept the cursor from pinning at the screen edge, where the
+OS stops sending moves, but it hid the cursor — so move in circles instead.
+There is no interval histogram either: at 0.1ms timestamp resolution, anything
+above about 4kHz would be mostly quantisation.
 
 ## The design system: glass over a wash, lit from the top-left
 
@@ -1036,6 +1074,7 @@ original that is missing here.
 | 3D device preview | — | The real model: orbit, zoom, clickable keys, live pointer output |
 | Bindings shown on the device | — | Each key's binding printed on that key in the 3D view, encoders labelled on the shell beside them |
 | Keymap editor on its own | — | A second door on the connect screen: the editor without the trackball or the tabs, for any ZMK board with Studio enabled |
+| Polling-rate test | — | From the connect screen, no device needed: current, average and peak report rate with a scrolling chart, idle time excluded |
 | The keyboard in 3D | — | A Sofle drawn as a case with keycaps, knobs and its nice!views, swept around the layout the board reports; click a key to edit it, hover for the whole binding |
 | Bindings a keycap cannot spell | Text | Icons for bluetooth profiles, output selection, mouse buttons and mouse move and scroll direction — one path table shared by the flat board and the model |
 | Themes | One | Glass and flat, one attribute apart |
