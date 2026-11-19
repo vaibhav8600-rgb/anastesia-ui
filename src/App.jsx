@@ -14,6 +14,7 @@ import Logs from "./Logs.jsx";
 import { Keymap, ImportExport, Surface } from "./Board.jsx";
 import Heatmap from "./Heatmap.jsx";
 import RollMap from "./RollMap.jsx";
+import PollRate from "./PollRate.jsx";
 import Status from "./Status.jsx";
 import Loading from "./Loading.jsx";
 import ThemeToggle, { useTheme } from "./Theme.jsx";
@@ -248,6 +249,7 @@ export default function App() {
    * to be the thing you are editing.
    */
   const [studioOnly, setStudioOnly] = useState(false);
+  const [pollOnly, setPollOnly] = useState(false);
 
   useEffect(() => { if (status === "demo") startDemo(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -275,6 +277,25 @@ export default function App() {
     );
   }
 
+  // The polling test reads the pointer, not the device, so it needs no
+  // connection and works for any mouse.
+  if (pollOnly) {
+    return (
+      <div className="app app--studio">
+        <header className="bar">
+          <span className="brand"><strong>Anastasia</strong></span>
+          <span className="chip">Polling rate</span>
+          <div className="bar__spacer" />
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          <button className="btn btn--ghost" onClick={() => setPollOnly(false)}>Back</button>
+        </header>
+        <main className="studio-only">
+          <PollRate />
+        </main>
+      </div>
+    );
+  }
+
   if (!state) {
     return (
       <Welcome
@@ -283,6 +304,7 @@ export default function App() {
         log={log}
         onConnect={connect}
         onStudio={() => { setNote(null); setStudioOnly(true); }}
+        onPoll={() => setPollOnly(true)}
         onDemo={startDemo}
         onClearLog={() => setLog([])}
         theme={theme}
@@ -515,7 +537,7 @@ function KnobSection({ section, state, values, busy, onChange }) {
   );
 }
 
-function Welcome({ status, note, log, onConnect, onStudio, onDemo, onClearLog, theme, onToggleTheme }) {
+function Welcome({ status, note, log, onConnect, onStudio, onPoll, onDemo, onClearLog, theme, onToggleTheme }) {
   const none = !supported.usb && !supported.ble;
   return (
     <div className="welcome">
@@ -561,6 +583,12 @@ function Welcome({ status, note, log, onConnect, onStudio, onDemo, onClearLog, t
             — it works with any ZMK device that has Studio enabled.
           </p>
         )}
+
+        <p className="welcome__aside">
+          Checking a mouse?{" "}
+          <button className="linkish" onClick={onPoll}>Test its polling rate</button>{" "}
+          — no connection needed.
+        </p>
 
         <div className="row row--wrap">
           <button className="btn btn--ghost" onClick={onDemo}>Try it without a device</button>
